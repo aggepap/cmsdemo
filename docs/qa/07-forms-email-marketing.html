@@ -1,0 +1,1239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forms, email &amp; marketing</title>
+<link rel="stylesheet" href="qa.css">
+<script src="qa.js" defer></script>
+</head>
+<body>
+<nav class="crumbs"><a href="index.html">CMS manual QA</a></nav>
+<header class="page">
+  <h1>07 · Forms, email, newsletter, popups, cookies &amp; scripts</h1>
+  <p class="scope">The contact form on <code>/contact</code> and <code>/en/contact</code> (validation, honeypot, success and error states), what it stores in <code>form_submissions</code> and the notification email it sends through Microsoft Graph (recipient, subject, Reply-To, HTML body, plain-text part), how a missing or wrong mail setup behaves, the Submissions screen, the newsletter signup and the Newsletter screen with their known gaps, the signed unsubscribe link and <code>email_suppressions</code>, the cookie banner and the consent record, the Cookies screen with its scanner and the <code>/legal/cookies</code> declaration, consent-gated script snippets and Google Analytics, popups (content, targeting, dates, frequency, triggers, keyboard use, counters) and the unfinished Google reviews integration. Public-endpoint rate limits for the contact form and consent (AUTH-071 to AUTH-073), the per-permission matrix (AUTH-055), the dashboard's Recent submissions (checklist 04), the email logo (MED-034), the popup editor's sections and colour check (CON-080), the module switches (SET-039, SET-040, CON-081) and the <code>[form]</code> / <code>[popup]</code> shortcodes (CON-090) are covered elsewhere and referenced by ID. You need a mailbox you can read for <code>CONTACT_RECIPIENT_EMAIL</code>, a second address to act as a visitor, a terminal with <code>curl</code> and <code>openssl</code>, database client access, and a browser with developer tools plus a private window.</p>
+</header>
+<main>
+
+  <section class="suite" id="suite-prep">
+    <h2>Before you start</h2>
+    <p class="intro">Checklist 01 must be done (migrations, seeds including <code>npm run db:seed-cookies</code> from SET-018, superadmin <code>qa-admin@example.com</code>). Sign in as <code>qa-admin@example.com</code> unless a case says otherwise. URLs use <code>http://localhost:3002</code>; on a hosted test environment use its address. Greek is the default language and has no prefix: <code>/contact</code> is Greek, <code>/en/contact</code> English.</p>
+    <div class="callout">
+      <p><strong>Terminal.</strong> In the project folder run <code>BASE=http://localhost:3002</code>. For admin API calls copy the <code>cms_session</code> cookie into <code>S</code> as in checklist 05 (“Using curl with a session”) and add <code>-b "cms_session=$S"</code>. Public endpoints are rate limited per address; give each curl its own <code>-H 'X-Real-IP: 10.70.0.N'</code> (a new N per case) so one case does not use up another's budget.</p>
+      <p><strong>Visitor browser.</strong> “Fresh private window” means: close every private window, open a new one. Its Local Storage (developer tools → Application → Local Storage in Chrome, Storage in Firefox) then holds none of the <code>site-…</code> keys. The keys used here are <code>site-cookie-consent</code>, <code>site-cookie-categories</code>, <code>site-visitor-ref</code> and <code>site-popup-seen</code>.</p>
+      <p><strong>Forget a cookie decision.</strong> The banner cannot be reopened from the site (see MKT-054). To be asked again in the same window, run this in the console and reload:</p>
+<pre><code>localStorage.removeItem('site-cookie-consent'); localStorage.removeItem('site-cookie-categories');</code></pre>
+    </div>
+
+    <article class="tc" id="MKT-001" data-priority="P1">
+      <h3>Configure outgoing mail</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> An Entra app with the <code>Mail.Send</code> application permission (admin-consented) and a mailbox it may send as. Without these, mark the email cases Blocked and still run MKT-018.</p>
+      <ol class="steps">
+        <li>In <code>.env.local</code> fill <code>AZURE_TENANT_ID</code>, <code>AZURE_CLIENT_ID</code>, <code>AZURE_CLIENT_SECRET</code>, <code>GRAPH_SENDER_ADDRESS</code> (the sending mailbox) and <code>CONTACT_RECIPIENT_EMAIL</code> (a mailbox you can read). Write the two addresses down.</li>
+        <li>Restart the app.</li>
+        <li>Open <strong>Your account</strong> in the sidebar and start two-factor setup.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <strong>Email me a code</strong> is offered (not greyed out), which is how the app reports that all five mail variables are present (see AUTH-029). Cancel the setup; nothing else changes.</p>
+      <p class="ref">Ref: <code>src/cms/core/email/graph.ts</code> (<code>readEnv</code>, <code>graphMailConfigured</code>) · <code>.env.example</code></p>
+    </article>
+
+    <article class="tc" id="MKT-002" data-priority="P2">
+      <h3>Switch on the modules this checklist uses</h3>
+      <ol class="steps">
+        <li>Open <code>/admin/settings?tab=Modules</code>, tick <strong>Newsletter</strong> and <strong>Popups</strong>, click <strong>Save settings</strong>.</li>
+        <li>Open <strong>Cookies</strong> in the sidebar.</li>
+        <li>Open <strong>Roles</strong> and create a role <code>QA mkt view</code> with only <strong>Access</strong>, <strong>View form submissions</strong> and <strong>View newsletter</strong> ticked. Create a user <code>qa-mkt-view@example.com</code> with that role (as in checklist 05).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <strong>Newsletter</strong> appears in the sidebar and <strong>Popups</strong> under the content collections. The Cookies screen shows the three seeded categories <code>necessary</code> (required), <code>analytics</code> and <code>marketing</code>. The role and user are saved.</p>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/layout.tsx</code> · <code>src/cms/modules/auth/permission-labels.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-contact">
+    <h2>Contact form: page and validation</h2>
+    <p class="intro">The form checks the name, the email and the message in the browser before sending; the server checks everything again. Phone is optional and never validated beyond its length.</p>
+
+    <article class="tc" id="MKT-003" data-priority="P1">
+      <h3>The contact page in both languages</h3>
+      <ol class="steps">
+        <li>Open <code>/contact</code>, then <code>/en/contact</code>, then <code>/el/contact</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Greek: fields <strong>Όνομα</strong>, <strong>Email</strong>, <strong>Τηλέφωνο (προαιρετικό)</strong>, <strong>Μήνυμα</strong> and the button <strong>Αποστολή</strong>; beside them a box <strong>Στοιχεία επικοινωνίας</strong> with the email, phone and address from Settings → Branding (a line is missing when that value is empty).</li>
+        <li>English: <strong>Name</strong>, <strong>Email</strong>, <strong>Phone (optional)</strong>, <strong>Message</strong>, button <strong>Send message</strong>, box <strong>Contact details</strong>.</li>
+        <li><code>/el/contact</code> redirects to <code>/contact</code>.</li>
+        <li>Each label is tied to its field: clicking the label text puts the cursor in the field.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/[locale]/contact/page.tsx</code> · <code>src/components/site/ContactForm.tsx</code> · <code>messages/el.json</code>, <code>messages/en.json</code> (<code>contact.form</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-004" data-priority="P2">
+      <h3>Empty fields are refused before anything is sent</h3>
+      <ol class="steps">
+        <li>On <code>/en/contact</code> open developer tools → Network. Click <strong>Send message</strong> with every field empty.</li>
+        <li>Type three spaces into Name and Message, click again.</li>
+        <li>Repeat step 1 on <code>/contact</code>.</li>
+        <li>Inspect the Name input in the Elements panel.</li>
+      </ol>
+      <ul class="exp">
+        <li>No request to <code>/api/contact</code> is made. Under Name and Message: <code>This field is required.</code>; under Email: <code>Please enter a valid email address.</code> Spaces alone count as empty.</li>
+        <li>Greek: <code>Το πεδίο είναι υποχρεωτικό.</code> and <code>Εισάγετε μια έγκυρη διεύθυνση email.</code></li>
+        <li>The input has <code>aria-invalid="true"</code> and <code>aria-describedby="name-error"</code>, pointing at the message. The field border turns red. Phone never shows an error.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/site/ContactForm.tsx</code> (<code>onSubmit</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-005" data-priority="P2">
+      <h3>Malformed email addresses</h3>
+      <ol class="steps">
+        <li>On <code>/en/contact</code> fill Name and Message, then try the email values <code>qa</code>, <code>qa@example</code>, <code>qa @example.com</code> and <code>qa@example.com</code>, clicking <strong>Send message</strong> after each (stop at the last one only if you want a real submission; otherwise clear the form).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The first three show <code>Please enter a valid email address.</code> and send nothing. Correcting the value and sending again clears the message.</p>
+      <p class="ref">Ref: <code>src/components/site/ContactForm.tsx</code> (<code>EMAIL</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-006" data-priority="P3">
+      <h3>The honeypot is invisible and drops the submission</h3>
+      <ol class="steps">
+        <li>On <code>/en/contact</code> press Tab from the Name field through the whole form. Inspect the element after the Message box.</li>
+        <li>Note the newest id: <code>SELECT MAX(id) FROM form_submissions;</code></li>
+        <li>Run:
+<pre><code>curl -s -X POST "$BASE/api/contact" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.70.0.1' \
+  -d '{"kind":"contact","locale":"en","name":"Bot","email":"bot@example.com","message":"spam","_hp":"http://spam.example"}' -w '\n%{http_code}\n'</code></pre></li>
+        <li>Repeat step 2 and check the recipient mailbox.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Tab never lands on a hidden field; the markup has a <code>div</code> with <code>aria-hidden="true"</code> and class <code>hidden</code> holding an input named <code>_hp</code>. curl prints <code>{"ok":true}</code> and <code>200</code>, exactly like a real success, but the highest id is unchanged and no email arrives.</p>
+      <p class="ref">Ref: <code>src/app/api/contact/route.ts</code> (<code>_hp</code>) · <code>src/components/site/ContactForm.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MKT-007" data-priority="P3">
+      <h3>The server validates on its own</h3>
+      <ol class="steps">
+        <li>Send each body below with <code>curl -s -X POST "$BASE/api/contact" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.70.0.2' -d '&lt;body&gt;' -w ' %{http_code}\n'</code> (change the last number of the address after every five requests):
+          <ul>
+            <li><code>{"kind":"contact","name":"QA","email":"qa@example.com"}</code> (no message)</li>
+            <li><code>{"kind":"contact","name":"QA","email":"not-an-email","message":"x"}</code></li>
+            <li><code>{"kind":"quote","name":"QA","email":"qa@example.com","message":"x"}</code></li>
+            <li><code>{"kind":"contact","name":"QA","email":"qa@example.com","message":"x","locale":"de"}</code></li>
+          </ul></li>
+        <li>Send a valid body with <code>-H 'Content-Type: text/plain'</code> instead.</li>
+        <li>Send a body larger than 16 KB: <code>head -c 17000 /dev/zero | tr '\0' 'x' &gt; big.txt</code>, then <code>curl -s -X POST "$BASE/api/contact" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.70.0.3' --data-binary @big.txt -w ' %{http_code}\n'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: each answers <code>{"ok":false,"error":"invalid_payload"}</code> <code>400</code>. Step 2: <code>{"ok":false,"error":"bad_request"}</code> <code>400</code>. Step 3: <code>{"ok":false,"error":"too_large"}</code> <code>413</code>. No row is added to <code>form_submissions</code> and no email is sent.</p>
+      <p class="ref">Ref: <code>src/app/api/contact/route.ts</code> (<code>contactSchema</code>, <code>MAX_BODY_BYTES</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-008" data-priority="P3">
+      <h3>A message over 4000 characters gets only a generic error</h3>
+      <ol class="steps">
+        <li>On <code>/en/contact</code> run <code>copy('x'.repeat(4001))</code> in the console, paste into Message, fill Name and Email, click <strong>Send message</strong>.</li>
+        <li>Do the same with a 121-character name (<code>copy('n'.repeat(121))</code>) and a short message.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The form accepts the text, the request answers <code>400</code> <code>invalid_payload</code>, and the form shows <code>Something went wrong. Please try again or email info@example.com.</code> with the values kept. Nothing is stored. Record as a usability defect that the visitor is not told the limit (the fields have no <code>maxLength</code>), and note whether <code>info@example.com</code> is the right address for this site (it is fixed text in <code>messages/*.json</code>, not the Branding email).</p>
+      <p class="ref">Ref: <code>src/app/api/contact/route.ts</code> (<code>max(120)</code>, <code>max(4000)</code>) · <code>messages/en.json</code> (<code>contact.form.error</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-009" data-priority="P3">
+      <h3>No captcha on public forms</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> reCAPTCHA keys set in <code>.env.local</code> (the admin login shows the checkbox).</p>
+      <ol class="steps">
+        <li>Open <code>/en/contact</code> and the newsletter band on <code>/en/about</code>.</li>
+        <li>Send a valid contact body with curl (no token at all), as in MKT-007 with a message.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Neither form shows a reCAPTCHA. The curl request is accepted (<code>200</code>, or <code>502</code> if mail is off) and stored. Spam protection is the honeypot (MKT-006), the length caps, the per-address limit (AUTH-071) and, in production, the origin check (AUTH-073). Pass if this matches; the lack of a captcha is by design, not a defect.</p>
+      <p class="ref">Ref: docs/dev-guides/07-forms-email-marketing.md §3.1 (“There is no captcha on public forms”)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-notify">
+    <h2>Contact form: stored submission and notification email</h2>
+    <p class="intro">The server stores the enquiry first, then emails it. Use your second (visitor) address as the email in the form, for example <code>qa-visitor@example.com</code> replaced by a real mailbox.</p>
+
+    <article class="tc" id="MKT-010" data-priority="P1">
+      <h3>A valid enquiry is accepted</h3>
+      <ol class="steps">
+        <li>Open <code>/en/contact</code> with the Network tab open. Fill Name <code>QA Tester EN</code>, Email your visitor address, Phone <code>+30 210 000 0000</code>, Message two lines: <code>Line one</code> Enter <code>Line two</code>.</li>
+        <li>Click <strong>Send message</strong> and watch the button.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The button reads <code>Sending…</code> and is disabled while the request runs. <code>POST /api/contact</code> answers <code>200</code> <code>{"ok":true}</code>. The form is replaced by <code>Thank you — your message has been sent.</code> in a box announced to screen readers (<code>role="status"</code>).</p>
+      <p class="ref">Ref: <code>src/components/site/ContactForm.tsx</code> · <code>src/app/api/contact/route.ts</code></p>
+    </article>
+
+    <article class="tc" id="MKT-011" data-priority="P1">
+      <h3>The enquiry is stored with its source</h3>
+      <ol class="steps">
+        <li>Run:
+<pre><code>SELECT id, form_type, email, payload, source_page_slug, source_locale, referrer_url,
+       ua, email_status, email_error, status, notes, ip_hash
+FROM form_submissions ORDER BY id DESC LIMIT 1;</code></pre></li>
+      </ol>
+      <ul class="exp">
+        <li><code>form_type</code> <code>contact</code>, <code>email</code> the visitor address, <code>status</code> <code>new</code>, <code>notes</code> NULL.</li>
+        <li><code>payload</code> holds the keys <code>Name</code>, <code>Email</code>, <code>Phone</code>, <code>Message</code> (with the line break) and <code>Locale</code> = <code>"EN"</code> (key order may differ).</li>
+        <li><code>source_page_slug</code> <code>/contact</code> (language prefix removed), <code>source_locale</code> <code>en</code>, <code>referrer_url</code> <code>http://localhost:3002/en/contact</code>, <code>ua</code> your browser's user agent.</li>
+        <li><code>email_status</code> <code>sent</code>, <code>email_error</code> NULL. <code>ip_hash</code> is NULL (never written).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/lib/contact-submission.ts</code> (<code>pageSlugFromReferer</code>) · <code>src/cms/core/forms/service.ts</code></p>
+    </article>
+
+    <article class="tc" id="MKT-012" data-priority="P1">
+      <h3>The notification email arrives with the enquiry</h3>
+      <ol class="steps">
+        <li>Open the <code>CONTACT_RECIPIENT_EMAIL</code> mailbox and find the newest message.</li>
+        <li>Open the Sent Items folder of the <code>GRAPH_SENDER_ADDRESS</code> mailbox, if you can.</li>
+      </ol>
+      <ul class="exp">
+        <li>From: the <code>GRAPH_SENDER_ADDRESS</code> mailbox. To: <code>CONTACT_RECIPIENT_EMAIL</code> only (no Cc/Bcc).</li>
+        <li>Subject: <code>New enquiry — QA Tester EN</code>.</li>
+        <li>Body: a two-column table with bold labels, in this order: <strong>Name</strong> <code>QA Tester EN</code>, <strong>Email</strong>, <strong>Phone</strong> <code>+30 210 000 0000</code>, <strong>Message</strong> with both lines on separate lines, <strong>Locale</strong> <code>EN</code>. If a Logo is set in Branding and the site address is reachable from the mail client, the logo sits above the table (details in MED-034).</li>
+        <li>A copy is in the sender's Sent Items.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/api/contact/route.ts</code> (<code>subject</code>, <code>rows</code>) · <code>src/lib/email/rows.ts</code> (<code>rowsToHtml</code>) · <code>src/cms/core/email/graph.ts</code> (<code>saveToSentItems</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-013" data-priority="P2">
+      <h3>Reply-To names the submitter and the form</h3>
+      <ol class="steps">
+        <li>In the email from MKT-012 click Reply. Look at the To field (show the full address).</li>
+        <li>Note the <strong>Site name</strong> in Settings → Branding. Change it to <code>QA Brand Mail</code>, save, send another enquiry, reply to that one, then restore the name.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The reply goes to the visitor address, not to the sender mailbox, with the display name <code>QA Tester EN (via &lt;site name&gt; contact form)</code>. After the change it reads <code>(via QA Brand Mail contact form)</code>.</p>
+      <p class="ref">Ref: <code>src/app/api/contact/route.ts</code> (<code>replyToSuffix</code>) · <code>src/cms/core/email/graph.ts</code> (<code>replyTo</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-014" data-priority="P2">
+      <h3>A Greek enquiry without a phone</h3>
+      <ol class="steps">
+        <li>Open <code>/contact</code>. Name <code>Δοκιμή Ελληνικά</code>, your visitor email, Phone empty, Message <code>Γεια σας — ερώτηση για «προϊόν» €10</code>. Click <strong>Αποστολή</strong>.</li>
+        <li>Run the SQL of MKT-011 and open the new email.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The page shows <code>Ευχαριστούμε — το μήνυμά σας στάλθηκε.</code> SQL: <code>source_page_slug</code> <code>/contact</code>, <code>source_locale</code> <code>el</code>, <code>payload</code> has <code>Locale</code> <code>"EL"</code> and <strong>no</strong> <code>Phone</code> key. Email subject <code>New enquiry — Δοκιμή Ελληνικά</code>; the table has no Phone row; Greek letters, quotes, the dash and € show correctly (no <code>?</code> or <code>&amp;#…;</code> codes).</p>
+      <p class="ref">Ref: <code>src/app/api/contact/route.ts</code> (empty values dropped) · <code>src/lib/email/rows.ts</code> (<code>filled</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-015" data-priority="P3">
+      <h3>Markup typed into the form stays text</h3>
+      <ol class="steps">
+        <li>On <code>/en/contact</code> send Name <code>&lt;b&gt;QA&lt;/b&gt; &amp; Co</code> and Message <code>&lt;script&gt;alert(1)&lt;/script&gt; &lt;a href="https://example.com"&gt;link&lt;/a&gt;</code>.</li>
+        <li>Open the email, then open the submission in Admin → Submissions (MKT-023).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The subject reads <code>New enquiry — &lt;b&gt;QA&lt;/b&gt; &amp; Co</code> literally. In the body the name is not bold, the tags show as text and there is no clickable link. The admin drawer shows the same literal text and no alert box ever opens.</p>
+      <p class="ref">Ref: <code>src/lib/email/rows.ts</code> (<code>escapeHtml</code>) · <code>src/cms/admin/SubmissionsTable.tsx</code> (<code>PayloadView</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-016" data-priority="P3">
+      <h3>Known gap: the plain-text version is not sent</h3>
+      <ol class="steps">
+        <li>Open the email from MKT-012 and view its source (Outlook: File → Properties or “View message source”; Gmail: Show original).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The message is sent with an HTML body only. The route builds a text version (<code>Name: …</code>, <code>Email: …</code> one per line) but the mailer passes Graph just one body, so that text never leaves the server. If the source has a <code>text/plain</code> part, it was generated by Exchange from the HTML and will not have the <code>Label: value</code> lines. Pass if this is what you see; report if the <code>Label: value</code> text appears, so this checklist can be updated.</p>
+      <p class="ref">Ref: <code>src/cms/core/email/format.ts</code> (<code>graphMailBody</code>) · docs/dev-guides/07-forms-email-marketing.md §9 (“One body per Graph message”)</p>
+    </article>
+
+    <article class="tc" id="MKT-017" data-priority="P3">
+      <h3>“Inquiry notification emails” does not change the contact recipient</h3>
+      <ol class="steps">
+        <li>Open <code>/admin/settings?tab=Notifications</code>. Put a second address you can read into <strong>Inquiry notification emails</strong>, click <strong>Save settings</strong>.</li>
+        <li>Send an enquiry from <code>/en/contact</code>. Check both mailboxes.</li>
+        <li>Clear the setting again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Per the current code the email goes only to <code>CONTACT_RECIPIENT_EMAIL</code>; the address in the setting receives nothing (the setting is read only by the shop's order notifications). The field's help says <code>Comma- or newline-separated recipients for form + quote notifications.</code>, so record a defect: either the contact form should use it or the help text is wrong. (MED-034 also tells the tester the email goes to this setting.)</p>
+      <p class="ref">Ref: <code>src/cms/core/settings/schema.ts</code> (<code>notifications.inquiryEmails</code>) · <code>src/cms/modules/commerce/orders.ts</code> (the only reader)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-mailfail">
+    <h2>When email cannot be sent</h2>
+    <p class="intro">Restart the app after every change to <code>.env.local</code>. Restore the working values at the end of each case.</p>
+
+    <article class="tc" id="MKT-018" data-priority="P2">
+      <h3>Missing mail settings: stored, marked undelivered, visitor sees an error</h3>
+      <ol class="steps">
+        <li>Blank <code>AZURE_CLIENT_SECRET=</code> in <code>.env.local</code> and restart.</li>
+        <li>On <code>/en/contact</code> send a valid enquiry with Name <code>QA No Mail</code> (Network tab open). Watch the server terminal.</li>
+        <li>Run the SQL of MKT-011.</li>
+        <li>Open the submission in Admin → Submissions and hover the Notification text.</li>
+      </ol>
+      <ul class="exp">
+        <li>The request answers <code>502</code> <code>{"ok":false,"error":"send_failed"}</code>. The form stays filled and shows <code>Something went wrong. Please try again or email info@example.com.</code> (<code>role="alert"</code>). The terminal logs <code>[api/contact] send failed</code>.</li>
+        <li>The row exists anyway: <code>email_status</code> <code>failed</code>, <code>email_error</code> <code>Error: Missing email env vars: AZURE_CLIENT_SECRET</code>.</li>
+        <li>The drawer's Notification line reads <code>Not sent — nobody was notified, so this one needs a reply</code>; the tooltip shows the error text. No mail arrives.</li>
+        <li>Record as a usability issue that the visitor is told it failed although the enquiry was kept, which invites a duplicate.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/api/contact/route.ts</code> (store first, <code>markSubmissionUndelivered</code>) · <code>src/cms/core/email/graph.ts</code> (<code>readEnv</code>) · <code>src/cms/admin/SubmissionsTable.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MKT-019" data-priority="P3">
+      <h3>Wrong client secret</h3>
+      <ol class="steps">
+        <li>Set <code>AZURE_CLIENT_SECRET=wrong-secret-qa</code>, restart, send an enquiry named <code>QA Bad Secret</code>.</li>
+        <li>Run <code>SELECT email_status, email_error FROM form_submissions ORDER BY id DESC LIMIT 1;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Same visitor-side result as MKT-018 (<code>502</code>, error message). <code>email_status</code> <code>failed</code>; <code>email_error</code> starts with an Azure authentication error name (for example <code>AuthenticationError</code> or <code>CredentialUnavailableError</code>) and mentions <code>AADSTS7000215</code> (invalid client secret) or similar. The secret itself does not appear in the error.</p>
+      <p class="ref">Ref: <code>src/cms/core/email/graph.ts</code> (<code>getCredential</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-020" data-priority="P3">
+      <h3>Sender mailbox the app may not use</h3>
+      <ol class="steps">
+        <li>Restore the secret. Set <code>GRAPH_SENDER_ADDRESS=nobody-qa@&lt;your tenant domain&gt;</code> (an address that does not exist), restart, send an enquiry named <code>QA Bad Sender</code>.</li>
+        <li>Check <code>email_error</code> as in MKT-019. Restore the sender and restart.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>email_status</code> <code>failed</code>, <code>email_error</code> starts <code>Error: Graph sendMail failed (404):</code> (or <code>(403)</code> if the app lacks permission for that mailbox) followed by Graph's own message. Visitor side as in MKT-018.</p>
+      <p class="ref">Ref: <code>src/cms/core/email/graph.ts</code> (<code>Graph sendMail failed</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-021" data-priority="P3">
+      <h3>Known gap: failed notifications are never retried</h3>
+      <ol class="steps">
+        <li>With mail working again, reload Admin → Submissions and open <code>QA No Mail</code>.</li>
+        <li>Wait a few minutes and check the recipient mailbox.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The submission still reads <code>Not sent — nobody was notified, so this one needs a reply</code>; there is no Resend button and no email ever arrives for it. The screen's wording already tells staff to reply by hand. Pass if so.</p>
+      <p class="ref">Ref: <code>src/cms/admin/SubmissionsTable.tsx</code> · <code>src/cms/core/forms/service.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-submissions">
+    <h2>Submissions screen</h2>
+    <p class="intro">Open <strong>Submissions</strong> in the sidebar (<code>/admin/submissions</code>). The list shows 25 rows per page, newest first. Nothing on this screen emails anyone or changes the site.</p>
+
+    <article class="tc" id="MKT-022" data-priority="P1">
+      <h3>The list shows the new enquiries</h3>
+      <ol class="steps">
+        <li>Open <code>/admin/submissions</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Heading <strong>Submissions</strong>; filters <strong>Type</strong> (All, contact), <strong>Status</strong> (All, new, handled, archived, spam) and <strong>Search</strong> (placeholder <code>email or source…</code>). Columns Date, Type, Email, Source, Status. The enquiries from this checklist are listed newest first with date <code>YYYY-MM-DD</code>, type <code>contact</code>, the visitor address, source <code>/contact</code>, a blue <code>new</code> badge and a <strong>View</strong> button. The “i” beside Status explains the four statuses and says <code>The status only sorts this list; nothing is sent or deleted.</code></p>
+      <p class="ref">Ref: <code>src/cms/admin/SubmissionsTable.tsx</code> · <code>src/app/admin/(shell)/submissions/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MKT-023" data-priority="P2">
+      <h3>Open one submission</h3>
+      <ol class="steps">
+        <li>Click <strong>View</strong> on <code>QA Tester EN</code>.</li>
+        <li>Open <strong>Raw JSON</strong>. Click the email address. Close the panel with ✕, open it again and close it by clicking the dimmed area.</li>
+      </ol>
+      <ul class="exp">
+        <li>A panel slides in from the right titled <code>contact · #&lt;id&gt;</code>. It shows Email (a <code>mailto:</code> link), Date <code>YYYY-MM-DD HH:MM UTC</code>, Source <code>/contact (en)</code>, Notification <code>Sent to the team</code>.</li>
+        <li><strong>Form entries</strong> lists Name, Email, Phone, Message (full width, both lines kept) and Locale. <strong>Raw JSON</strong> expands to the stored object with the note <code>Exactly what the form sent, field names included — useful when a value is missing above.</code></li>
+        <li>Below: <strong>Status</strong> buttons new / handled / archived / spam (current one ringed) and <strong>Notes</strong> with <strong>Save notes</strong>. Both ways of closing work.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/SubmissionsTable.tsx</code> (<code>SubmissionDetailPanel</code>, <code>PayloadView</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-024" data-priority="P2">
+      <h3>Change status and add notes</h3>
+      <ol class="steps">
+        <li>In the panel click <strong>handled</strong>. Type <code>Called back — QA</code> in Notes, click <strong>Save notes</strong>.</li>
+        <li>Close the panel and reload the list.</li>
+        <li>Run <code>SELECT status, notes FROM form_submissions WHERE id = &lt;id&gt;;</code> and <code>SELECT action, subject_type, subject_id FROM audit_logs ORDER BY id DESC LIMIT 2;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The ring moves to handled at once and the row's badge turns green <code>handled</code>. The button shows <code>Saving…</code> briefly. SQL: <code>handled</code> and the note; two audit rows with action <code>submission.update</code>. The visitor receives nothing.</p>
+      <p class="ref">Ref: <code>src/cms/core/routes/forms.ts</code> (<code>submissionUpdateRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-025" data-priority="P2">
+      <h3>Filters, search and the address bar</h3>
+      <ol class="steps">
+        <li>Choose Status <strong>handled</strong>. Look at the address bar.</li>
+        <li>Clear it, type part of the visitor address into Search, then <code>/contact</code>, then <code>zzz-none</code>.</li>
+        <li>Set Status <strong>new</strong> and a search term, reload the page, and copy the URL into another tab.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The list narrows as you type (search matches the email or the source page). The URL gains <code>?status=handled</code>, <code>?search=…</code> and keeps both after a reload or in the other tab, with the controls filled in. <code>zzz-none</code> shows <code>No submissions.</code></p>
+      <p class="ref">Ref: <code>src/cms/admin/SubmissionsTable.tsx</code> (<code>syncUrl</code>) · <code>src/cms/core/forms/service.ts</code> (<code>listSubmissions</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-026" data-priority="P3">
+      <h3>Paging, another form type and a skipped notification</h3>
+      <ol class="steps">
+        <li>Insert 30 test rows:
+<pre><code>INSERT INTO form_submissions (form_type, email, payload, email_status, status)
+SELECT 'qa-bulk', CONCAT('bulk', a.n * 10 + b.n, '@example.com'),
+       JSON_OBJECT('Name', CONCAT('Bulk ', a.n * 10 + b.n)), 'skipped', 'new'
+FROM (SELECT 0 n UNION ALL SELECT 1 UNION ALL SELECT 2) a
+CROSS JOIN (SELECT 0 n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+            UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) b;</code></pre></li>
+        <li>Reload <code>/admin/submissions</code>. Use <strong>Next</strong> and <strong>Prev</strong>. Open the Type filter. View one <code>qa-bulk</code> row.</li>
+        <li>Delete the rows: <code>DELETE FROM form_submissions WHERE form_type = 'qa-bulk';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Below the table <code>&lt;N&gt; total · page 1/2</code> with Prev disabled on page 1 and Next disabled on the last page; <code>page=2</code> appears in the URL. The Type filter now offers <code>qa-bulk</code> besides <code>contact</code>. The bulk row's Notification reads <code>Not sent (notifications are off)</code> and Form entries shows only Name.</p>
+      <p class="ref">Ref: <code>src/cms/core/forms/service.ts</code> (<code>DEFAULT_PAGE_SIZE = 25</code>, distinct <code>types</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-027" data-priority="P3">
+      <h3>Known gap: no delete and no export</h3>
+      <ol class="steps">
+        <li>Look for a Delete, Export or CSV control on the list and in the panel.</li>
+        <li>Run <code>curl -s -o /dev/null -w '%{http_code}\n' -X DELETE -b "cms_session=$S" "$BASE/api/cms/forms/&lt;id&gt;"</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> None exists; the request answers <code>405</code>. An erasure request from a visitor can only be handled in the database. Pass if so (known gap), and note it for the GDPR backlog.</p>
+      <p class="ref">Ref: <code>src/app/api/cms/forms/[id]/route.ts</code> (GET and PATCH only) · docs/dev-guides/07-forms-email-marketing.md §5</p>
+    </article>
+
+    <article class="tc" id="MKT-028" data-priority="P3">
+      <h3>View-only user: status buttons fail silently</h3>
+      <ol class="steps">
+        <li>In another browser sign in as <code>qa-mkt-view@example.com</code>. Open Submissions and View a row, Network tab open.</li>
+        <li>Click <strong>spam</strong>. Type a note and click <strong>Save notes</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The list and the panel open (read access). Both writes answer <code>403</code> and nothing changes in the database. Per the current code the buttons are still shown and no message appears; <strong>Save notes</strong> may stay on <code>Saving…</code>. Record this as a defect (compare Newsletter, which shows <code>Read-only</code>). The permission matrix itself is AUTH-055.</p>
+      <p class="ref">Ref: <code>src/cms/admin/SubmissionsTable.tsx</code> (<code>patch</code>, no error handling) · <code>src/cms/core/routes/forms.ts</code> (<code>formsWrite</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-029" data-priority="P3">
+      <h3>Known gap: no other forms can be configured</h3>
+      <ol class="steps">
+        <li>Look in the sidebar, the content collections and Settings for a way to build a form.</li>
+        <li>Recall SET-041 (Forms switch) and CON-090 (<code>[form]</code> renders nothing).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> There is no form builder. The only public form is the contact form; a second one needs code (a new <code>kind</code> in <code>/api/contact</code>), and <code>kind</code> <code>quote</code> is refused today (MKT-007). Pass if so.</p>
+      <p class="ref">Ref: docs/dev-guides/07-forms-email-marketing.md §7 (“Recipe: add a new form”)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-newsletter">
+    <h2>Newsletter signup</h2>
+    <p class="intro">The signup band sits at the top of the footer on every page except the home page, where a section of its own replaces it. It asks for an email only. Newsletter must be on (MKT-002). Use a fresh address per case, for example <code>qa.news1@example.com</code>, <code>qa.news2@example.com</code>.</p>
+
+    <article class="tc" id="MKT-030" data-priority="P1">
+      <h3>Sign up from the footer</h3>
+      <ol class="steps">
+        <li>Open <code>/en/about</code> and scroll to the footer. Enter <code>qa.news1@example.com</code> and click <strong>Subscribe</strong> (Network tab open).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The band shows eyebrow <code>NEWSLETTER</code>, <code>Stay in the loop</code>, <code>Occasional news and offers. Unsubscribe whenever you like.</code>, an <strong>Email</strong> field (placeholder <code>name@example.com</code>) and <strong>Subscribe</strong>. While sending the button reads <code>Subscribing…</code>. <code>POST /api/newsletter</code> answers <code>200</code> <code>{"ok":true,"data":{"status":"subscribed"}}</code> and the form is replaced by <strong>You’re in.</strong> <code>Thanks for subscribing.</code></p>
+      <p class="ref">Ref: <code>src/components/layout/NewsletterBand.tsx</code> · <code>src/lib/newsletter.ts</code> · <code>src/cms/modules/newsletter/routes.ts</code></p>
+    </article>
+
+    <article class="tc" id="MKT-031" data-priority="P2">
+      <h3>The subscriber row and its consent record</h3>
+      <ol class="steps">
+        <li>Run:
+<pre><code>SELECT email, locale, consent_text, consent_given_at, unsubscribed_at, source_page_slug,
+       double_opt_in_at, ua, ip_hash
+FROM newsletter_subscribers WHERE email = 'qa.news1@example.com';</code></pre></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> One row: <code>locale</code> <code>en</code>, <code>consent_text</code> <code>Newsletter signup (footer)</code>, <code>consent_given_at</code> about now, <code>unsubscribed_at</code> NULL, <code>source_page_slug</code> <code>footer</code>, <code>double_opt_in_at</code> NULL, <code>ua</code> your browser, <code>ip_hash</code> NULL.</p>
+      <p class="ref">Ref: <code>src/cms/modules/newsletter/subscribers.ts</code> (<code>subscribe</code>) · <code>src/cms/modules/newsletter/logic.ts</code> (<code>consentTextFor</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-032" data-priority="P2">
+      <h3>The home page has its own signup section, and only one</h3>
+      <ol class="steps">
+        <li>Open <code>/</code> and scroll the whole page.</li>
+        <li>Sign up <code>qa.news2@example.com</code> there. Run the SQL of MKT-031 for that address.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> One signup on the page: a section <code>Μάθετε πρώτοι τα νέα μας</code> with <strong>Εγγραφή</strong>, and no band in the footer. After signing up: <strong>Είστε μέσα.</strong> <code>Ευχαριστούμε για την εγγραφή.</code> SQL: <code>locale</code> <code>el</code>, <code>source_page_slug</code> <code>home</code>, <code>consent_text</code> <code>Newsletter signup (home)</code>.</p>
+      <p class="ref">Ref: <code>src/components/site/HomeNewsletter.tsx</code> · <code>src/lib/site/newsletter-placement.ts</code></p>
+    </article>
+
+    <article class="tc" id="MKT-033" data-priority="P2">
+      <h3>Signing up twice</h3>
+      <ol class="steps">
+        <li>Note <code>consent_given_at</code> for <code>qa.news1@example.com</code>.</li>
+        <li>On <code>/en/contact</code> sign up <code>  QA.News1@Example.COM </code> (capitals, spaces around).</li>
+        <li>On <code>/about</code> sign up <code>qa.news1@example.com</code> again.</li>
+        <li>Run <code>SELECT COUNT(*), MIN(consent_given_at) FROM newsletter_subscribers WHERE email = 'qa.news1@example.com';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The response is <code>{"ok":true,"data":{"status":"already-subscribed"}}</code>. English: <strong>You’re already on the list.</strong> <code>This address is already subscribed — nothing more to do.</code>; Greek: <strong>Είστε ήδη στη λίστα.</strong> <code>Αυτή η διεύθυνση είναι ήδη εγγεγραμμένη.</code> Count is 1 and the consent date is unchanged (the address is stored trimmed and in lower case).</p>
+      <p class="ref">Ref: <code>src/cms/modules/newsletter/logic.ts</code> (<code>newsletterSubscribeBody</code>, <code>subscribeOutcome</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-034" data-priority="P2">
+      <h3>Invalid addresses</h3>
+      <ol class="steps">
+        <li>In the footer band try <code>qa@</code> and an empty field.</li>
+        <li>Run <code>curl -s -X POST "$BASE/api/newsletter" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.70.0.10' -d '{"email":"not-an-email"}' -w '\n%{http_code}\n'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: the browser's own “enter an email address” bubble appears and no request is made. Step 2: <code>422</code> with <code>"error":"invalid_input"</code>, <code>"message":"Validation failed."</code> and an <code>issues.fieldErrors.email</code> entry. Nothing is stored.</p>
+      <p class="ref">Ref: <code>src/cms/modules/newsletter/logic.ts</code> · <code>src/cms/core/errors.ts</code> (<code>invalid_input</code> → 422)</p>
+    </article>
+
+    <article class="tc" id="MKT-035" data-priority="P3">
+      <h3>Honeypot and rate limit on the signup</h3>
+      <ol class="steps">
+        <li>Run <code>curl -s -X POST "$BASE/api/newsletter" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.70.0.11' -d '{"email":"qa.bot@example.com","_hp":"x"}'</code>, then check the table for <code>qa.bot@example.com</code>.</li>
+        <li>Run:
+<pre><code>for i in 1 2 3 4 5 6; do
+  curl -s -o /dev/null -w '%{http_code} ' -X POST "$BASE/api/newsletter" -H 'Content-Type: application/json' \
+    -H 'X-Real-IP: 10.70.0.12' -d "{\"email\":\"qa.rate$i@example.com\"}"
+done; echo</code></pre></li>
+        <li>Delete the rate rows: <code>DELETE FROM newsletter_subscribers WHERE email LIKE 'qa.rate%';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>{"ok":true,"data":{"status":"subscribed"}}</code> but no row. Step 2: <code>200 200 200 200 200 429</code>. In the browser the honeypot input sits off-screen (<code>left:-10000px</code>) and Tab skips it.</p>
+      <p class="ref">Ref: <code>src/cms/modules/newsletter/routes.ts</code> (<code>SUBSCRIBE_RATE_LIMIT</code>, honeypot)</p>
+    </article>
+
+    <article class="tc" id="MKT-036" data-priority="P3">
+      <h3>Error state when the endpoint refuses</h3>
+      <ol class="steps">
+        <li>Open <code>/en/about</code> (band visible). In the admin tab untick <strong>Newsletter</strong> and save.</li>
+        <li>Back on the already-open page, sign up <code>qa.news3@example.com</code>.</li>
+        <li>Tick Newsletter again and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The request answers <code>404</code> and the band shows <code>That did not go through. Please try again in a moment.</code> (<code>role="alert"</code>); the field keeps its value. No row is written. After a reload with the module off the band is gone entirely (SET-039).</p>
+      <p class="ref">Ref: <code>src/components/layout/NewsletterBand.tsx</code> (<code>errorBody</code>) · <code>src/app/api/newsletter/route.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-nladmin">
+    <h2>Newsletter screen</h2>
+    <p class="intro">Open <strong>Newsletter</strong> in the sidebar (<code>/admin/newsletter</code>). It opens on the Subscribed tab.</p>
+
+    <article class="tc" id="MKT-037" data-priority="P1">
+      <h3>The subscriber list</h3>
+      <ol class="steps">
+        <li>Open <code>/admin/newsletter</code>. Hover the date of <code>qa.news1@example.com</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Heading <strong>Newsletter</strong> with <code>Addresses captured by the footer band and the article sidebar cards, with the consent recorded for each.</code> Tabs <strong>Subscribed</strong>, <strong>Unsubscribed</strong>, <strong>All</strong>, each with a count. A <strong>Subscribers</strong> box with the total and columns Email, Status, Placement, Language, Subscribed, Actions. The QA addresses show a green <code>Subscribed</code> badge, placement <code>footer</code> or <code>home</code>, language <code>EN</code> or <code>EL</code>, the date <code>YYYY-MM-DD</code> (tooltip: the consent text, e.g. <code>Newsletter signup (footer)</code>), and <strong>Unsubscribe</strong> plus a bin icon.</p>
+      <p class="ref">Ref: <code>src/cms/admin/SubscribersTable.tsx</code> · <code>src/app/admin/(shell)/newsletter/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MKT-038" data-priority="P2">
+      <h3>Search by address or placement</h3>
+      <ol class="steps">
+        <li>Type <code>home</code> in <code>Search address or placement…</code> and press Enter.</li>
+        <li>Type <code>news1</code> and click <strong>Search</strong>. Then clear the box and click Search.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>home</code> lists only <code>qa.news2@example.com</code>; <code>news1</code> lists only <code>qa.news1@example.com</code>; an empty search lists everyone in the tab. Typing alone does not search (Enter or the button is needed). The tab counts always describe the whole list, not the search.</p>
+      <p class="ref">Ref: <code>src/cms/modules/newsletter/subscribers.ts</code> (<code>listSubscribers</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-039" data-priority="P2">
+      <h3>Unsubscribe keeps the record</h3>
+      <ol class="steps">
+        <li>Click <strong>Unsubscribe</strong> on <code>qa.news1@example.com</code>.</li>
+        <li>Open the <strong>Unsubscribed</strong> tab, hover the grey badge.</li>
+        <li>Run <code>SELECT unsubscribed_at, consent_given_at FROM newsletter_subscribers WHERE email = 'qa.news1@example.com';</code></li>
+        <li>Click <strong>Resubscribe</strong>, then Unsubscribe again (leave it unsubscribed for the next case).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The row leaves the Subscribed tab at once; Subscribed count −1, Unsubscribed +1. In the Unsubscribed tab it has a grey <code>Unsubscribed</code> badge whose tooltip is <code>Unsubscribed YYYY-MM-DD</code>, and the button reads <strong>Resubscribe</strong>. SQL: <code>unsubscribed_at</code> set, consent date unchanged. Resubscribe clears <code>unsubscribed_at</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/newsletter/subscribers.ts</code> (<code>setSubscribed</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-040" data-priority="P2">
+      <h3>An unsubscribed person signs up again on the site</h3>
+      <ol class="steps">
+        <li>On <code>/about</code> sign up <code>qa.news1@example.com</code>.</li>
+        <li>Run the SQL of MKT-031.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The response status is <code>resubscribed</code> and the band shows the ordinary <strong>Είστε μέσα.</strong> (not “already on the list”). SQL: <code>unsubscribed_at</code> NULL, <code>consent_given_at</code> refreshed to now, <code>locale</code> <code>el</code>, <code>source_page_slug</code> <code>footer</code>. The address is back in the Subscribed tab.</p>
+      <p class="ref">Ref: <code>src/cms/modules/newsletter/logic.ts</code> (<code>subscribeOutcome</code>, <code>isSubscribeSuccess</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-041" data-priority="P2">
+      <h3>Delete erases the subscriber</h3>
+      <ol class="steps">
+        <li>Click the bin next to <code>qa.news2@example.com</code>, then <strong>Cancel</strong>.</li>
+        <li>Click it again and confirm.</li>
+        <li>Run <code>SELECT COUNT(*) FROM newsletter_subscribers WHERE email = 'qa.news2@example.com';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The bin's accessible name is <code>Delete qa.news2@example.com</code>. A dialog <strong>Delete qa.news2@example.com?</strong> says <code>The address and the consent record behind it are removed permanently. To stop emailing someone while keeping the record that they asked, unsubscribe them instead.</code> Cancel keeps the row; confirming removes it from the list and the counts; SQL count is 0.</p>
+      <p class="ref">Ref: <code>src/cms/admin/SubscribersTable.tsx</code> (<code>remove</code>) · <code>src/cms/modules/newsletter/routes.ts</code> (<code>subscriberDeleteRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-042" data-priority="P3">
+      <h3>View-only user sees the list read-only</h3>
+      <ol class="steps">
+        <li>As <code>qa-mkt-view@example.com</code> open <strong>Newsletter</strong>.</li>
+        <li>With that user's session in <code>S</code>, run <code>curl -s -X PATCH -b "cms_session=$S" -H 'Content-Type: application/json' -d '{"subscribed":false}' "$BASE/api/cms/newsletter/&lt;id of qa.news1&gt;" -w '\n%{http_code}\n'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The list opens; the Actions column shows <code>Read-only</code> instead of buttons. The PATCH answers <code>403</code>; the row is unchanged.</p>
+      <p class="ref">Ref: <code>src/cms/admin/SubscribersTable.tsx</code> (<code>canWrite</code>) · AUTH-055</p>
+    </article>
+
+    <article class="tc" id="MKT-043" data-priority="P3">
+      <h3>Paging past 25 subscribers</h3>
+      <ol class="steps">
+        <li>Insert 30 rows:
+<pre><code>INSERT INTO newsletter_subscribers (email, locale, consent_text, consent_given_at, source_page_slug)
+SELECT CONCAT('qa.bulk', a.n * 10 + b.n, '@example.com'), 'el', 'Newsletter signup (qa)', NOW(), 'qa'
+FROM (SELECT 0 n UNION ALL SELECT 1 UNION ALL SELECT 2) a
+CROSS JOIN (SELECT 0 n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+            UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) b;</code></pre></li>
+        <li>Reload the Newsletter screen; use <strong>Next</strong> and <strong>Prev</strong>; search <code>qa</code>.</li>
+        <li>Remove them: <code>DELETE FROM newsletter_subscribers WHERE email LIKE 'qa.bulk%';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>&lt;N&gt; total · page 1/2</code> with working Prev/Next; 25 rows on page 1. Searching the placement <code>qa</code> finds the 30 bulk rows.</p>
+      <p class="ref">Ref: <code>src/cms/modules/newsletter/logic.ts</code> (<code>subscriberPage</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-044" data-priority="P3">
+      <h3>Known gaps: no export, and changes are not audited</h3>
+      <ol class="steps">
+        <li>Look for an Export or CSV control on the Newsletter screen.</li>
+        <li>After the unsubscribe and delete above, run <code>SELECT COUNT(*) FROM audit_logs WHERE action LIKE '%newsletter%' OR action LIKE '%subscriber%';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> No export exists (the list can only be read on screen or in SQL). The count is 0: unsubscribe and delete leave no audit entry, unlike submissions, cookies and scripts. Pass if both hold (known gaps).</p>
+      <p class="ref">Ref: docs/dev-guides/07-forms-email-marketing.md §9 (“Newsletter PATCH/DELETE are not audited”)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-nlgaps">
+    <h2>Newsletter known gaps and email suppression</h2>
+    <p class="intro">The newsletter only collects addresses. Each case below passes when the gap is still there exactly as described; if the behaviour has been built, mark Fail with a note so the checklist is updated.</p>
+
+    <article class="tc" id="MKT-045" data-priority="P3">
+      <h3>No double opt-in and no confirmation email</h3>
+      <ol class="steps">
+        <li>Sign up a mailbox you can read in the footer band. Wait five minutes.</li>
+        <li>Run <code>SELECT double_opt_in_at, unsubscribed_at FROM newsletter_subscribers WHERE email = '&lt;that address&gt;';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> No email of any kind arrives (no confirm link, no welcome). The address is active immediately (<code>unsubscribed_at</code> NULL) and <code>double_opt_in_at</code> stays NULL.</p>
+      <p class="ref">Ref: docs/dev-guides/07-forms-email-marketing.md §3.3 (“No double opt-in, no confirmation email, no provider sync”)</p>
+    </article>
+
+    <article class="tc" id="MKT-046" data-priority="P3">
+      <h3>No public way to unsubscribe from the newsletter</h3>
+      <ol class="steps">
+        <li>Read the band's text (<code>Unsubscribe whenever you like.</code> / <code>Διαγραφή όποτε θέλετε.</code>) and look on the site for an unsubscribe page or link.</li>
+        <li>Run <code>curl -s -o /dev/null -w '%{http_code}\n' -X DELETE "$BASE/api/newsletter" -H 'X-Real-IP: 10.70.0.13'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> There is no newsletter unsubscribe page or link; only an admin can unsubscribe someone. The request answers <code>405</code>. Record that the promise in the band cannot be kept by the visitor alone.</p>
+      <p class="ref">Ref: <code>src/app/api/newsletter/route.ts</code> (POST only) · <code>messages/en.json</code> (<code>footer.newsletter.description</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-047" data-priority="P3">
+      <h3>No Mailchimp or Brevo sync</h3>
+      <ol class="steps">
+        <li>Look in Settings for a Mailchimp or Brevo connection.</li>
+        <li>Run <code>SELECT COUNT(*) FROM newsletter_subscribers WHERE mailchimp_id IS NOT NULL OR mailchimp_status IS NOT NULL OR last_synced_at IS NOT NULL;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> No such setting; the count is 0. The columns exist for a future server-side sync.</p>
+      <p class="ref">Ref: <code>src/lib/newsletter.ts</code> (Brevo note) · <code>src/cms/db/adapters/mysql/schema/forms.ts</code></p>
+    </article>
+
+    <article class="tc" id="MKT-048" data-priority="P3">
+      <h3>Signed unsubscribe link fills email_suppressions, not the newsletter</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> <code>qa.news1@example.com</code> is subscribed. If the link below answers 404, switch Commerce on (the route belongs to the shop's cart reminders) and repeat.</p>
+      <ol class="steps">
+        <li>In the project folder build the signed link:
+<pre><code>SECRET=$(grep '^ADMIN_SESSION_SECRET=' .env.local | cut -d= -f2-)
+E=qa.news1@example.com
+SIG=$(printf 'unsubscribe:v1:%s' "$E" | openssl dgst -sha256 -hmac "$SECRET" -binary | openssl base64 -A | tr '+/' '-_' | tr -d '=' | cut -c1-32)
+echo "$BASE/api/cms/commerce/unsubscribe?e=$E&amp;s=$SIG&amp;locale=en"</code></pre></li>
+        <li>Open the printed URL in the browser and click the button. Then open the same URL with the last character of <code>s</code> changed.</li>
+        <li>Run <code>SELECT email, reason FROM email_suppressions WHERE email = 'qa.news1@example.com';</code> and <code>SELECT unsubscribed_at FROM newsletter_subscribers WHERE email = 'qa.news1@example.com';</code></li>
+      </ol>
+      <ul class="exp">
+        <li>The page is titled <strong>Unsubscribe from reminders</strong>, asks <code>Stop sending cart reminders to qa.news1@example.com?</code> and has <strong>Confirm unsubscribe</strong>. After clicking: <code>Done. You won’t receive any more cart reminders.</code> and <code>Emails about your orders are not affected.</code></li>
+        <li>The altered link answers <code>400</code> with <code>This link is not valid, or has been altered.</code></li>
+        <li>SQL: one suppression row with reason <code>unsubscribe</code>; the newsletter row is still active (<code>unsubscribed_at</code> NULL). The two lists are not linked (known gap: a future newsletter sender must check both).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/email/unsubscribe.ts</code> · <code>src/cms/modules/commerce/unsubscribe.ts</code> · <code>src/cms/core/email/suppression.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-banner">
+    <h2>Cookie banner and consent record</h2>
+    <p class="intro">Every case starts in a fresh private window unless it says otherwise. With the seeded catalogue there are two optional categories (Στατιστικά / Analytics, Μάρκετινγκ / Marketing) and one required (Απαραίτητα / Necessary).</p>
+
+    <article class="tc" id="MKT-049" data-priority="P1">
+      <h3>The banner appears on the first visit</h3>
+      <ol class="steps">
+        <li>In a fresh private window open <code>/</code> with the Network tab open. Then open <code>/en</code> in the same window.</li>
+      </ol>
+      <ul class="exp">
+        <li>A bar along the bottom (a region named <code>Συγκατάθεση cookies</code>) reads <code>Cookies.</code> followed by <code>Χρησιμοποιούμε απαραίτητα cookies…</code>, with <strong>Αποδοχή όλων</strong>, <strong>Απόρριψη μη απαραίτητων</strong> and <strong>Προτιμήσεις</strong>. On <code>/en</code>: region <code>Cookie consent</code>, <strong>Accept all</strong>, <strong>Reject non-essential</strong>, <strong>Preferences</strong>.</li>
+        <li><code>GET /api/cookies/consent</code> answers <code>200</code> with <code>policyVersion</code> (like <code>v1a2b3c</code>) and the categories <code>necessary</code> (<code>required: true</code>), <code>analytics</code>, <code>marketing</code>.</li>
+        <li>Local Storage has none of <code>site-cookie-consent</code>, <code>site-cookie-categories</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/layout/CookieBanner.tsx</code> · <code>src/app/api/cookies/consent/route.ts</code> (<code>GET</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-050" data-priority="P1">
+      <h3>Accept all is stored in the browser and on the server</h3>
+      <ol class="steps">
+        <li>Click <strong>Αποδοχή όλων</strong>. Look at Local Storage and at the <code>POST /api/cookies/consent</code> request and response.</li>
+        <li>Run <code>SELECT visitor_ref, decision, categories, policy_version, locale FROM cookie_consents ORDER BY id DESC LIMIT 1;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The banner disappears. Local Storage: <code>site-cookie-consent</code> <code>accepted</code>, <code>site-cookie-categories</code> <code>{"necessary":true,"analytics":true,"marketing":true}</code>, <code>site-visitor-ref</code> a UUID. The POST answers <code>200</code> <code>{"ok":true,"data":{"categories":{…all true}}}</code>. SQL: <code>visitor_ref</code> equals the stored UUID, <code>decision</code> <code>accepted</code>, the same categories, <code>policy_version</code> as in the GET, <code>locale</code> <code>el</code>. No IP or email is stored.</p>
+      <p class="ref">Ref: <code>src/components/layout/CookieBanner.tsx</code> (<code>writeConsent</code>) · <code>src/cms/core/cookies/service.ts</code> (<code>recordConsent</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-051" data-priority="P2">
+      <h3>Reject non-essential</h3>
+      <ol class="steps">
+        <li>In a fresh private window open <code>/en</code> and click <strong>Reject non-essential</strong>.</li>
+        <li>Repeat the SQL of MKT-050.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>site-cookie-consent</code> <code>rejected</code>, categories <code>{"necessary":true,"analytics":false,"marketing":false}</code>. SQL: <code>decision</code> <code>rejected</code>, the same categories, <code>locale</code> <code>en</code>.</p>
+      <p class="ref">Ref: <code>src/components/layout/CookieBanner.tsx</code> (<code>decideAll</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-052" data-priority="P2">
+      <h3>Choose per category</h3>
+      <ol class="steps">
+        <li>In a fresh private window open <code>/</code>, click <strong>Προτιμήσεις</strong>.</li>
+        <li>Tick <strong>Στατιστικά</strong> only and click <strong>Αποθήκευση επιλογών</strong>.</li>
+        <li>Forget the decision (see the callout), reload, open Προτιμήσεις, tick both optional boxes, save. Repeat with none ticked.</li>
+      </ol>
+      <ul class="exp">
+        <li>The panel opens under the bar (the button has <code>aria-expanded="true"</code>). <code>Απαραίτητα — Πάντα ενεργά — απαραίτητα για τη λειτουργία του site</code> is text with no checkbox. <strong>Στατιστικά</strong> and <strong>Μάρκετινγκ</strong> are unticked checkboxes, each with its description; services, if any, are listed by provider. There is also a <strong>Διαβάστε την πολιτική</strong> link to <code>/legal/cookies</code>.</li>
+        <li>Step 2: <code>site-cookie-consent</code> <code>custom</code>, categories <code>{"necessary":true,"analytics":true,"marketing":false}</code>, SQL <code>decision</code> <code>custom</code>.</li>
+        <li>Step 3: both ticked is recorded as <code>accepted</code>; none ticked as <code>rejected</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/layout/CookieBanner.tsx</code> (<code>saveChoices</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-053" data-priority="P2">
+      <h3>The choice is remembered</h3>
+      <ol class="steps">
+        <li>After any decision, reload, open <code>/about</code>, <code>/en/contact</code> and <code>/legal/cookies</code>, Network tab open.</li>
+        <li>Close the tab (not the window) and open the site again in the same private window.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The banner never shows again in this window, in either language, and no further <code>GET /api/cookies/consent</code> is made (the options are fetched only while undecided). A new private window asks again.</p>
+      <p class="ref">Ref: <code>src/components/layout/CookieBanner.tsx</code> (<code>readConsentSnapshot</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-054" data-priority="P2">
+      <h3>A visitor can change their choice later</h3>
+      <ol class="steps">
+        <li>After accepting everything, look on every page (footer included) for a way to change the cookie choice. Follow the footer <strong>Cookies</strong> link.</li>
+        <li>Read the intro of <code>/legal/cookies</code> and <code>/en/legal/cookies</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> A visitor should be able to reopen the banner or its preferences. The page intro says <code>You can change your choice at any time from the cookie banner.</code> and the banner says the choice can be changed at any time. Per the current code there is no control that reopens it: the footer link only shows the declaration, and the banner appears only while undecided. If that is what you see, mark Fail and note “no way to withdraw or change cookie consent” (a GDPR requirement).</p>
+      <p class="ref">Ref: <code>src/components/layout/CookieBanner.tsx</code> (<code>if (!undecided) return null</code>) · <code>src/app/[locale]/legal/cookies/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MKT-055" data-priority="P3">
+      <h3>The consent endpoint stores only known categories, as booleans</h3>
+      <ol class="steps">
+        <li>Run:
+<pre><code>curl -s -X POST "$BASE/api/cookies/consent" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.70.0.20' \
+  -d '{"visitorRef":"qa-visitor-0001","decision":"custom","categories":{"necessary":false,"marketing":true,"analytics":"yes","evil":true},"policyVersion":"vQA","locale":"en"}'</code></pre></li>
+        <li>Run <code>SELECT decision, categories, policy_version FROM cookie_consents WHERE visitor_ref = 'qa-visitor-0001';</code></li>
+        <li>Send the same body with <code>"visitorRef":"short"</code>, then with <code>"decision":"maybe"</code>, then with <code>"categories":[]</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1 answers <code>{"ok":true,"data":{"categories":{"necessary":true,"analytics":false,"marketing":true}}}</code>: the required category is forced on, the string <code>"yes"</code> counts as false, and <code>evil</code> is dropped. SQL shows the same, with <code>policy_version</code> <code>vQA</code>. Step 3: each answers <code>400</code> <code>invalid_payload</code> and stores nothing. (Rate limit: AUTH-072.)</p>
+      <p class="ref">Ref: <code>src/app/api/cookies/consent/route.ts</code> (<code>POST</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-056" data-priority="P3">
+      <h3>Blocked browser storage</h3>
+      <ol class="steps">
+        <li>In Chrome open Settings → Privacy and security → Site settings → Additional content settings / On-device site data, and block <code>localhost:3002</code> (or the test host) from saving data. Open the site.</li>
+        <li>Click <strong>Αποδοχή όλων</strong>, then move to another page with a menu link, then reload.</li>
+        <li>Remove the block.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The page works (no error screen). The banner disappears after the click and stays away while you navigate by links; after a full reload it asks again because nothing could be stored. The consent POST is still sent.</p>
+      <p class="ref">Ref: <code>src/components/layout/CookieBanner.tsx</code> (<code>memoryConsent</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-057" data-priority="P3">
+      <h3>A decision in one tab applies to the other</h3>
+      <ol class="steps">
+        <li>In a fresh private window open <code>/about</code> in two tabs; both show the banner.</li>
+        <li>Click <strong>Αποδοχή όλων</strong> in the first tab, then switch to the second without reloading.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The banner in the second tab is gone without a reload.</p>
+      <p class="ref">Ref: <code>src/components/layout/CookieBanner.tsx</code> (<code>subscribeConsent</code>, <code>storage</code> event)</p>
+    </article>
+
+    <article class="tc" id="MKT-058" data-priority="P3">
+      <h3>A changed cookie policy does not ask again</h3>
+      <ol class="steps">
+        <li>In a private window accept everything. Note <code>policyVersion</code> from <code>curl -s "$BASE/api/cookies/consent"</code>.</li>
+        <li>In the admin add a service to Marketing (as in MKT-061), then repeat the curl and reload the private window.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>policyVersion</code> changes after the service is added, but the visitor who already decided is not asked again (the banner shows only while undecided). Pass if so; this is a known gap worth raising, since the new service was never shown to that visitor.</p>
+      <p class="ref">Ref: <code>src/cms/core/cookies/declaration.ts</code> (<code>cookiePolicyVersion</code>) · docs/dev-guides/07-forms-email-marketing.md §9</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-cookieadmin">
+    <h2>Cookies screen, scanner and declaration page</h2>
+    <p class="intro">Open <strong>Cookies</strong> in the sidebar (<code>/admin/cookies</code>). It needs <strong>View settings &amp; cookies</strong>; changes need <strong>Edit settings &amp; cookies</strong> (AUTH-055). Every change reaches the banner and <code>/legal/cookies</code> at once. Unless a case says so, no GA4 Measurement ID is set (Settings → Analytics).</p>
+
+    <article class="tc" id="MKT-059" data-priority="P2">
+      <h3>The Cookies screen</h3>
+      <ol class="steps">
+        <li>Open <code>/admin/cookies</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Heading <strong>Cookies</strong>; a <strong>Scan</strong> panel with <strong>Run scan</strong>; a form with <code>Name (EL) *</code>, <code>Name (EN)</code>, <strong>Key</strong> (placeholder <code>key — optional (auto from name)</code>), a <code>required</code> tick and <strong>Add category</strong>; then one card per category: <strong>Απαραίτητα</strong> <code>necessary</code> with a <code>required</code> tag and the service <code>Session &amp; consent</code>; <strong>Στατιστικά</strong> <code>analytics</code> and <strong>Μάρκετινγκ</strong> <code>marketing</code> with <code>No services.</code> Each card has <strong>Edit</strong>, <strong>Delete</strong> and an add-service form ending in <strong>Add service</strong>.</p>
+      <p class="ref">Ref: <code>src/cms/admin/CookiesManager.tsx</code> · <code>src/cms/core/cookies/defaults.ts</code></p>
+    </article>
+
+    <article class="tc" id="MKT-060" data-priority="P2">
+      <h3>Edit a category's wording</h3>
+      <ol class="steps">
+        <li>Click <strong>Edit</strong> on Στατιστικά. Set Name (EN) <code>Analytics QA</code> and Description (EN) <code>QA description for analytics.</code>; click <strong>Save</strong>.</li>
+        <li>In a fresh private window open <code>/en</code>, click <strong>Preferences</strong>. Open <code>/en/legal/cookies</code>.</li>
+        <li>Run <code>SELECT action, subject_type FROM audit_logs ORDER BY id DESC LIMIT 1;</code>. Put the original wording back afterwards (Analytics / its seeded description).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The card shows the Greek name and description (the card always shows EL). The English banner lists <strong>Analytics QA</strong> with the new description; the declaration page has a heading <strong>Analytics QA</strong> with it. Audit: <code>cookies.category.update</code>, <code>cookie_category</code>. The key <code>analytics</code> cannot be edited.</p>
+      <p class="ref">Ref: <code>src/cms/admin/CookiesManager.tsx</code> (<code>CategoryEditor</code>) · <code>src/cms/core/routes/cookies.ts</code></p>
+    </article>
+
+    <article class="tc" id="MKT-061" data-priority="P2">
+      <h3>Add a service to a category</h3>
+      <ol class="steps">
+        <li>In the Μάρκετινγκ card fill <code>Service (e.g. Google Analytics)</code> <code>QA Pixel</code>, <code>Provider (e.g. Google)</code> <code>QA Ads Ltd</code>, Purpose (EL) <code>Δοκιμαστική μέτρηση διαφημίσεων.</code>, Purpose (EN) <code>Test ad measurement.</code>; click <strong>Add service</strong>.</li>
+        <li>In a fresh private window open <code>/en</code> → <strong>Preferences</strong>; open <code>/legal/cookies</code> and <code>/en/legal/cookies</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The card lists <code>QA Pixel · QA Ads Ltd</code> with the Greek purpose, and the form clears. The banner shows <code>QA Ads Ltd</code> under Marketing. The declaration has a table under Μάρκετινγκ / Marketing with Service <code>QA Pixel</code>, Provider <code>QA Ads Ltd</code> and the purpose in the page's language. Audit action <code>cookies.service.create</code>.</p>
+      <p class="ref">Ref: <code>src/cms/admin/CookiesManager.tsx</code> (<code>AddServiceForm</code>) · <code>src/app/[locale]/legal/cookies/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MKT-062" data-priority="P2">
+      <h3>Disable, then remove a service</h3>
+      <ol class="steps">
+        <li>Click <strong>edit</strong> on QA Pixel, untick <code>enabled</code>, <strong>Save</strong>. Check the banner (fresh private window) and <code>/en/legal/cookies</code>.</li>
+        <li>Tick <code>enabled</code> again and save. Leave it for MKT-066; it is removed in the clean-up.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Disabled, the service is struck through in the admin and absent from both the banner and the declaration. Enabled again, it is back in both.</p>
+      <p class="ref">Ref: <code>src/cms/admin/CookiesManager.tsx</code> (<code>ServiceRow</code>, <code>HELP.enabled</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-063" data-priority="P2">
+      <h3>Add a category</h3>
+      <ol class="steps">
+        <li>Fill Name (EL) <code>Functional</code>, Name (EN) <code>Functional QA</code>, leave Key empty, click <strong>Add category</strong>.</li>
+        <li>Try to add another with Key <code>functional</code>. Then submit the form with Name (EL) empty, and once with Name (EL) <code>Λειτουργικά</code> and Key empty.</li>
+        <li>Check the banner's Preferences and the Scripts screen's <strong>Cookie consent</strong> list (MKT-070).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> A card <strong>Functional</strong> <code>functional</code> (key made from the name) appears at the end. The duplicate is refused with <code>Already exists.</code> in red above the form; the empty name shows <code>Enter a name (EL).</code>; a Greek-only name with no key shows <code>Enter a key (letters/numbers).</code> (the key is made only from Latin letters and digits) The new category is an unticked option in the banner and <code>After consent: Functional QA</code> in the Scripts list. Audit <code>cookies.category.create</code>.</p>
+      <p class="ref">Ref: <code>src/cms/admin/CookiesManager.tsx</code> (<code>addCategory</code>) · <code>src/cms/core/api/handler.ts</code> (duplicate key → 409)</p>
+    </article>
+
+    <article class="tc" id="MKT-064" data-priority="P2">
+      <h3>Run the scanner on the seeded catalogue</h3>
+      <ol class="steps">
+        <li>Click <strong>Run scan</strong>. Hover the “i” beside Scan.</li>
+      </ol>
+      <ul class="exp">
+        <li>The button reads <code>Scanning…</code>, then <code>Scan again</code>. The tip says the scan does not visit the site and cannot find trackers pasted into content or snippets.</li>
+        <li><strong>Used, not declared (4)</strong>: <code>Shop preferences</code> (keys <code>site-cart</code>, <code>site-compare</code>, <code>site-wishlist</code>, <code>site-recently-viewed</code>, each marked <code>storage</code>), <code>Popups</code> (<code>site-popup-seen</code> storage), <code>Customer sign-in</code> (<code>cms_customer</code>), <code>Admin session</code> with a <code>staff only</code> tag (<code>cms_session</code>, <code>cms_mfa</code>). Each has <strong>Declare under necessary</strong>.</li>
+        <li><strong>Declared and in use (1)</strong>: <code>Session &amp; consent</code> <code>necessary</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/CookieScanner.tsx</code> · <code>src/cms/core/cookies/registry.ts</code> (<code>alwaysPresent</code>) · <code>src/cms/core/cookies/scan.ts</code></p>
+    </article>
+
+    <article class="tc" id="MKT-065" data-priority="P2">
+      <h3>Declare the Popups entry under necessary</h3>
+      <ol class="steps">
+        <li>Click <strong>Declare under necessary</strong> on <code>Popups</code>.</li>
+        <li>Look at the Απαραίτητα card, then <code>/legal/cookies</code> and <code>/en/legal/cookies</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The button reads <code>Adding…</code>; the scan refreshes: Used, not declared (3), and <code>Popups</code> <code>necessary</code> is under Declared and in use. The necessary card lists <code>Popups</code> with <code>Θυμάται πότε είδατε κάθε αναδυόμενο μήνυμα…</code>. The declaration's Απαραίτητα / Necessary table has a <code>Popups</code> row with that purpose (English: <code>Remembers when you last saw each popup…</code>) and provider <code>—</code>.</p>
+      <p class="ref">Ref: <code>src/cms/admin/CookieScanner.tsx</code> (<code>declare</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-066" data-priority="P3">
+      <h3>Declared, not detected</h3>
+      <ol class="steps">
+        <li>With QA Pixel present (MKT-061), click <strong>Scan again</strong>. Disable QA Pixel and scan again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> A third list <strong>Declared, not detected (1)</strong> with <code>The scanner does not know these. Either added by hand, or no longer used — worth checking.</code> shows <code>QA Pixel</code> <code>marketing</code>; when disabled the line ends <code>· disabled</code> (if the disabled service is not listed at all, note it).</p>
+      <p class="ref">Ref: <code>src/cms/core/cookies/scan.ts</code> (<code>compareToDeclaration</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-067" data-priority="P2">
+      <h3>A GA4 ID adds Google Analytics to the declaration automatically</h3>
+      <ol class="steps">
+        <li>Open <code>/admin/settings?tab=Analytics</code>, set <strong>GA4 Measurement ID</strong> to <code>G-QA12345678</code>, <strong>Save settings</strong>.</li>
+        <li>Click <strong>Scan again</strong> on the Cookies screen. Open <code>/en/legal/cookies</code> and the banner's Preferences in a fresh private window.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Declared and in use lists <code>Google Analytics 4</code> <code>analytics · declared automatically</code> (keys <code>_ga</code>, <code>_ga_QA12345678</code>), although no row was added to the Analytics card. The declaration's Analytics table shows Service <code>Google Analytics 4</code>, Provider <code>Google</code>; the banner shows <code>Google</code> under Analytics. Keep the ID for MKT-079, then clear it.</p>
+      <p class="ref">Ref: <code>src/cms/core/cookies/declaration.ts</code> (<code>withAnalyticsDeclaration</code>) · <code>src/cms/core/cookies/scan.ts</code> (<code>detectServices</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-068" data-priority="P2">
+      <h3>The public cookie declaration page</h3>
+      <ol class="steps">
+        <li>Signed out, open <code>/legal/cookies</code> from the footer link <strong>Cookies</strong>, then <code>/en/legal/cookies</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Titles <strong>Πολιτική cookies</strong> / <strong>Cookie policy</strong> with the intro, then <strong>Δήλωση cookies</strong> / <strong>Cookie declaration</strong>. Categories in the admin order; the necessary one carries <code>Απαραίτητα</code> / <code>Required</code>. Each category with enabled services has a table Υπηρεσία / Πάροχος / Σκοπός (Service / Provider / Purpose). Disabled services and empty descriptions are left out.</p>
+      <p class="ref">Ref: <code>src/app/[locale]/legal/cookies/page.tsx</code> · <code>messages/*.json</code> (<code>legalCookies</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-069" data-priority="P3">
+      <h3>Delete a category with its services</h3>
+      <ol class="steps">
+        <li>Add a service <code>QA temp</code> to <strong>Functional</strong>. Click <strong>Delete</strong> on the Functional card; first cancel, then confirm.</li>
+        <li>Run <code>SELECT COUNT(*) FROM cookie_services WHERE name = 'QA temp';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The dialog <strong>Delete this category?</strong> says <code>Every service inside it is deleted too. This cannot be undone.</code> Cancel keeps it; confirm removes the card; the count is 0. (Do this after MKT-077 if you run the scripts suite.)</p>
+      <p class="ref">Ref: <code>src/cms/admin/CookiesManager.tsx</code> (<code>removeCategory</code>) · <code>cookie_services.category_id</code> ON DELETE CASCADE</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-scripts">
+    <h2>Script snippets and consent</h2>
+    <p class="intro">Open <strong>Scripts</strong> in the sidebar (<code>/admin/scripts</code>); it needs <strong>Manage scripts</strong>. A snippet runs only where its shortcode <code>[script name="…"]</code> is placed, as a paragraph of its own. Create a published page <code>QA Scripts</code> (slug <code>qa-scripts</code>, EL and EN) for these cases. The development server sends no Content-Security-Policy; the production build does (SET-030).</p>
+
+    <article class="tc" id="MKT-070" data-priority="P1">
+      <h3>Create an inline snippet that waits for Marketing consent</h3>
+      <ol class="steps">
+        <li>Click <strong>Add snippet</strong>. Name <code>QA marketing</code>. Leave <strong>Shortcode name</strong> as filled in. Type <strong>Inline code</strong>. In <strong>JavaScript</strong>:
+<pre><code>console.log('QA snippet ran: qa-marketing'); document.documentElement.dataset.qaMarketing = 'ran';</code></pre></li>
+        <li>Open the <strong>Cookie consent</strong> list, choose <code>After consent: Marketing</code>, keep <strong>Enabled</strong> ticked, click <strong>Save snippet</strong>.</li>
+        <li>Click <strong>Copy shortcode</strong> and paste it as its own paragraph into the QA Scripts page (EL and EN); save both.</li>
+      </ol>
+      <ul class="exp">
+        <li>The shortcode name fills itself as <code>qa-marketing</code>, with <code>Place it with [script name="qa-marketing"]</code> below.</li>
+        <li>The consent list offers <code>None — runs for every visitor</code>, <code>After consent: Analytics</code>, <code>After consent: Marketing</code> (plus any category you added), never Necessary.</li>
+        <li>The new row shows <code>QA marketing</code>, badges <code>Inline</code> and <code>Enabled</code>, and <code>After consent: Marketing</code>. The copy button briefly reads <code>Copied</code>.</li>
+        <li><code>SELECT slug, kind, consent_category, enabled, lazy FROM script_snippets;</code> shows <code>qa-marketing</code>, <code>inline</code>, <code>marketing</code>, <code>1</code>, <code>0</code>. Audit action <code>scripts.create</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/ScriptsManager.tsx</code> · <code>src/app/admin/(shell)/scripts/page.tsx</code> (non-required categories only)</p>
+    </article>
+
+    <article class="tc" id="MKT-071" data-priority="P1">
+      <h3>The snippet never runs before consent, or after refusal</h3>
+      <ol class="steps">
+        <li>In a fresh private window open <code>/qa-scripts</code> with the console open. Do not answer the banner. In the console run <code>document.documentElement.dataset.qaMarketing</code> and <code>document.getElementById('snippet-qa-marketing')</code>.</li>
+        <li>Click <strong>Απόρριψη μη απαραίτητων</strong>; run both again; reload and run again.</li>
+        <li>Forget the decision, reload, choose Preferences → <strong>Στατιστικά</strong> only → save; run both again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> In every step: no <code>QA snippet ran</code> line in the console, the first command gives <code>undefined</code> and the second <code>null</code>. The page does contain an empty <code>&lt;div data-script-snippet="qa-marketing"&gt;</code> where the shortcode is.</p>
+      <p class="ref">Ref: <code>src/components/shortcodes/SnippetRunner.tsx</code> · <code>src/components/layout/CookieBanner.tsx</code> (<code>useCategoryConsent</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-072" data-priority="P1">
+      <h3>The snippet runs once Marketing is granted</h3>
+      <ol class="steps">
+        <li>Forget the decision, reload <code>/qa-scripts</code>, choose Preferences → <strong>Μάρκετινγκ</strong> only → <strong>Αποθήκευση επιλογών</strong>. Do not reload. Check the console and the two commands of MKT-071.</li>
+        <li>Navigate to <code>/about</code> and back with the menu. Then do the same in a fresh private window with <strong>Αποδοχή όλων</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Straight after saving (no reload) the console shows <code>QA snippet ran: qa-marketing</code>, the dataset value is <code>ran</code> and <code>script#snippet-qa-marketing</code> exists. Coming back via the menu does not run it a second time. Accept all has the same effect.</p>
+      <p class="ref">Ref: <code>src/components/shortcodes/SnippetRunner.tsx</code> (<code>id="snippet-&lt;slug&gt;"</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-073" data-priority="P2">
+      <h3>A snippet with no consent category runs for everyone</h3>
+      <ol class="steps">
+        <li>Add a snippet <code>QA always</code> with code <code>console.log('QA snippet ran: qa-always');</code> and Cookie consent <code>None — runs for every visitor</code>. Place its shortcode on QA Scripts.</li>
+        <li>Open the page in a fresh private window without answering the banner.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The row reads <code>Runs without consent</code>. The console shows <code>QA snippet ran: qa-always</code> while the banner is still open, and not <code>qa-marketing</code>.</p>
+      <p class="ref">Ref: <code>src/components/shortcodes/snippet-consent.ts</code> (<code>snippetMayRun</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-074" data-priority="P2">
+      <h3>What a snippet may not contain</h3>
+      <ol class="steps">
+        <li>Add snippet attempts, one at a time, clicking <strong>Save snippet</strong>:
+          <ul>
+            <li>JavaScript <code>&lt;script&gt;console.log(1)&lt;/script&gt;</code></li>
+            <li>JavaScript <code>var s = '&lt;/script&gt;';</code></li>
+            <li>JavaScript empty (spaces only)</li>
+            <li>Shortcode name <code>QA Test</code></li>
+            <li>Shortcode name <code>qa-marketing</code> (already used)</li>
+            <li>External script (URL) with Script URL <code>http://example.com/qa.js</code>, then <code>https://user:pw@example.com/qa.js</code></li>
+          </ul></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Nothing is saved; the field shows, in order: <code>Paste only the JavaScript — without the &lt;script&gt; and &lt;/script&gt; tags around it.</code>; <code>The code cannot contain "&lt;/script".</code>; <code>Paste the JavaScript to run.</code>; <code>Lowercase letters, numbers and dashes only.</code>; <code>Another snippet already uses this shortcode name.</code>; <code>Use a full https:// address, without a username or password.</code> for both URLs.</p>
+      <p class="ref">Ref: <code>src/cms/core/scripts/schema.ts</code> (<code>snippetInputSchema</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-075" data-priority="P2">
+      <h3>Disable, enable and delete</h3>
+      <ol class="steps">
+        <li>Click <strong>Disable</strong> on QA always. Reload QA Scripts (private window), look in the console and for <code>data-script-snippet="qa-always"</code>.</li>
+        <li>Click <strong>Enable</strong>, reload the page.</li>
+        <li>Click <strong>Delete</strong> on QA always; confirm. Reload the page.</li>
+        <li>Run <code>SELECT action FROM audit_logs WHERE subject_type = 'script_snippet' ORDER BY id DESC LIMIT 3;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Disabled: amber <code>Disabled</code> badge; the page renders nothing for that shortcode (no div, no log). Enabled: it runs again. The delete dialog reads <strong>Delete “QA always”?</strong> with <code>Every [script name="qa-always"] on the site will render nothing. This cannot be undone.</code>; afterwards the page renders nothing and shows no shortcode text. Audit: <code>scripts.delete</code>, <code>scripts.update</code>, <code>scripts.update</code>.</p>
+      <p class="ref">Ref: <code>src/cms/admin/ScriptsManager.tsx</code> (<code>toggle</code>, <code>remove</code>) · <code>src/cms/core/scripts/service.ts</code> (<code>getEnabledSnippetBySlug</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-076" data-priority="P3">
+      <h3>External snippet and the Content-Security-Policy</h3>
+      <ol class="steps">
+        <li>Add snippet <code>QA external</code>, <strong>External script (URL)</strong>, Script URL <code>https://example.com/qa-snippet.js</code>, consent None. Place it on QA Scripts.</li>
+        <li>On the development server open the page (Network tab).</li>
+        <li>On the production build (SET-030) open the page with the console open.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The form and the row show the amber notice <code>Loads from example.com. The site's Content-Security-Policy must list this host under script-src (in next.config.ts and the server config), or browsers will block it.</code> Development: a request to <code>https://example.com/qa-snippet.js</code> is made (it will 404; that is fine). Production: no request; the console reports that loading the script violates the <code>script-src</code> directive. External hosts need a code and server change, not an admin setting.</p>
+      <p class="ref">Ref: <code>next.config.ts</code> (<code>PRODUCTION_CSP</code>) · <code>src/cms/admin/ScriptsManager.tsx</code> (<code>CspNotice</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-077" data-priority="P3">
+      <h3>A snippet whose category was deleted follows the blanket choice</h3>
+      <ol class="steps">
+        <li>Add snippet <code>QA functional</code> (<code>console.log('QA snippet ran: qa-functional');</code>) gated on <code>After consent: Functional QA</code> (MKT-063) and place it on QA Scripts.</li>
+        <li>Delete the Functional category (MKT-069).</li>
+        <li>In fresh private windows open the page and choose, in turn, <strong>Αποδοχή όλων</strong> and <strong>Απόρριψη μη απαραίτητων</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The row still says <code>After consent: functional</code> (the key; the name is gone). Accept all runs it; Reject does not. The banner never offered this category, so accept-all visitors run a script they were never asked about. Pass if so and record it as a risk (documented behaviour).</p>
+      <p class="ref">Ref: <code>src/components/layout/CookieBanner.tsx</code> (blanket fallback) · docs/dev-guides/07-forms-email-marketing.md §9</p>
+    </article>
+
+    <article class="tc" id="MKT-078" data-priority="P3">
+      <h3>Known gap: no site-wide head or body slot</h3>
+      <ol class="steps">
+        <li>In the snippet form look for a placement choice (head, start of body, end of body, every page).</li>
+        <li>Open <code>/about</code> (no shortcode) after accepting everything.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> There is none: a snippet runs only on the pages where its shortcode is placed, where it is placed. <code>/about</code> logs no QA snippet. The only script added to every page is Google Analytics (MKT-079). Pass if so.</p>
+      <p class="ref">Ref: docs/dev-guides/07-forms-email-marketing.md §3.6 (“Injection point”)</p>
+    </article>
+
+    <article class="tc" id="MKT-079" data-priority="P2">
+      <h3>Google Analytics loads only in production and only with Analytics consent</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> GA4 Measurement ID <code>G-QA12345678</code> saved (MKT-067). Production build running (SET-030).</p>
+      <ol class="steps">
+        <li>Fresh private window, Network tab filtered on <code>googletagmanager</code>. Open <code>/</code> and wait. Choose Reject; navigate.</li>
+        <li>Fresh window: Preferences → <strong>Μάρκετινγκ</strong> only. Then fresh window: Preferences → <strong>Στατιστικά</strong> only.</li>
+        <li>On the development server repeat the Στατιστικά choice.</li>
+        <li>Clear the Measurement ID afterwards.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> No request to <code>www.googletagmanager.com</code> before a choice, after Reject, or with Marketing only. With Στατιστικά granted, <code>gtag/js?id=G-QA12345678</code> is requested at once (no reload) and <code>typeof window.gtag</code> is <code>function</code>. The development server never loads it.</p>
+      <p class="ref">Ref: <code>src/components/layout/AnalyticsLoader.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-popups">
+    <h2>Popups</h2>
+    <p class="intro">Popups are content: <strong>Popups</strong> → <strong>+ New</strong> (sections Content, Where, When, Design; CON-080). A popup shows only when published, only after the visitor has answered the cookie banner, and at most one per page. Each language is its own row: create the EN version with the <strong>EN</strong> tab → <strong>Copy from EL</strong> → <strong>Create EN</strong>. Where, When and Design fields are shared, so <strong>Save EL</strong> copies them to the EN row. Paths are written without the language. The browser remembers what it has shown in <code>site-popup-seen</code> as <code>{"&lt;popup id&gt;": &lt;time in ms&gt;}</code>; the id differs per language row. To make a popup show again, run <code>localStorage.removeItem('site-popup-seen')</code> and reload. Answer the cookie banner (either way) before each check.</p>
+
+    <article class="tc" id="MKT-080" data-priority="P1">
+      <h3>Create and publish a popup in both languages</h3>
+      <ol class="steps">
+        <li>Popups → <strong>+ New</strong>. Content: <strong>Title</strong> EL <code>QA Προσφορά</code> and, on its EN sub-tab, <code>QA Offer</code>; <strong>Body</strong> <code>Δοκιμαστικό κείμενο.</code>; <strong>Button text</strong> EL <code>Δείτε</code>, EN <code>See it</code>; <strong>Button link</strong> <code>/about</code>. Slug <code>qa-popup-1</code>.</li>
+        <li>Where: <strong>Show on</strong> <code>Every page</code>, Position <code>Middle of the screen</code>. When: <strong>Appears</strong> <code>Immediately</code>, <strong>How often</strong> <code>Every visit</code>. Status — EL <code>published</code>. Click <strong>Create Popup</strong>.</li>
+        <li>EN tab → <strong>Copy from EL</strong>, status <code>published</code>, <strong>Create EN</strong>.</li>
+        <li>Run <code>SELECT id, locale, status FROM documents WHERE type = 'popup' AND slug = 'qa-popup-1';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both saves succeed. Two rows, <code>el</code> and <code>en</code>, both <code>published</code>, with different ids (write them down).</p>
+      <p class="ref">Ref: <code>src/cms/modules/popups/collection.ts</code> · <code>src/cms/admin/DocumentForm.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MKT-081" data-priority="P1">
+      <h3>The popup appears after the cookie banner</h3>
+      <ol class="steps">
+        <li>In a fresh private window open <code>/</code> with the Network tab open. Wait a few seconds without answering the banner.</li>
+        <li>Click <strong>Αποδοχή όλων</strong>.</li>
+        <li>Look at Local Storage and the <code>/api/cms/popups/track</code> request.</li>
+        <li>In another fresh window choose <strong>Απόρριψη μη απαραίτητων</strong> instead.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Nothing covers the banner while it is unanswered. Right after the choice a dialog opens in the middle of a dimmed page with <strong>QA Προσφορά</strong>, the body text and a <strong>Δείτε</strong> button; the close button (✕, named <code>Κλείσιμο</code>) has focus. <code>POST /api/cms/popups/track</code> <code>{"popupId":&lt;el id&gt;,"metric":"impression"}</code> answers <code>{"ok":true,"data":{"counted":true}}</code>; <code>site-popup-seen</code> holds the EL id. Rejecting cookies does not stop the popup (it is content, not tracking).</p>
+      <p class="ref">Ref: <code>src/components/popups/PopupRuntime.tsx</code> · <code>src/components/popups/PopupDialog.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MKT-082" data-priority="P2">
+      <h3>The English page shows the English row</h3>
+      <ol class="steps">
+        <li>In the same window open <code>/en/about</code>.</li>
+        <li>In the admin set the EN row's status to <code>draft</code> (Save EN), clear <code>site-popup-seen</code> and reload <code>/en/about</code> and <code>/about</code>. Publish EN again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <strong>QA Offer</strong> with <strong>See it</strong> and an English close label <code>Close</code>; <code>site-popup-seen</code> now holds two ids. Step 2: nothing on <code>/en/about</code> (a popup with no published EN row does not appear in English, even though the EN title is filled in); the Greek page still shows it. Note if that surprises editors, since the editor offers EN text inside the EL row.</p>
+      <p class="ref">Ref: <code>src/cms/modules/popups/read.ts</code> (<code>listPublishedDocuments('popup', locale)</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-083" data-priority="P2">
+      <h3>Closing the popup, keyboard and screen reader</h3>
+      <ol class="steps">
+        <li>Change <strong>Appears</strong> to <code>After a few seconds</code>, <strong>Seconds, or percent scrolled</strong> <code>5</code>, Save EL. Clear <code>site-popup-seen</code>, reload <code>/about</code> and press Tab until a menu link is focused before the popup opens.</li>
+        <li>When it opens, press Tab repeatedly, then Shift+Tab. Press Escape. Note where focus is.</li>
+        <li>Clear the seen key, reload, click the dimmed area outside the dialog. Reload again (clear first) and click the button.</li>
+        <li>Inspect the dialog element.</li>
+      </ol>
+      <ul class="exp">
+        <li>Tab cycles between ✕ and the button only; it never reaches the page behind. Escape closes the popup and focus returns to the menu link you had focused.</li>
+        <li>Clicking the dim area closes it. Each close sends <code>metric</code> <code>close</code>; the button sends <code>click</code> and goes to <code>/about</code>.</li>
+        <li>The element has <code>role="dialog"</code>, <code>aria-modal="true"</code> and <code>aria-label="QA Προσφορά"</code>. Opening it does not shift the page content.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/popups/PopupDialog.tsx</code> (focus trap, Escape, restore)</p>
+    </article>
+
+    <article class="tc" id="MKT-084" data-priority="P2">
+      <h3>Target a page without the language</h3>
+      <ol class="steps">
+        <li>Set <strong>Show on</strong> <code>Only the pages I list</code>, <strong>Pages</strong> <code>/about</code>, <strong>Appears</strong> <code>Immediately</code>. Save EL; open the EN tab and confirm the same values.</li>
+        <li>Clearing <code>site-popup-seen</code> before each, open <code>/about</code>, <code>/en/about</code>, <code>/about?utm_source=qa#top</code>, <code>/</code>, <code>/contact</code>.</li>
+        <li>If Commerce is on, also try <strong>Pages</strong> <code>/shop</code> on <code>/shop</code> and <code>/en/shop</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The popup opens on <code>/about</code>, <code>/en/about</code> and the address with a query and hash; not on <code>/</code> or <code>/contact</code>. Likewise <code>/shop</code> matches <code>/shop</code> and <code>/en/shop</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/popups/policy.ts</code> (<code>popupPagePath</code>, <code>matchesTarget</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-085" data-priority="P2">
+      <h3>Sections and the Never on list</h3>
+      <ol class="steps">
+        <li>Pages <code>/legal/*</code>: check <code>/legal/cookies</code>, <code>/en/legal/cookies</code> and <code>/about</code>.</li>
+        <li>Show on <code>Every page</code>, <strong>Never on</strong> <code>/contact</code>: check <code>/contact</code>, <code>/en/contact</code>, <code>/about</code>.</li>
+        <li>Show on <code>Only the pages I list</code> with Pages <code>/about</code> and Never on <code>/about</code>: check <code>/about</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: on both cookie pages, not on /about. Step 2: everywhere except the two contact pages. Step 3: nowhere (Never on wins).</p>
+      <p class="ref">Ref: <code>src/cms/modules/popups/policy.ts</code> (<code>pathMatches</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-086" data-priority="P3">
+      <h3>A target written with the language no longer matches</h3>
+      <ol class="steps">
+        <li>Set Pages to <code>/en/about</code> only. Check <code>/en/about</code> and <code>/about</code>.</li>
+        <li>Set Pages to <code>/about</code> again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The popup shows on neither page: prefixed targets from older setups match nothing and must be rewritten without the language (as the user guide says). Pass if so.</p>
+      <p class="ref">Ref: <code>src/cms/modules/popups/policy.ts</code> · docs/user-guides/src/02-periexomeno.md (Popups, “Σημαντικό”)</p>
+    </article>
+
+    <article class="tc" id="MKT-087" data-priority="P2">
+      <h3>Draft, start date and end date</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Show on <code>Every page</code>, Appears <code>Immediately</code>, How often <code>Every visit</code>. Work out today's date in UTC (<code>date -u +%F</code>).</p>
+      <ol class="steps">
+        <li>Set Status — EL <code>draft</code>, save, reload <code>/about</code>. Publish again.</li>
+        <li><strong>Start date</strong> tomorrow (UTC): reload. Clear it.</li>
+        <li><strong>End date</strong> yesterday (UTC): reload. Then End date today (UTC): reload. Clear it.</li>
+        <li>With Start date tomorrow, view the page source of <code>/about</code> and search for <code>QA Προσφορά</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> No popup while draft, with a future start date, or with an end date of yesterday. With today as the end date it shows. Step 4: the not-yet-started popup's title and text are in the page source even though it is not shown (dates are checked in the browser); record this if an unreleased campaign must stay secret.</p>
+      <p class="ref">Ref: <code>src/cms/modules/popups/policy.ts</code> (<code>isPopupActive</code>, <code>endOfDay</code>) · <code>src/components/popups/PopupHost.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MKT-088" data-priority="P3">
+      <h3>End date is inclusive until midnight UTC</h3>
+      <ol class="steps">
+        <li>Set End date <code>2030-06-15</code>. Set the test computer's clock (automatic time off) to 2030-06-15 23:58 UTC (02:58 on 16 June in Athens summer time). Clear the seen key and reload <code>/about</code>.</li>
+        <li>Set the clock to 2030-06-16 00:02 UTC, clear and reload.</li>
+        <li>Set Start date <code>2030-06-15</code>, End date empty; set the clock to 2030-06-14 23:58 UTC and then 2030-06-15 00:02 UTC, reloading each time.</li>
+        <li>Restore automatic time and clear both dates.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: shown. Step 2: not shown. Step 3: not shown at 23:58, shown at 00:02. The editor help for End date says <code>YYYY-MM-DD, the last day it shows (until midnight UTC). Optional.</code></p>
+      <p class="ref">Ref: <code>src/cms/modules/popups/policy.ts</code> (<code>endOfDay</code>: <code>T23:59:59.999Z</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-089" data-priority="P2">
+      <h3>“Once every few days” is remembered</h3>
+      <ol class="steps">
+        <li>How often <code>Once every few days</code>, <strong>Days between showings</strong> <code>2</code>. Save. Clear the seen key, reload <code>/about</code>, close the popup, reload again.</li>
+        <li>Pretend the last showing was three days ago (use the EL id), then reload:
+<pre><code>const m = JSON.parse(localStorage.getItem('site-popup-seen')); m['&lt;el id&gt;'] = Date.now() - 3 * 86400000; localStorage.setItem('site-popup-seen', JSON.stringify(m));</code></pre></li>
+        <li>Repeat step 2 with one day ago.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: shown once, not on the second load. Step 2: shown again (and the stored time is updated to now). Step 3: not shown.</p>
+      <p class="ref">Ref: <code>src/cms/modules/popups/policy.ts</code> (<code>shouldShowAgain</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-090" data-priority="P3">
+      <h3>“Once only, ever”, “Every visit” and odd stored values</h3>
+      <ol class="steps">
+        <li>How often <code>Once only, ever</code>: show it once, then set its stored time to a year ago and reload.</li>
+        <li>How often <code>Once every few days</code> with Days empty: set the stored time to 6 days ago, reload; then 8 days ago, reload.</li>
+        <li>Set the stored time to tomorrow (<code>Date.now() + 86400000</code>) and reload.</li>
+        <li>How often <code>Every visit</code>: reload three times.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: never again while the key exists. Step 2: not at 6 days, shown at 8 (empty means 7). Step 3: shown (a future date counts as never seen). Step 4: shown on every load.</p>
+      <p class="ref">Ref: <code>src/cms/modules/popups/policy.ts</code> (<code>toPopupRecord</code>, <code>shouldShowAgain</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-091" data-priority="P2">
+      <h3>Delay, scroll and exit triggers</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> How often <code>Every visit</code>; a page long enough to scroll (add several paragraphs to QA Scripts if needed). Clear the seen key before each check.</p>
+      <ol class="steps">
+        <li>Appears <code>After a few seconds</code>, value <code>3</code>: time it.</li>
+        <li>Appears <code>After scrolling down</code>, value <code>50</code>: scroll slowly.</li>
+        <li>Appears <code>When the pointer leaves the page (desktop)</code>: move the mouse around inside the page, then quickly out through the top edge (towards the tabs).</li>
+        <li>Repeat step 3 with the developer tools' phone emulation (touch).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: opens about 3 seconds after the choice/load (an empty value means 5). Step 2: opens when about half the page has been scrolled, not before. Step 3: opens only when the pointer leaves through the top. Step 4: never opens.</p>
+      <p class="ref">Ref: <code>src/components/popups/PopupRuntime.tsx</code> (triggers)</p>
+    </article>
+
+    <article class="tc" id="MKT-092" data-priority="P2">
+      <h3>Only one popup at a time, by priority</h3>
+      <ol class="steps">
+        <li>Set qa-popup-1 to Appears <code>Immediately</code>, How often <code>Once only, ever</code>, Show on <code>Every page</code>, <strong>Priority</strong> <code>1</code>.</li>
+        <li>Create <code>qa-popup-2</code> (title <code>QA Δεύτερο</code>) with the same settings and Priority <code>10</code>, published in EL.</li>
+        <li>Clear the seen key and reload <code>/about</code>; close it; reload.</li>
+        <li>Set both priorities to <code>5</code>, clear the seen key, reload.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 3: only <strong>QA Δεύτερο</strong> opens first (never two dialogs); on the next load, qa-popup-1 opens. Step 4: the newer popup (qa-popup-2, higher id) wins a tie.</p>
+      <p class="ref">Ref: <code>src/cms/modules/popups/policy.ts</code> (<code>choosePopup</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-093" data-priority="P3">
+      <h3>Button rule and design positions</h3>
+      <ol class="steps">
+        <li>Empty the <strong>Button link</strong> (keep Button text), save, show the popup.</li>
+        <li>Under Design choose <code>Bottom banner</code>, then <code>Corner card</code>, then <code>Full-screen</code>, showing it each time.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: no button (both text and link are needed). Step 2: Bottom banner is a wide bar at the bottom with no dimmed background; Corner card sits bottom-right with no dimming; Full-screen is a large dimmed dialog in the centre. In none of them does the page behind move.</p>
+      <p class="ref">Ref: <code>src/components/popups/PopupDialog.tsx</code> · <code>src/cms/modules/popups/presets.ts</code></p>
+    </article>
+
+    <article class="tc" id="MKT-094" data-priority="P2">
+      <h3>Popups switched off: nothing on the site</h3>
+      <ol class="steps">
+        <li>Untick <strong>Popups</strong> in Settings → Modules and save. Clear the seen key and reload <code>/about</code>; view the page source.</li>
+        <li>Run <code>curl -s -X POST "$BASE/api/cms/popups/track" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.70.0.30' -d '{"popupId":1,"metric":"impression"}' -w '\n%{http_code}\n'</code>.</li>
+        <li>Tick Popups again and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> No popup and no popup text in the source. The track call answers <code>{"ok":false,"error":"not_found"}</code> <code>404</code>. With the module on again the popups return. (Sidebar and admin API: SET-040, CON-081.)</p>
+      <p class="ref">Ref: <code>src/app/[locale]/layout.tsx</code> (<code>PopupHost</code> only when enabled) · <code>src/app/api/cms/popups/track/route.ts</code></p>
+    </article>
+
+    <article class="tc" id="MKT-095" data-priority="P3">
+      <h3>Known gap: popup counters are stored but never shown</h3>
+      <ol class="steps">
+        <li>Run <code>SELECT subject_id, metric, day, count FROM stat_counters WHERE scope = 'popup' ORDER BY day DESC, subject_id;</code></li>
+        <li>Look for these numbers anywhere in the admin (popup list, editor, dashboard).</li>
+        <li>Run <code>curl -s -X POST "$BASE/api/cms/popups/track" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.70.0.31' -d '{"popupId":999999,"metric":"click"}'</code> and repeat the SQL.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Rows for today's UTC date with <code>impression</code>, <code>close</code> and <code>click</code> counts per popup id, and no visitor data. The admin shows none of it. The made-up id is accepted (<code>{"ok":true,"data":{"counted":true}}</code>) and gets its own row: the counter does not check that the popup exists. Pass if so; record both as known gaps.</p>
+      <p class="ref">Ref: <code>src/cms/modules/popups/read.ts</code> (<code>popupTrackRoute</code>) · <code>src/cms/core/stats/counters.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-reviews">
+    <h2>Google reviews integration (unfinished)</h2>
+    <p class="intro">Switch on <strong>Google reviews &amp; testimonials</strong> in Settings → Modules for this suite. The integration has API routes but no admin screen. Each case passes when the gap is exactly as described.</p>
+
+    <article class="tc" id="MKT-096" data-priority="P3">
+      <h3>No admin screen and no Integrations tab</h3>
+      <ol class="steps">
+        <li>Look in the sidebar and in every Settings tab for Google reviews, a Places API key or a Connect Google button.</li>
+        <li>Open <code>/admin/settings?tab=Integrations&amp;connected=google</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Nothing exists: no screen, no key field, no connect button (<strong>Reviews</strong> in the sidebar is the shop's product reviews and appears only with Commerce on). The URL opens the first Settings tab, with no message about a connection.</p>
+      <p class="ref">Ref: <code>src/cms/admin/SettingsForm.tsx</code> (unknown tab → first tab) · docs/dev-guides/07-forms-email-marketing.md §9</p>
+    </article>
+
+    <article class="tc" id="MKT-097" data-priority="P3">
+      <h3>OAuth start and callback as far as they go</h3>
+      <ol class="steps">
+        <li>Without <code>GOOGLE_OAUTH_CLIENT_ID</code> in <code>.env.local</code>: <code>curl -s -X POST -b "cms_session=$S" -H 'Content-Type: application/json' -d '{}' "$BASE/api/cms/integrations/google/oauth/start" -w '\n%{http_code}\n'</code>.</li>
+        <li>Set <code>GOOGLE_OAUTH_CLIENT_ID=qa-client-id</code>, restart, repeat.</li>
+        <li>Run <code>curl -s -b "cms_session=$S" "$BASE/api/cms/integrations/google/oauth/callback?code=x&amp;state=wrong" -w '\n%{http_code}\n'</code>.</li>
+        <li>Switch the module off and repeat step 2. Remove the variable and restart.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>500</code> <code>{"ok":false,"error":"server_error","message":"Internal error."}</code>; the log says <code>GOOGLE_OAUTH_CLIENT_ID is not set.</code> Step 2: <code>200</code> with <code>data.url</code> starting <code>https://accounts.google.com/o/oauth2/v2/auth?client_id=qa-client-id</code> and containing <code>redirect_uri=…%2Fapi%2Fcms%2Fintegrations%2Fgoogle%2Foauth%2Fcallback</code>, <code>scope=…business.manage</code>, <code>access_type=offline</code>, <code>prompt=consent</code> and a <code>state</code>. Step 3: <code>400</code> <code>This connection attempt has expired. Start again from Settings.</code> Step 4: <code>404</code> <code>not_found</code>. A real connection would end on the missing Integrations tab (MKT-096).</p>
+      <p class="ref">Ref: <code>src/cms/modules/reviews-external/routes.ts</code> (<code>googleOauthStartRoute</code>, <code>googleOauthCallbackRoute</code>) · <code>src/cms/modules/reviews-external/google.ts</code> (<code>gbpAuthorizeUrl</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-098" data-priority="P3">
+      <h3>Sync and the block with nothing configured</h3>
+      <ol class="steps">
+        <li>Run <code>curl -s -X POST -b "cms_session=$S" -H 'Content-Type: application/json' -d '{}' "$BASE/api/cms/reviews-external/sync"</code>.</li>
+        <li>Place <code>[google-reviews]</code> as its own paragraph on QA Scripts, save, open the page.</li>
+        <li>Remove the block and switch the module off again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>{"ok":true,"data":{"results":[]}}</code> (the integration setting is off and there is no screen to switch it on). Step 2: the block shows no reviews and no error; the rest of the page is intact.</p>
+      <p class="ref">Ref: <code>src/cms/modules/reviews-external/sync.ts</code> (<code>syncAllReviewLocations</code>) · <code>src/components/shortcodes/GoogleReviews.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-cleanup">
+    <h2>Clean up</h2>
+
+    <article class="tc" id="MKT-099" data-priority="P3">
+      <h3>Remove the QA data and restore settings</h3>
+      <ol class="steps">
+        <li>Delete the popups <code>qa-popup-1</code> and <code>qa-popup-2</code>, the snippets <code>QA marketing</code>, <code>QA external</code>, <code>QA functional</code>, the QA Scripts page, the QA Pixel and Popups services you declared (or keep Popups: it is correct), the Functional category if still there, and restore the Analytics wording.</li>
+        <li>Run:
+<pre><code>DELETE FROM newsletter_subscribers WHERE email LIKE 'qa.%@example.com';
+DELETE FROM email_suppressions WHERE email = 'qa.news1@example.com';
+DELETE FROM cookie_consents WHERE visitor_ref = 'qa-visitor-0001';</code></pre></li>
+        <li>Mark the QA submissions <code>archived</code> (they cannot be deleted from the admin) or delete them in SQL by id. Restore <code>.env.local</code> mail values, clear the GA4 Measurement ID and Inquiry notification emails, restore the Branding name, and set the module switches back. Delete the <code>qa-mkt-view@example.com</code> user and the <code>QA mkt view</code> role if other checklists expect none.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> No QA popups, snippets, subscribers or services remain; the banner, <code>/legal/cookies</code> and the Scripts screen show only the site's real entries.</p>
+      <p class="ref">Ref: this checklist</p>
+    </article>
+  </section>
+
+</main>
+<footer class="page">Checklist 07 of 12. Results are saved in this browser only; use Export before clearing browser data. Afterwards restore the mail settings in <code>.env.local</code>, the Branding name, the GA4 Measurement ID, Inquiry notification emails and the module switches, and delete the QA popups, snippets, subscribers, cookie services and view-only account (MKT-099).</footer>
+</body>
+</html>

@@ -1,0 +1,1246 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Περιεχόμενο &amp; δημοσίευση</title>
+<link rel="stylesheet" href="../qa.css">
+<script src="../qa.js" defer></script>
+</head>
+<body>
+<nav class="crumbs"><a href="index.html">Χειροκίνητος έλεγχος CMS</a></nav>
+<header class="page">
+  <h1>03 · Περιεχόμενο: συλλογές, έγγραφα &amp; δημοσίευση</h1>
+  <p class="scope">Δημιουργία, επεξεργασία, δημοσίευση και διαγραφή περιεχομένου στο διαχειριστικό: Pages, Brands, Testimonials και Popups, κάθε τύπος πεδίου που προσφέρει ο επεξεργαστής, slugs και αυτόματες ανακατευθύνσεις, πρόχειρο / δημοσιευμένο / προγραμματισμένο / αρχειοθετημένο, μεταφράσεις, ιστορικό εκδόσεων, συγκρούσεις επεξεργασίας και κλειδώματα επεξεργασίας, προεπισκόπηση πρόχειρου, η προστασία μη αποθηκευμένων αλλαγών, η οθόνη λίστας, δικαιώματα περιεχομένου, shortcodes, εισαγωγή markdown, και πώς εμφανίζονται όλα αυτά στον δημόσιο ιστότοπο (ανανέωση cache, μπλοκ λίστας, sitemap). Τα πεδία SEO (λίστα ελέγχου 06), η συμπεριφορά των φορμών και των popups στον ιστότοπο (07), τα προϊόντα (08) και οι εμπειρίες (09) καλύπτονται αλλού. Χρειάζεστε δύο browsers (ή ένα κανονικό και ένα ιδιωτικό παράθυρο), πρόσβαση με πρόγραμμα-πελάτη βάσης δεδομένων και τερματικό στο μηχάνημα δοκιμών.</p>
+</header>
+<main>
+
+  <section class="suite" id="suite-prep">
+    <h2>Πριν ξεκινήσετε</h2>
+    <p class="intro">Η λίστα ελέγχου 01 πρέπει να έχει ολοκληρωθεί: τα migrations έχουν εφαρμοστεί, ο superadmin <code>qa-admin@example.com</code> υπάρχει, οι σελίδες των seeds έχουν δημοσιευτεί με <code>npm run db:seed-site -- --force --publish-samples</code>, και υπάρχει δεύτερος superadmin <code>qa2@example.com</code> (όνομα <code>QA Second</code>) για τις περιπτώσεις κλειδώματος. Τα EL και EN είναι επιλεγμένα στα <strong>Editing</strong> και <strong>Public</strong> στο <strong>Settings</strong> → <strong>Languages</strong>. Τα URL παρακάτω χρησιμοποιούν το <code>http://localhost:3002</code>· σε φιλοξενούμενο περιβάλλον δοκιμών χρησιμοποιήστε τη διεύθυνσή του. Το διαχειριστικό βρίσκεται στο <code>/admin</code>. Το “Pages” στο πλευρικό μενού ανοίγει το <code>/admin/page</code>. Σημειώστε το id κάθε εγγράφου που δημιουργείτε: είναι ο αριθμός στο τέλος του URL επεξεργασίας του (<code>/admin/page/&lt;id&gt;</code>).</p>
+
+    <article class="tc" id="CON-001" data-priority="P2">
+      <h3>Δημιουργία λογαριασμού συντάκτη και λογαριασμού αναγνώστη</h3>
+      <ol class="steps">
+        <li>Συνδεδεμένοι ως <code>qa-admin@example.com</code>, ανοίξτε το <strong>Roles</strong>. Στο <strong>Add a role</strong> συμπληρώστε <strong>Role name</strong> <code>QA writer</code>, επιλέξτε μόνο τα <strong>Access</strong>, <strong>View content</strong> και <strong>Edit content</strong> (αφήστε το <strong>Publish content</strong> χωρίς επιλογή) και πατήστε <strong>Add role</strong>.</li>
+        <li>Προσθέστε δεύτερο ρόλο <code>QA reader</code> μόνο με <strong>Access</strong> και <strong>View content</strong>.</li>
+        <li>Ανοίξτε το <strong>Users</strong>. Στο <strong>Add a user</strong> δημιουργήστε τον <code>qa-writer@example.com</code> με ρόλο <code>QA writer</code> και τον <code>qa-reader@example.com</code> με ρόλο <code>QA reader</code>, ο καθένας με ισχυρό κωδικό (για παράδειγμα <code>Qa-Writer-Pass-2026!</code>), πατώντας κάθε φορά <strong>Add user</strong>.</li>
+        <li>Συνδεθείτε με κάθε νέο χρήστη στο ιδιωτικό παράθυρο (ολοκληρώστε τη ρύθμιση του ελέγχου ταυτότητας δύο παραγόντων αν ζητηθεί, βλ. λίστα ελέγχου 05).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Οι δύο ρόλοι και οι δύο χρήστες αποθηκεύονται χωρίς σφάλμα. Κάθε νέος χρήστης καταλήγει στον πίνακα ελέγχου και βλέπει τα <strong>Pages</strong> και <strong>Brands</strong> κάτω από το Content στο πλευρικό μενού.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/RolesManager.tsx</code> · <code>src/cms/modules/auth/permission-labels.ts</code> · <code>src/cms/admin/UsersManager.tsx</code></p>
+    </article>
+
+    <article class="tc" id="CON-002" data-priority="P2">
+      <h3>Προσθήκη ενός προσαρμοσμένου πεδίου κάθε τύπου στα Pages</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Σύνδεση ως <code>qa-admin@example.com</code>. Οι περιπτώσεις πεδίων αργότερα σε αυτή τη λίστα ελέγχου χρησιμοποιούν αυτά τα πεδία· είναι ο μόνος τρόπος με τον οποίο ο βασικός ιστότοπος προσφέρει πεδία αριθμού, ναι/όχι, ημερομηνίας, χρώματος, συσχέτισης και επαναλήπτη (repeater) σε μια σελίδα.</p>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/admin/settings?tab=Fields</code> και επιλέξτε την υποκαρτέλα <strong>Pages</strong>.</li>
+        <li>Πατήστε <strong>Add field</strong> δώδεκα φορές και συμπληρώστε <strong>Key</strong>, <strong>Label — EL</strong> και <strong>Label — EN</strong> (την ίδια ετικέτα και στα δύο) και <strong>Type</strong> ως εξής:
+          <code>qa_text</code> “QA text” <strong>Text</strong>·
+          <code>qa_long</code> “QA long” <strong>Long text</strong>·
+          <code>qa_rich</code> “QA rich” <strong>Rich text</strong>·
+          <code>qa_number</code> “QA number” <strong>Number</strong> με <strong>Min</strong> 1, <strong>Max</strong> 10 και επιλεγμένο το <strong>Whole numbers only</strong>·
+          <code>qa_choice</code> “QA choice” <strong>Select (one)</strong> με επιλογές <code>red</code> και <code>blue</code> (<strong>Add option</strong>)·
+          <code>qa_multi</code> “QA multi” <strong>Select (many)</strong> με επιλογές <code>x</code>, <code>y</code>, <code>z</code>·
+          <code>qa_flag</code> “QA flag” <strong>Yes / no</strong>·
+          <code>qa_date</code> “QA date” <strong>Date</strong>·
+          <code>qa_colour</code> “QA colour” <strong>Colour</strong>·
+          <code>qa_image</code> “QA image” <strong>Image</strong>·
+          <code>qa_related</code> “QA related” <strong>Relation</strong> με <strong>Target collection</strong> <code>page</code>·
+          <code>qa_rows</code> “QA rows” <strong>Repeater</strong> με δύο υποπεδία (<strong>Add sub-field</strong>): κλειδί <code>label</code> τύπου Text, κλειδί <code>qty</code> τύπου Number.</li>
+        <li>Πατήστε <strong>Save fields</strong>. Στη συνέχεια ανοίξτε <strong>Pages</strong> → <strong>+ New</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Εμφανίζεται με πράσινο το <code>Fields saved.</code> και δεν εμφανίζεται πορτοκαλί λίστα προβλημάτων. Η φόρμα νέας σελίδας έχει κάρτα <strong>Custom fields</strong> με και τα δώδεκα στοιχεία ελέγχου με τη σειρά που καταχωρίστηκαν. (Η υποχρεωτικότητα ελέγχεται ξεχωριστά και απενεργοποιείται ξανά, επειδή ένα υποχρεωτικό προσαρμοσμένο πεδίο θα εμπόδιζε τη δημοσίευση κάθε υπάρχουσας σελίδας.)</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/CustomFieldsManager.tsx</code> · <code>src/cms/admin/fields/DefinitionEditors.tsx</code> · <code>src/cms/core/fields/definitions.ts</code> (<code>compileOne</code>) · <code>src/app/admin/(shell)/settings/page.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-pages">
+    <h2>Σελίδες: δημιουργία, δημοσίευση, επεξεργασία, διαγραφή</h2>
+    <p class="intro">Σύνδεση ως <code>qa-admin@example.com</code>, εκτός αν η περίπτωση ορίζει διαφορετικά. Οι σελίδες είναι δημόσιες στο <code>/{slug}</code> στα ελληνικά και στο <code>/en/{slug}</code> στα αγγλικά. Μια σελίδα που δεν είναι δημόσια ανακατευθύνει στο <code>/page-not-found</code> (ελληνική επικεφαλίδα <strong>Η σελίδα δεν βρέθηκε</strong>) ή στο <code>/en/page-not-found</code> (<strong>Page not found</strong>).</p>
+
+    <article class="tc" id="CON-003" data-priority="P1">
+      <h3>Δημιουργία πρόχειρης σελίδας</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <strong>Pages</strong> και πατήστε <strong>+ New</strong>.</li>
+        <li>Πληκτρολογήστε <code>QA Page One</code> στο <strong>Title</strong>, <code>qa-page-one</code> στο <strong>Slug</strong>, <code>QA required</code> στο <strong>QA text</strong>. Αφήστε το <strong>Status — EL</strong> σε <code>draft</code>.</li>
+        <li>Πατήστε <strong>Create Page</strong>.</li>
+        <li>Εκτελέστε το παρακάτω SQL.</li>
+      </ol>
+<pre><code>SELECT id, slug, locale, status, canonical_path, published_at,
+       JSON_UNQUOTE(JSON_EXTRACT(data, '$.title')) AS title
+FROM documents WHERE type = 'page' AND slug = 'qa-page-one';</code></pre>
+      <ul class="exp">
+        <li>Η επικεφαλίδα της οθόνης δημιουργίας γράφει <strong>New Page</strong>. Μετά το πάτημα βρίσκεστε στο <code>/admin/page/&lt;id&gt;</code> με επικεφαλίδα <strong>QA Page One</strong> και από κάτω <code>/qa-page-one</code>· η ένδειξη κατάστασης γράφει <code>draft</code>· το <strong>Version history</strong> εμφανίζει <code>v1 (current)</code>.</li>
+        <li>SQL: μία γραμμή, locale <code>el</code>, status <code>draft</code>, canonical_path <code>/qa-page-one</code>, published_at NULL, title <code>QA Page One</code>.</li>
+        <li>Αν ανοίξετε το <code>/qa-page-one</code> σε παράθυρο χωρίς σύνδεση, καταλήγετε στη σελίδα «δεν βρέθηκε».</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/[collection]/new/page.tsx</code> · <code>src/cms/admin/DocumentForm.tsx</code> · <code>src/cms/core/documents/service.ts</code> (<code>createDocument</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-004" data-priority="P1">
+      <h3>Δημοσίευση της σελίδας και εμφάνισή της στον ιστότοπο</h3>
+      <ol class="steps">
+        <li>Στον επεξεργαστή του QA Page One ορίστε <strong>Status — EL</strong> σε <code>published</code> και πατήστε <strong>Save EL</strong>.</li>
+        <li>Σε παράθυρο χωρίς σύνδεση ανοίξτε το <code>/qa-page-one</code>.</li>
+        <li>Επαναλάβετε το SQL της προηγούμενης περίπτωσης.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Εμφανίζεται πράσινο μήνυμα <code>EL saved.</code>· η ένδειξη γράφει <code>published</code> και η κουκκίδα της καρτέλας γλώσσας EL γίνεται πράσινη. Η δημόσια σελίδα έχει επικεφαλίδα <strong>QA Page One</strong>. SQL: status <code>published</code>, published_at περίπου η τρέχουσα ώρα.</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/[slug]/page.tsx</code> · <code>src/cms/core/documents/service.ts</code> (κανόνας <code>publishedAt</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-005" data-priority="P1">
+      <h3>Η επεξεργασία δημοσιευμένης σελίδας ενημερώνει αμέσως τον ιστότοπο</h3>
+      <ol class="steps">
+        <li>Αφήστε το <code>/qa-page-one</code> ανοιχτό στο παράθυρο χωρίς σύνδεση.</li>
+        <li>Στο διαχειριστικό αλλάξτε τον τίτλο σε <code>QA Page One edited</code> και πατήστε <strong>Save EL</strong>.</li>
+        <li>Ανανεώστε τη δημόσια σελίδα (κανονική ανανέωση, χωρίς παράκαμψη της cache).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η δημόσια επικεφαλίδα γράφει <strong>QA Page One edited</strong> από την πρώτη ανανέωση. Αλλάζει και ο τίτλος της καρτέλας του browser. Δεν χρειάζεται επανεκκίνηση ούτε αναμονή (η αποθήκευση καθαρίζει το αντίγραφο της cache).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/read/revalidate.ts</code> · <code>src/cms/core/routes/collections.ts</code> (<code>revalidateDocument</code>) · docs/dev-guides/03-content-model.md §3.7</p>
+    </article>
+
+    <article class="tc" id="CON-006" data-priority="P2">
+      <h3>Κεντρική εικόνα (hero): επιλογή, εμφάνιση, αφαίρεση</h3>
+      <ol class="steps">
+        <li>Στο QA Page One πατήστε <strong>Choose image…</strong> κάτω από το <strong>Hero image</strong>.</li>
+        <li>Στο παράθυρο <strong>Media library</strong> πατήστε <strong>Upload</strong>, επιλέξτε ένα JPG ή PNG και έπειτα πατήστε το πλακίδιό του.</li>
+        <li>Πατήστε <strong>Save EL</strong> και ανανεώστε το <code>/qa-page-one</code>.</li>
+        <li>Πίσω στον επεξεργαστή πατήστε <strong>Clear</strong>, αποθηκεύστε και ανανεώστε τη δημόσια σελίδα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Μετά την επιλογή, το πεδίο δείχνει μικρογραφία, το id του αρχείου και τα κουμπιά <strong>Change</strong> / <strong>Clear</strong>. Η δημόσια σελίδα δείχνει την εικόνα κάτω από τον τίτλο. Μετά το Clear και την αποθήκευση δεν εμφανίζεται σφάλμα (κανένα “Invalid UUID”) και η δημόσια σελίδα δεν έχει εικόνα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/fields/MediaPicker.tsx</code> · <code>src/cms/config/zod.ts</code> (περίπτωση <code>image</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-007" data-priority="P2">
+      <h3>Ο τίτλος είναι υποχρεωτικός μόνο κατά τη δημοσίευση</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>+ New</strong>. Αφήστε κενό το <strong>Title</strong>, slug <code>qa-no-title</code>, <strong>QA text</strong> <code>x</code>, status <code>published</code>, πατήστε <strong>Create Page</strong>.</li>
+        <li>Αλλάξτε το status σε <code>draft</code> και πατήστε ξανά <strong>Create Page</strong>.</li>
+        <li>Ανοίξτε το <strong>Pages</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: κόκκινο πλαίσιο <code>Validation failed.</code> και <code>Title is required</code> κάτω από το πεδίο Title. Δεν δημιουργείται τίποτα.</li>
+        <li>Βήμα 2: δημιουργείται το πρόχειρο. Η επικεφαλίδα του επεξεργαστή γράφει <strong>Untitled</strong>· η λίστα εμφανίζει τη γραμμή με το slug της <code>qa-no-title</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/config/zod.ts</code> (<code>applyModifiers</code>) · <code>src/cms/core/documents/service.ts</code> (<code>humanizeIssue</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-008" data-priority="P1">
+      <h3>Διαγραφή σελίδας από τη λίστα</h3>
+      <ol class="steps">
+        <li>Στο <strong>Pages</strong> πατήστε <strong>Delete</strong> στη γραμμή <code>qa-no-title</code> και έπειτα <strong>Cancel</strong> στο παράθυρο διαλόγου.</li>
+        <li>Πατήστε ξανά <strong>Delete</strong> και επιβεβαιώστε.</li>
+        <li>Εκτελέστε: <code>SELECT COUNT(*) FROM documents WHERE slug = 'qa-no-title';</code> και <code>SELECT COUNT(*) FROM document_versions WHERE document_id = &lt;its id&gt;;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ο τίτλος του παραθύρου διαλόγου είναι <strong>Delete this document?</strong> με το κείμενο <code>This cannot be undone.</code> Το Cancel διατηρεί τη γραμμή. Μετά την επιβεβαίωση, το κουμπί γράφει για λίγο <code>Deleting…</code> και η γραμμή εξαφανίζεται· το σύνολο κάτω από τον πίνακα μειώνεται κατά ένα. Και οι δύο μετρήσεις είναι 0.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/DocumentList.tsx</code> (<code>remove</code>) · <code>src/cms/core/routes/collections.ts</code> (<code>collectionDeleteRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-009" data-priority="P2">
+      <h3>Η διαγραφή μεταφρασμένης σελίδας αφαιρεί όλες τις γλώσσες</h3>
+      <ol class="steps">
+        <li>Δημιουργήστε σελίδα <code>QA Delete Both</code>, slug <code>qa-delete-both</code>, QA text <code>x</code>, αποθηκεύστε· μεταβείτε στην καρτέλα <strong>EN</strong>, πατήστε <strong>Copy from EL</strong> και <strong>Create EN</strong>.</li>
+        <li>Στο <strong>Pages</strong> πατήστε <strong>Delete</strong> στη γραμμή της και επιβεβαιώστε.</li>
+        <li>Εκτελέστε: <code>SELECT COUNT(*) FROM documents WHERE slug = 'qa-delete-both';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το παράθυρο διαλόγου γράφει <code>All 2 language versions will be deleted. This cannot be undone.</code> Η γραμμή εξαφανίζεται και η μέτρηση είναι 0.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/DocumentList.tsx</code></p>
+    </article>
+
+    <article class="tc" id="CON-010" data-priority="P3">
+      <h3>Slug που χρησιμοποιείται ήδη στην ίδια γλώσσα απορρίπτεται</h3>
+      <ol class="steps">
+        <li>Δημιουργήστε νέα σελίδα με τίτλο <code>Dup</code>, slug <code>about</code> (το χρησιμοποιεί ήδη η σελίδα About των seeds), status draft, και πατήστε <strong>Create Page</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κόκκινο πλαίσιο <code>Already exists.</code> και καμία νέα γραμμή. (Καταγράψτε αν το μήνυμα δεν λέει ποιο πεδίο είναι διπλότυπο· το API σκόπιμα παραμένει γενικό.)</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/api/handler.ts</code> (αντιστοίχιση διπλότυπου κλειδιού) · <code>uniq_documents_type_slug_locale</code></p>
+    </article>
+
+    <article class="tc" id="CON-011" data-priority="P3">
+      <h3>Λανθασμένα URL επεξεργασίας δείχνουν “Page not found”· το ψευδώνυμο σε πληθυντικό ανακατευθύνει</h3>
+      <ol class="steps">
+        <li>Ανοίξτε τα <code>/admin/page/abc</code>, <code>/admin/page/99999999</code> και <code>/admin/brand/&lt;id of QA Page One&gt;</code>.</li>
+        <li>Ανοίξτε το <code>/admin/pages</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τα τρία URL του βήματος 1 δείχνουν την οθόνη “Page not found” του διαχειριστικού, ποτέ σφάλμα που περιέχει SQL. Το <code>/admin/pages</code> ανακατευθύνει στο <code>/admin/page</code>.</p>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/[collection]/[id]/page.tsx</code> · <code>src/lib/cms/collection-route.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-slug">
+    <h2>Slugs &amp; αυτόματες ανακατευθύνσεις</h2>
+    <p class="intro">Ένα νέο ή τροποποιημένο slug κανονικοποιείται κατά την αποθήκευση: πεζά, παύλες, μεταγραφή των ελληνικών, έως 96 χαρακτήρες. Η αλλαγή του slug ενός δημοσιευμένου εγγράφου δημιουργεί ανακατεύθυνση 301 από την παλιά διεύθυνση (εμφανίζεται στο <strong>SEO</strong> → Redirects). Χρησιμοποιήστε <code>curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' &lt;url&gt;</code> για να δείτε την κατάσταση και τον προορισμό.</p>
+
+    <article class="tc" id="CON-012" data-priority="P1">
+      <h3>Το “My Post” αποθηκεύεται ως my-post</h3>
+      <ol class="steps">
+        <li>Δημιουργήστε σελίδα με τίτλο <code>My Post</code> και slug <code>My Post</code>, QA text <code>x</code>, status draft, και πατήστε <strong>Create Page</strong>.</li>
+        <li>Κοιτάξτε το πεδίο <strong>Slug</strong> και τη γραμμή κάτω από την επικεφαλίδα.</li>
+        <li>Αλλάξτε το slug σε <code>My  Post  Again</code> και πατήστε <strong>Save EL</strong>· κοιτάξτε το πεδίο Slug χωρίς ανανέωση.</li>
+        <li>Εκτελέστε: <code>SELECT slug, canonical_path FROM documents WHERE type = 'page' AND slug LIKE 'my-post%';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Μετά το βήμα 1 το πεδίο Slug και η γραμμή της επικεφαλίδας δείχνουν <code>my-post</code>. Μετά το βήμα 3 το πεδίο δείχνει αμέσως <code>my-post-again</code> (όχι αυτό που πληκτρολογήθηκε). SQL: slug <code>my-post-again</code>, canonical_path <code>/my-post-again</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/documents/slug-input.ts</code> · <code>src/cms/core/slug.ts</code> · <code>src/cms/admin/document-save.ts</code> (<code>slugAfterSave</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-013" data-priority="P2">
+      <h3>Ελληνικό slug μεταγράφεται σε λατινικούς χαρακτήρες</h3>
+      <ol class="steps">
+        <li>Δημιουργήστε σελίδα με τίτλο <code>Νέα Άρθρα</code> και slug <code>Νέα Άρθρα</code>, QA text <code>x</code>, status published, και πατήστε <strong>Create Page</strong>.</li>
+        <li>Ανοίξτε το <code>/nea-arthra</code> χωρίς σύνδεση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το πεδίο Slug δείχνει <code>nea-arthra</code>· η δημόσια σελίδα εμφανίζεται με επικεφαλίδα <strong>Νέα Άρθρα</strong>· η γραμμή διευθύνσεων δείχνει απλούς χαρακτήρες ASCII (όχι ελληνικά κωδικοποιημένα με %).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/slug.ts</code> (<code>GREEK_TO_LATIN</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-014" data-priority="P3">
+      <h3>Τόνοι, δίψηφα, σύμβολα και κενά</h3>
+      <ol class="steps">
+        <li>Δημιουργήστε πρόχειρη σελίδα με slug <code>  Καλοκαίρι 2026 — Ουζερί!  </code> (μαζί με τα κενά στην αρχή και στο τέλος).</li>
+        <li>Δημιουργήστε άλλη πρόχειρη σελίδα με slug 120 γράμματα <code>a</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η πρώτη αποθηκεύεται ως <code>kalokairi-2026-ouzeri</code>· η δεύτερη ως ακριβώς 96 χαρακτήρες <code>a</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/slug.ts</code> (<code>SLUG_MAX_LENGTH</code>, <code>GREEK_DIGRAPHS</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-015" data-priority="P3">
+      <h3>Κενό slug ή slug μόνο με σύμβολα απορρίπτεται</h3>
+      <ol class="steps">
+        <li>Σε νέα σελίδα αδειάστε το πεδίο Slug και πατήστε <strong>Create Page</strong>.</li>
+        <li>Πληκτρολογήστε <code>!!!</code> ως slug και πατήστε <strong>Create Page</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: εμφανίζεται στο Slug το μήνυμα του ίδιου του browser “fill out this field” (ή το αντίστοιχο στη γλώσσα του browser)· δεν αποστέλλεται τίποτα.</li>
+        <li>Βήμα 2: κόκκινο πλαίσιο <code>That address has no letters or numbers left once it is made URL-safe. Type a slug with some.</code> Δεν δημιουργείται τίποτα.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/documents/slug-input.ts</code> (<code>SLUG_UNUSABLE</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-016" data-priority="P1">
+      <h3>Η μετονομασία δημοσιευμένης σελίδας ανακατευθύνει την παλιά διεύθυνση</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το QA Page One (δημοσιευμένο). Αλλάξτε το slug σε <code>qa-page-renamed</code> και πατήστε <strong>Save EL</strong>.</li>
+        <li>Εκτελέστε την εντολή curl της εισαγωγής για τα <code>http://localhost:3002/qa-page-one</code> και <code>http://localhost:3002/qa-page-renamed</code>.</li>
+        <li>Εκτελέστε το παρακάτω SQL και ανοίξτε το <strong>SEO</strong> → Redirects στο διαχειριστικό.</li>
+      </ol>
+<pre><code>SELECT source, target, status_code, kind, active, reason, notes
+FROM seo_redirects WHERE reason = 'slug_change' ORDER BY id;
+SELECT slug, canonical_path FROM documents WHERE id = &lt;QA Page One id&gt;;</code></pre>
+      <ul class="exp">
+        <li>curl: το <code>/qa-page-one</code> απαντά <code>301</code> προς <code>…/qa-page-renamed</code>· το <code>/qa-page-renamed</code> απαντά <code>200</code>.</li>
+        <li>SQL: μια γραμμή <code>/qa-page-one</code> → <code>/qa-page-renamed</code>, 301, <code>literal</code>, active 1, reason <code>slug_change</code>, notes <code>Auto: the page’s address changed — old links are sent to the new one</code>. Το canonical_path του εγγράφου είναι <code>/qa-page-renamed</code>.</li>
+        <li>Η ανακατεύθυνση εμφανίζεται στην οθόνη SEO με αυτή τη σημείωση.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/seo/slug-change-redirect.ts</code> · <code>src/cms/core/documents/service.ts</code> (<code>nextCanonicalPath</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-017" data-priority="P3">
+      <h3>Και μετά από δεύτερη μετονομασία η ανακατεύθυνση γίνεται με ένα βήμα</h3>
+      <ol class="steps">
+        <li>Μετονομάστε την ίδια σελίδα από <code>qa-page-renamed</code> σε <code>qa-page-final</code> και αποθηκεύστε.</li>
+        <li>Εκτελέστε curl για τα <code>/qa-page-one</code> και <code>/qa-page-renamed</code>· επαναλάβετε το SQL των ανακατευθύνσεων.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και οι δύο παλιές διευθύνσεις απαντούν <code>301</code> απευθείας στο <code>/qa-page-final</code> (χωρίς αλυσίδα μέσω του <code>/qa-page-renamed</code>). Το SQL δείχνει και τις δύο πηγές με προορισμό <code>/qa-page-final</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/seo/slug-change-redirect.ts</code> (<code>retarget</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-018" data-priority="P2">
+      <h3>Νέα σελίδα μπορεί να πάρει μια παλιά διεύθυνση</h3>
+      <ol class="steps">
+        <li>Δημιουργήστε νέα σελίδα με τίτλο <code>QA Reuse</code> και slug <code>qa-page-one</code>, QA text <code>x</code>, status <code>published</code>, και πατήστε <strong>Create Page</strong>.</li>
+        <li>Εκτελέστε curl για το <code>/qa-page-one</code>· ανοίξτε το στον browser· επαναλάβετε το SQL των ανακατευθύνσεων.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η αποθήκευση πετυχαίνει (η παλιά κανονική διαδρομή είναι ελεύθερη). Το <code>/qa-page-one</code> απαντά <code>200</code> και δείχνει <strong>QA Reuse</strong>, όχι ανακατεύθυνση. Η γραμμή <code>slug_change</code> με πηγή <code>/qa-page-one</code> έχει αφαιρεθεί· αυτή για το <code>/qa-page-renamed</code> παραμένει.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/seo/slug-change-redirect.ts</code> (<code>remove</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-019" data-priority="P2">
+      <h3>Η μετονομασία μετακινεί όλες τις γλώσσες</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Η σελίδα <strong>About</strong> των seeds είναι δημοσιευμένη σε EL και EN.</p>
+      <ol class="steps">
+        <li>Ανοίξτε το About, αλλάξτε το slug σε <code>about-us</code> και πατήστε <strong>Save EL</strong>.</li>
+        <li>Εκτελέστε curl για τα <code>/about</code>, <code>/en/about</code>, <code>/about-us</code>, <code>/en/about-us</code>.</li>
+        <li>Εκτελέστε: <code>SELECT locale, slug, canonical_path FROM documents WHERE type = 'page' AND slug IN ('about','about-us');</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>EL saved.</code> χωρίς πορτοκαλί προειδοποίηση. <code>/about</code> → 301 προς <code>/about-us</code>· <code>/en/about</code> → 301 προς <code>/en/about-us</code>· και τα δύο νέα URL απαντούν 200. SQL: και οι δύο γραμμές έχουν slug <code>about-us</code>, κανονικές διαδρομές <code>/about-us</code> και <code>/en/about-us</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/DocumentForm.tsx</code> (διάδοση στις άλλες γλώσσες μέσα στο <code>submit</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-020" data-priority="P3">
+      <h3>Η επιστροφή στο αρχικό όνομα επαναφέρει την αρχική διεύθυνση</h3>
+      <ol class="steps">
+        <li>Μετονομάστε το About από <code>about-us</code> ξανά σε <code>about</code> και αποθηκεύστε.</li>
+        <li>Εκτελέστε curl για τα <code>/about</code> και <code>/about-us</code>· επαναλάβετε το SQL των ανακατευθύνσεων.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το <code>/about</code> απαντά 200 (ο παλιός κανόνας δεν το κρύβει πλέον)· <code>/about-us</code> → 301 προς <code>/about</code>. Το ίδιο ισχύει για τις διευθύνσεις <code>/en/</code>. Κανένας βρόχος ανακατευθύνσεων.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/seo/slug-change-redirect.ts</code> · <code>src/cms/core/seo/match.ts</code> (<code>redirectWouldLoop</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-021" data-priority="P3">
+      <h3>Η μετονομασία πρόχειρου δεν δημιουργεί ανακατεύθυνση</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το πρόχειρο <code>my-post-again</code>, αλλάξτε το slug του σε <code>my-post-draft</code> και αποθηκεύστε.</li>
+        <li>Εκτελέστε: <code>SELECT COUNT(*) FROM seo_redirects WHERE source = '/my-post-again';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Μέτρηση 0: κανείς δεν μπορούσε να φτάσει στην παλιά διεύθυνση, άρα δεν ανακατευθύνεται τίποτα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/seo/slug-change-redirect.ts</code> (<code>applySlugChangeRedirect</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-022" data-priority="P3">
+      <h3>Η διαγραφή μετονομασμένης σελίδας αφαιρεί τις αυτόματες ανακατευθύνσεις της</h3>
+      <ol class="steps">
+        <li>Διαγράψτε από τη λίστα τη σελίδα που βρίσκεται τώρα στο <code>qa-page-final</code>.</li>
+        <li>Εκτελέστε: <code>SELECT COUNT(*) FROM seo_redirects WHERE target = '/qa-page-final';</code> και curl για το <code>/qa-page-renamed</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Μέτρηση 0. Το <code>/qa-page-renamed</code> δεν ανακατευθύνει πλέον· καταλήγει στη σελίδα «δεν βρέθηκε».</p>
+      <p class="ref">Αναφ.: <code>seo_redirects.document_id</code> (ON DELETE CASCADE) · <code>src/cms/db/adapters/mysql/schema/seo.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-status">
+    <h2>Καταστάσεις &amp; προγραμματισμένη δημοσίευση</h2>
+    <p class="intro">Κάθε γλώσσα έχει τη δική της κατάσταση: <code>draft</code>, <code>published</code>, <code>scheduled</code> ή <code>archived</code>. Το «i» δίπλα στο πεδίο Status τις εξηγεί. Για τις περιπτώσεις του χρονοπρογραμματιστή πρέπει να έχει οριστεί το <code>CMS_CRON_SECRET</code> στο περιβάλλον. Σημειώστε τη ζώνη ώρας του υπολογιστή σας (η Ελλάδα είναι UTC+3 τη θερινή περίοδο και UTC+2 τη χειμερινή).</p>
+
+    <article class="tc" id="CON-023" data-priority="P2">
+      <h3>Οι αρχειοθετημένες σελίδες φεύγουν από τον ιστότοπο και επιστρέφουν</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>nea-arthra</code> (δημοσιευμένο), ορίστε status <code>archived</code> και αποθηκεύστε. Ανοίξτε το <code>/nea-arthra</code> χωρίς σύνδεση και κοιτάξτε τη λίστα Pages.</li>
+        <li>Επαναφέρετέ το σε <code>published</code>, αποθηκεύστε και ανανεώστε τη δημόσια σελίδα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Αρχειοθετημένο: το δημόσιο URL καταλήγει στη σελίδα «δεν βρέθηκε»· η ετικέτα <code>EL</code> της λίστας έχει διακεκομμένο περίγραμμα και είναι διαγραμμένη· η καρτέλα γλώσσας δείχνει κενό δακτύλιο. Ξανά δημοσιευμένο: η σελίδα επιστρέφει από την πρώτη ανανέωση.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/read/visibility.ts</code> · <code>src/cms/admin/DocumentList.tsx</code> (<code>STATUS_COLORS</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-024" data-priority="P1">
+      <h3>Προγραμματισμός σελίδας με το “Publish at”</h3>
+      <ol class="steps">
+        <li>Δημιουργήστε σελίδα με τίτλο <code>QA Scheduled</code>, slug <code>qa-scheduled</code>, QA text <code>x</code>.</li>
+        <li>Ορίστε status <code>scheduled</code>. Στην ενότητα <strong>Publishing</strong> ορίστε το <strong>Publish at</strong> στη σημερινή ημερομηνία, 5 λεπτά από τώρα (τοπική ώρα). Πατήστε <strong>Create Page</strong>.</li>
+        <li>Ανοίξτε το <code>/qa-scheduled</code> χωρίς σύνδεση· ανοίξτε τη λίστα Pages.</li>
+      </ol>
+      <ul class="exp">
+        <li>Η επιλογή <code>scheduled</code> ανοίγει την ενότητα Publishing και εμφανίζει το <strong>Publish at</strong> (υποχρεωτικό), του οποίου το κείμενο βοήθειας τελειώνει με τη ζώνη ώρας σας σε παρένθεση, π.χ. <code>(Europe/Athens)</code>.</li>
+        <li>Μετά την αποθήκευση, η ένδειξη γράφει <code>scheduled</code> και η κουκκίδα της καρτέλας είναι πορτοκαλί· η ετικέτα στη λίστα είναι πορτοκαλί.</li>
+        <li>Το δημόσιο URL καταλήγει στη σελίδα «δεν βρέθηκε» μέχρι να περάσει η ώρα.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/DocumentForm.tsx</code> (ενότητα Publishing) · <code>src/cms/admin/local-datetime.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-025" data-priority="P2">
+      <h3>Το “Publish at” αποθηκεύεται σε UTC και εμφανίζεται σε τοπική ώρα</h3>
+      <ol class="steps">
+        <li>Σημειώστε την ακριβή τοπική ώρα που καταχωρίσατε για το QA Scheduled.</li>
+        <li>Εκτελέστε το παρακάτω SQL.</li>
+        <li>Ανανεώστε τον επεξεργαστή και διαβάστε το πεδίο Publish at.</li>
+      </ol>
+<pre><code>SET time_zone = '+00:00';
+SELECT status, scheduled_for FROM documents WHERE slug = 'qa-scheduled';</code></pre>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το scheduled_for ισούται με την τοπική ώρα που πληκτρολογήσατε μείον τη διαφορά σας από το UTC (για την Αθήνα τη θερινή περίοδο, 3 ώρες νωρίτερα). Μετά την ανανέωση το πεδίο δείχνει ακριβώς την τοπική ώρα που πληκτρολογήσατε, όχι μετατοπισμένη. Αν η τιμή του SQL διαφέρει κατά τη διαφορά ώρας, σημειώστε στο αποτέλεσμα τη ζώνη ώρας του server της εφαρμογής (<code>date</code> στον server).</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/local-datetime.ts</code> (<code>isoToLocalInput</code>, <code>localInputToIso</code>) · <code>src/app/admin/(shell)/[collection]/[id]/page.tsx</code> (<code>toWireDateTime</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-026" data-priority="P1">
+      <h3>Ο χρονοπρογραμματιστής δημοσιεύει έγγραφο του οποίου ήρθε η ώρα</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Η ώρα του QA Scheduled έχει περάσει. <strong>Μην</strong> ανοίξετε τη λίστα Pages ή τον επεξεργαστή του μετά από εκείνη την ώρα (το άνοιγμά τους επίσης το δημοσιεύει, βλ. την επόμενη περίπτωση).</p>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s -X POST -H "x-cron-secret: &lt;your CMS_CRON_SECRET&gt;" http://localhost:3002/api/cms/cron/content-publish-scheduled</code>.</li>
+        <li>Ανοίξτε το <code>/qa-scheduled</code> χωρίς σύνδεση.</li>
+        <li>Εκτελέστε το παρακάτω SQL.</li>
+      </ol>
+<pre><code>SET time_zone = '+00:00';
+SELECT status, published_at, scheduled_for FROM documents WHERE slug = 'qa-scheduled';
+SELECT actor_label, action, created_at FROM audit_logs
+WHERE action = 'document.publish_scheduled' ORDER BY id DESC LIMIT 1;</code></pre>
+      <ul class="exp">
+        <li>Το curl τυπώνει <code>{"ok":true,"data":{"status":"ran","result":{"published":1,"failed":0}}}</code>.</li>
+        <li>Η δημόσια σελίδα δείχνει <strong>QA Scheduled</strong>.</li>
+        <li>SQL: status <code>published</code>, published_at ίσο με scheduled_for· μια γραμμή audit με actor_label <code>scheduler</code>.</li>
+        <li>Αν εκτελέσετε ξανά το curl, τυπώνει <code>"published":0</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/api/cms/cron/[job]/route.ts</code> · <code>src/cms/core/documents/publish-scheduled.ts</code> · docs/dev-guides/10-settings-cron-operations.md</p>
+    </article>
+
+    <article class="tc" id="CON-027" data-priority="P2">
+      <h3>Το άνοιγμα της λίστας στο διαχειριστικό δημοσιεύει επίσης έγγραφο του οποίου ήρθε η ώρα</h3>
+      <ol class="steps">
+        <li>Προγραμματίστε άλλη σελίδα <code>qa-scheduled-2</code> για 2 λεπτά αργότερα. Περιμένετε να περάσει η ώρα· μην εκτελέσετε το cron.</li>
+        <li>Ανοίξτε τη λίστα Pages.</li>
+        <li>Ανοίξτε το <code>/qa-scheduled-2</code> χωρίς σύνδεση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η λίστα δείχνει την ετικέτα EL της γραμμής πράσινη (δημοσιευμένο), όχι πορτοκαλί· η δημόσια σελίδα εμφανίζεται. Η κατάσταση στο SQL είναι <code>published</code>.</p>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/[collection]/page.tsx</code> (<code>promoteDueScheduled</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-028" data-priority="P2">
+      <h3>Το “Scheduled” χωρίς ημερομηνία απορρίπτεται</h3>
+      <ol class="steps">
+        <li>Σε νέα σελίδα (slug <code>qa-sched-nodate</code>, QA text <code>x</code>) ορίστε status <code>scheduled</code>, αφήστε κενό το Publish at και πατήστε <strong>Create Page</strong>.</li>
+        <li>Αποθηκεύστε την αντί γι’ αυτό ως πρόχειρο. Έπειτα ορίστε την σε <code>scheduled</code> χωρίς ημερομηνία και πατήστε <strong>Save EL</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Μόλις επιλεγεί το <code>scheduled</code>, εμφανίζεται κάτω από το Publish at το <code>Pick a date and time, or change the status.</code></li>
+        <li>Βήμα 1: δεν δημιουργείται τίποτα· κόκκινο πλαίσιο <code>Validation failed.</code></li>
+        <li>Βήμα 2: κόκκινο πλαίσιο <code>A scheduled document needs a publish date — pick one, or set the status back to draft.</code>· η αποθηκευμένη κατάσταση παραμένει <code>draft</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/collections.ts</code> (<code>SCHEDULE_WITHOUT_DATE</code>, <code>createBodyChecked</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-029" data-priority="P3">
+      <h3>Προγραμματισμένη ώρα στο παρελθόν δημοσιεύεται αμέσως</h3>
+      <ol class="steps">
+        <li>Στο <code>qa-sched-nodate</code> ορίστε <code>scheduled</code> με Publish at μία ώρα πριν και αποθηκεύστε.</li>
+        <li>Ανοίξτε το <code>/qa-sched-nodate</code> χωρίς σύνδεση (πριν ανοίξετε τη λίστα).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η αποθήκευση πετυχαίνει και η δημόσια σελίδα εμφανίζεται αμέσως (ένα προγραμματισμένο έγγραφο του οποίου η ώρα έχει περάσει είναι δημόσιο). Στην επόμενη επίσκεψη στη λίστα εμφανίζεται ως δημοσιευμένο.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/read/visibility.ts</code> (<code>isDocumentVisible</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-030" data-priority="P3">
+      <h3>Σε άλλη ζώνη ώρας η ίδια χρονική στιγμή εμφανίζεται διαφορετικά</h3>
+      <ol class="steps">
+        <li>Ανοίξτε τον επεξεργαστή του QA Scheduled στον Chrome. Ανοίξτε DevTools → ⋮ → More tools → <strong>Sensors</strong>, ορίστε το <strong>Location</strong> σε προεπιλογή άλλης ζώνης (π.χ. <em>Mountain View</em>, America/Los_Angeles) και ανανεώστε.</li>
+        <li>Επιλέξτε προσωρινά <code>scheduled</code> (χωρίς αποθήκευση) για να δείτε το Publish at και διαβάστε το πεδίο και το κείμενο βοήθειάς του.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το κείμενο βοήθειας αναφέρει τη νέα ζώνη και το πεδίο δείχνει την ίδια χρονική στιγμή μετατρεμμένη σε αυτή τη ζώνη (10 ώρες νωρίτερα από την Αθήνα τη θερινή περίοδο). Επαναφέρετε τα Sensors στο τέλος.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/local-datetime.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-031" data-priority="P3">
+      <h3>Ο χρονοπρογραμματιστής απορρίπτει λάθος μυστικό</h3>
+      <ol class="steps">
+        <li>Εκτελέστε το curl του cron με <code>x-cron-secret: wrong</code> και προσθέστε <code>-w '\n%{http_code}\n'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κατάσταση <code>401</code>· δεν δημοσιεύεται τίποτα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/cron/service.ts</code> (<code>cronRoute</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-fields">
+    <h2>Τύποι πεδίων &amp; επικύρωση</h2>
+    <p class="intro">Χρησιμοποιεί τα προσαρμοσμένα πεδία που προστέθηκαν στην περίπτωση «Προσθήκη ενός προσαρμοσμένου πεδίου κάθε τύπου στα Pages». Εμφανίζονται στην κάρτα <strong>Custom fields</strong> και αποθηκεύονται στο <code>data.custom</code>. Εργαστείτε σε νέα πρόχειρη σελίδα <code>QA Fields</code> (slug <code>qa-fields</code>). Για να δείτε τις αποθηκευμένες τιμές εκτελέστε <code>SELECT JSON_EXTRACT(data, '$.custom') FROM documents WHERE slug = 'qa-fields' AND locale = 'el';</code>. Τα πεδία κειμένου, μεγάλου κειμένου και επιλογής (με σταθερές επιλογές) υπάρχουν επίσης στα Brands, Testimonials και Popups· ο επεξεργαστής κειμένου (rich text) ελέγχεται στις επόμενες ενότητες.</p>
+
+    <article class="tc" id="CON-032" data-priority="P2">
+      <h3>Κείμενο και μεγάλο κείμενο</h3>
+      <ol class="steps">
+        <li>Πληκτρολογήστε <code>Hello &amp; welcome</code> στο <strong>QA text</strong> και δύο γραμμές στο <strong>QA long</strong>. Πατήστε <strong>Create Page</strong>.</li>
+        <li>Ανανεώστε τον επεξεργαστή και εκτελέστε το SQL της εισαγωγής.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Οι τιμές διατηρούνται ακριβώς μετά την ανανέωση, μαζί με το σύμβολο &amp; και την αλλαγή γραμμής (αποθηκευμένη ως <code>\n</code> στο <code>qa_long</code>).</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/fields/FieldInput.tsx</code> (<code>LeafControl</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-033" data-priority="P2">
+      <h3>Υποχρεωτικό πεδίο εμποδίζει τη δημοσίευση, όχι την αποθήκευση</h3>
+      <ol class="steps">
+        <li>Στο Settings → Fields → Pages επιλέξτε <strong>Required</strong> στο QA text και πατήστε <strong>Save fields</strong>. Ανανεώστε το QA Fields.</li>
+        <li>Αδειάστε το <strong>QA text</strong> και πατήστε <strong>Save EL</strong> (πρόχειρο).</li>
+        <li>Ορίστε status <code>published</code> και πατήστε <strong>Save EL</strong>.</li>
+        <li>Συμπληρώστε ξανά το QA text και αποθηκεύστε ως δημοσιευμένο.</li>
+        <li>Αποεπιλέξτε ξανά το <strong>Required</strong> στο QA text και πατήστε <strong>Save fields</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Μετά το βήμα 1 το QA text επισημαίνεται ως υποχρεωτικό. Το βήμα 2 αποθηκεύει (<code>EL saved.</code>). Βήμα 3: κόκκινο <code>Validation failed.</code> και μήνυμα που τελειώνει σε <code>is required</code> κάτω από το QA text, και η κάρτα Custom fields είναι ανοιχτή. Καταγράψτε αν το μήνυμα αναφέρει το πεδίο ως “QA text” ή με το κλειδί του <code>qa_text</code>. Το βήμα 4 δημοσιεύει.</p>
+      <p class="ref">Αναφ.: <code>src/cms/config/zod.ts</code> (<code>applyModifiers</code>) · <code>src/cms/core/fields/definitions.ts</code> (οι ετικέτες είναι αντιστοιχίσεις ανά γλώσσα)</p>
+    </article>
+
+    <article class="tc" id="CON-034" data-priority="P2">
+      <h3>Αριθμός: όρια και ακέραιοι</h3>
+      <ol class="steps">
+        <li>Πληκτρολογήστε <code>11</code> στο <strong>QA number</strong> και πατήστε <strong>Save EL</strong>.</li>
+        <li>Πληκτρολογήστε <code>2.5</code> και αποθηκεύστε.</li>
+        <li>Πληκτρολογήστε <code>7</code> και αποθηκεύστε· εκτελέστε το SQL.</li>
+        <li>Αδειάστε το πεδίο και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήματα 1 και 2: εμφανίζεται το μήνυμα επικύρωσης του ίδιου του browser (η τιμή πρέπει να είναι ≤ 10 / εισαγάγετε έγκυρη τιμή) και δεν γίνεται αποθήκευση. Το βήμα 3 αποθηκεύει· το SQL δείχνει <code>"qa_number": 7</code> ως αριθμό, όχι <code>"7"</code>. Το βήμα 4 αποθηκεύει και το κλειδί αφαιρείται από το <code>custom</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/fields/FieldInput.tsx</code> (<code>number</code>) · <code>src/cms/config/zod.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-035" data-priority="P2">
+      <h3>Μονή και πολλαπλή επιλογή</h3>
+      <ol class="steps">
+        <li>Στο <strong>QA choice</strong> επιλέξτε <code>blue</code>. Στο <strong>QA multi</strong> πατήστε στο πεδίο <strong>Search options…</strong>, επιλέξτε <code>x</code>, έπειτα πληκτρολογήστε <code>z</code> και επιλέξτε το.</li>
+        <li>Αποθηκεύστε και εκτελέστε το SQL.</li>
+        <li>Επαναφέρετε το QA choice σε <strong>— select —</strong>, αφαιρέστε την ετικέτα <code>x</code> με το × της (<strong>Remove</strong>), αποθηκεύστε και εκτελέστε το SQL.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Οι επιλεγμένες τιμές εμφανίζονται ως ετικέτες· μια επιλεγμένη τιμή εξαφανίζεται από την αναπτυσσόμενη λίστα. Πρώτο SQL: <code>"qa_choice": "blue"</code>, <code>"qa_multi": ["x", "z"]</code>. Δεύτερο SQL: κανένα κλειδί <code>qa_choice</code>, <code>"qa_multi": ["z"]</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/fields/FieldInput.tsx</code> (<code>MultiSelect</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-036" data-priority="P2">
+      <h3>Ναι / όχι</h3>
+      <ol class="steps">
+        <li>Κοιτάξτε το <strong>QA flag</strong>, επιλέξτε το, αποθηκεύστε, εκτελέστε το SQL. Αποεπιλέξτε το, αποθηκεύστε, εκτελέστε το SQL.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Χωρίς επιλογή γράφει <code>Enable</code>· με επιλογή γράφει <code>Enabled</code>. Το SQL δείχνει <code>true</code> και μετά <code>false</code> (λογικές τιμές JSON).</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/fields/FieldInput.tsx</code> (<code>boolean</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-037" data-priority="P2">
+      <h3>Ημερομηνία</h3>
+      <ol class="steps">
+        <li>Επιλέξτε 1 Οκτωβρίου 2026 στο <strong>QA date</strong>, αποθηκεύστε και εκτελέστε το SQL.</li>
+        <li>Καθαρίστε την ημερομηνία με το κουμπί καθαρισμού του επιλογέα και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το SQL δείχνει <code>"qa_date": "2026-10-01"</code> (απλή ημερομηνία, χωρίς ώρα ή ζώνη). Μετά τον καθαρισμό το κλειδί αφαιρείται και δεν εμφανίζεται σφάλμα “invalid date”. (Το μόνο πεδίο ημερομηνίας και ώρας στον βασικό ιστότοπο είναι το “Publish at”, που ελέγχθηκε παραπάνω.)</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/fields/FieldInput.tsx</code> (<code>DateControl</code>) · <code>src/cms/admin/local-datetime.ts</code> (<code>dateFieldFromInput</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-038" data-priority="P2">
+      <h3>Χρώμα: δείγμα, πεδίο hex, μη έγκυρη τιμή</h3>
+      <ol class="steps">
+        <li>Πληκτρολογήστε <code>red</code> στο πεδίο κειμένου του <strong>QA colour</strong> και αποθηκεύστε.</li>
+        <li>Πληκτρολογήστε <code>#1a2b3c</code> και αποθηκεύστε. Έπειτα χρησιμοποιήστε το δείγμα <strong>Pick colour</strong> για να επιλέξετε οποιοδήποτε χρώμα και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>Validation failed.</code> και <code>expected a #rrggbb hex colour</code> κάτω από το QA colour. Βήμα 2: το δείγμα ακολουθεί την πληκτρολογημένη τιμή· και οι δύο αποθηκεύσεις πετυχαίνουν και το SQL δείχνει τιμή <code>#rrggbb</code> 7 χαρακτήρων.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/fields/FieldInput.tsx</code> (<code>ColorControl</code>) · <code>src/cms/config/zod.ts</code> (<code>color</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-039" data-priority="P2">
+      <h3>Πεδίο εικόνας και βιβλιοθήκη πολυμέσων</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>Choose image…</strong> κάτω από το <strong>QA image</strong>. Στο <strong>Media library</strong> ανεβάστε το ίδιο αρχείο με πριν και έπειτα επιλέξτε ένα πλακίδιο.</li>
+        <li>Αποθηκεύστε, εκτελέστε το SQL, έπειτα πατήστε <strong>Clear</strong> και αποθηκεύστε ξανά.</li>
+        <li>Ανοίξτε τον επιλογέα και πατήστε Escape.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το εκ νέου ανέβασμα υπάρχοντος αρχείου εμφανίζει γκρι ειδοποίηση ότι πρόκειται για διπλότυπο αντί να δημιουργήσει δεύτερο αντίγραφο. Τα πλακίδια δείχνουν το όνομα του αρχείου και <code>Alt: …</code> ή <em>No alt text</em>. Το SQL περιέχει id 36 χαρακτήρων στο <code>qa_image</code>· μετά το Clear το κλειδί αφαιρείται. Το Escape κλείνει το παράθυρο διαλόγου και επιστρέφει την εστίαση στο κουμπί.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/fields/MediaPicker.tsx</code> · <code>src/cms/admin/media-upload-notice.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-040" data-priority="P2">
+      <h3>Επιλογέας συσχέτισης</h3>
+      <ol class="steps">
+        <li>Πατήστε στο πεδίο <strong>Search page…</strong> κάτω από το <strong>QA related</strong>, πληκτρολογήστε <code>about</code> και επιλέξτε <strong>About</strong>. Πληκτρολογήστε <code>nea</code> και επιλέξτε <strong>Νέα Άρθρα</strong>.</li>
+        <li>Αποθηκεύστε, εκτελέστε το SQL και το <code>SELECT id, slug FROM documents WHERE slug IN ('about','nea-arthra') AND locale='el';</code></li>
+        <li>Αφαιρέστε την ετικέτα About με το × της και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τα επιλεγμένα έγγραφα εμφανίζονται ως ετικέτες και αφαιρούνται από τις προτάσεις. Το SQL δείχνει <code>"qa_related": [&lt;about id&gt;, &lt;nea-arthra id&gt;]</code> με τη σειρά επιλογής· μετά την αφαίρεση μένει μόνο το δεύτερο id.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/fields/RelationPicker.tsx</code></p>
+    </article>
+
+    <article class="tc" id="CON-041" data-priority="P2">
+      <h3>Γραμμές επαναλήπτη: προσθήκη, αναδιάταξη, αντιγραφή, αφαίρεση</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>Add qa rows</strong> τρεις φορές· συμπληρώστε <code>label</code>/<code>qty</code> ως <code>A</code>/1, <code>B</code>/2, <code>C</code>/3.</li>
+        <li>Στη γραμμή C πατήστε <strong>Move to top</strong>· στη γραμμή B πατήστε <strong>Duplicate</strong>· στη γραμμή A πατήστε <strong>Remove</strong> και επιβεβαιώστε.</li>
+        <li>Αποθηκεύστε, ανανεώστε και εκτελέστε το SQL.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Οι συμπτυγμένες γραμμές συνοψίζονται με το κείμενο του label τους· η κεφαλίδα της κάρτας δείχνει το πλήθος των γραμμών. Το Remove ρωτά <strong>Remove "A"?</strong> με το κείμενο <code>This entry is removed from the list. This cannot be undone.</code> Μετά την ανανέωση η σειρά είναι C, B, B· το <code>qa_rows</code> στο SQL είναι <code>[{"label":"C","qty":3},{"label":"B","qty":2},{"label":"B","qty":2}]</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/fields/FieldInput.tsx</code> (μπλοκ repeater)</p>
+    </article>
+
+    <article class="tc" id="CON-042" data-priority="P3">
+      <h3>Οι τιμές των προσαρμοσμένων πεδίων είναι κοινές σε όλες τις γλώσσες</h3>
+      <ol class="steps">
+        <li>Στο QA Fields μεταβείτε στο <strong>EN</strong>, πατήστε <strong>Copy from EL</strong>, πληκτρολογήστε τίτλο <code>QA Fields EN</code> και πατήστε <strong>Create EN</strong>.</li>
+        <li>Πίσω στο EL αλλάξτε το <strong>QA text</strong> σε <code>shared-check</code> και πατήστε <strong>Save EL</strong>. Μεταβείτε στο EN.</li>
+        <li>Εκτελέστε: <code>SELECT locale, JSON_EXTRACT(data, '$.custom.qa_text') FROM documents WHERE slug = 'qa-fields';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η καρτέλα EN δείχνει <code>shared-check</code> χωρίς να έχει αποθηκευτεί ξεχωριστά, και οι δύο γραμμές επιστρέφουν <code>"shared-check"</code>. Ο τίτλος EN παραμένει <code>QA Fields EN</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/fields/definitions.ts</code> (<code>compileCustomFields</code>, <code>shared: true</code>) · <code>src/cms/admin/DocumentForm.tsx</code></p>
+    </article>
+
+    <article class="tc" id="CON-043" data-priority="P3">
+      <h3>Η αποθήκευση μιας γλώσσας δεν αποθηκεύει ποτέ μη αποθηκευμένο κείμενο άλλης γλώσσας</h3>
+      <ol class="steps">
+        <li>Στο QA Fields μεταβείτε στο EN, αλλάξτε τον τίτλο σε <code>EN unsaved</code> και μην αποθηκεύσετε.</li>
+        <li>Μεταβείτε στο EL, αλλάξτε ελαφρά τον τίτλο και πατήστε <strong>Save EL</strong>.</li>
+        <li>Εκτελέστε: <code>SELECT JSON_UNQUOTE(JSON_EXTRACT(data, '$.title')) FROM documents WHERE slug = 'qa-fields' AND locale = 'en';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η γραμμή EN έχει ακόμη <code>QA Fields EN</code>· η καρτέλα EN εξακολουθεί να δείχνει την πορτοκαλί κουκκίδα μη αποθηκευμένων αλλαγών. Αποτυχία αν το SQL δείχνει <code>EN unsaved</code>: η αντιγραφή των κοινών πεδίων στις άλλες γλώσσες έστειλε το μη αποθηκευμένο περιεχόμενο εκείνης της καρτέλας.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/DocumentForm.tsx</code> (<code>body.data = { ...states[l].data, ...sharedData }</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-044" data-priority="P3">
+      <h3>Η αφαίρεση ορισμού πεδίου δεν χαλάει παλαιότερα έγγραφα</h3>
+      <ol class="steps">
+        <li>Στο Settings → Fields → Pages αφαιρέστε το <strong>QA colour</strong> (<strong>Remove field</strong>, επιβεβαιώστε το <strong>Remove this field?</strong>) και πατήστε <strong>Save fields</strong>.</li>
+        <li>Ανοίξτε το QA Fields (που περιέχει χρώμα), αλλάξτε τον τίτλο, πατήστε <strong>Save EL</strong>· εκτελέστε το SQL των προσαρμοσμένων πεδίων.</li>
+        <li>Στη συνέχεια προσθέστε ξανά το QA colour, αν το χρειάζονται επόμενες περιπτώσεις.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η αποθήκευση πετυχαίνει (κανένα σφάλμα “unrecognized key”) και το <code>qa_colour</code> δεν υπάρχει πλέον στο αποθηκευμένο JSON.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/fields/definitions.ts</code> (<code>strict: false</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-i18n">
+    <h2>Μεταφράσεις</h2>
+    <p class="intro">Ένα έγγραφο αποτελείται από μία γραμμή ανά γλώσσα, με κοινή ομάδα μετάφρασης. Ο επεξεργαστής δείχνει μία καρτέλα ανά γλώσσα: μια κουκκίδα για την κατάστασή της (πράσινη για δημοσιευμένο, πορτοκαλί για προγραμματισμένο, γκρι για πρόχειρο, κενός δακτύλιος για αρχειοθετημένο), «+» όταν δεν υπάρχει ακόμη έκδοση, και μια δεύτερη πορτοκαλί κουκκίδα για μη αποθηκευμένες αλλαγές. Το slug είναι κοινό για όλες τις γλώσσες.</p>
+
+    <article class="tc" id="CON-045" data-priority="P1">
+      <h3>Προσθήκη και δημοσίευση αγγλικής έκδοσης</h3>
+      <ol class="steps">
+        <li>Δημιουργήστε και δημοσιεύστε σελίδα <code>QA Translate</code>, slug <code>qa-translate</code>, QA text <code>x</code>.</li>
+        <li>Πατήστε την καρτέλα <strong>EN</strong>.</li>
+        <li>Πατήστε <strong>Copy from EL</strong>, αλλάξτε τον τίτλο σε <code>QA Translate EN</code>, ορίστε status <code>published</code> και πατήστε <strong>Create EN</strong>.</li>
+        <li>Ανοίξτε τα <code>/en/qa-translate</code> και <code>/qa-translate</code> χωρίς σύνδεση.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 2: η καρτέλα EN έχει «+», στο URL προστίθεται <code>?locale=en</code>, και μια πορτοκαλί σημείωση γράφει <code>No EN version yet — fill it in and save to create it.</code> με κουμπί <strong>Copy from EL</strong>· το κουμπί αποθήκευσης γράφει <strong>Create EN</strong>.</li>
+        <li>Βήμα 3: η φόρμα συμπληρώνεται με το περιεχόμενο του EL· μετά την αποθήκευση εμφανίζεται <code>EN saved.</code> και η κουκκίδα EN γίνεται πράσινη.</li>
+        <li>Το αγγλικό URL δείχνει <strong>QA Translate EN</strong>· το ελληνικό URL εξακολουθεί να δείχνει <strong>QA Translate</strong>. SQL: δύο γραμμές, ίδιο slug και ίδιο <code>translation_group_id</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/DocumentForm.tsx</code> (<code>copyFromDefault</code>) · docs/dev-guides/03-content-model.md §3.5</p>
+    </article>
+
+    <article class="tc" id="CON-046" data-priority="P2">
+      <h3>Κάθε γλώσσα έχει τη δική της κατάσταση</h3>
+      <ol class="steps">
+        <li>Στην καρτέλα EN του QA Translate ορίστε status <code>draft</code> και πατήστε <strong>Save EN</strong>.</li>
+        <li>Ανοίξτε τα <code>/en/qa-translate</code> και <code>/qa-translate</code> χωρίς σύνδεση· κοιτάξτε τη γραμμή της λίστας.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το αγγλικό URL καταλήγει στο <code>/en/page-not-found</code> (<strong>Page not found</strong>)· το ελληνικό εξακολουθεί να εμφανίζεται. Η γραμμή της λίστας δείχνει πράσινη ετικέτα <code>EL</code> και γκρι ετικέτα <code>EN</code>. Στην καρτέλα EN το πεδίο κατάστασης έχει ετικέτα <strong>Status — EN</strong>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/DocumentList.tsx</code> · <code>src/lib/i18n/page-not-found.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-047" data-priority="P2">
+      <h3>Οι καρτέλες κρατούν τη δική τους μη αποθηκευμένη εργασία και η καρτέλα φαίνεται στο URL</h3>
+      <ol class="steps">
+        <li>Στο QA Translate αλλάξτε τον τίτλο EL (χωρίς αποθήκευση), μεταβείτε στο EN, αλλάξτε τον τίτλο EN (χωρίς αποθήκευση).</li>
+        <li>Μεταβείτε εναλλάξ μεταξύ τους και έπειτα πατήστε <strong>Save EN</strong> ενώ βρίσκεστε στο EN.</li>
+        <li>Μεταβείτε στο EL. Έπειτα ανανεώστε τη σελίδα ενώ βρίσκεστε στην καρτέλα EN (αποδεχτείτε το μήνυμα αποχώρησης αν το EL είναι ακόμη μη αποθηκευμένο).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε καρτέλα κρατά το δικό της πληκτρολογημένο κείμενο· και οι δύο καρτέλες δείχνουν την πορτοκαλί κουκκίδα μη αποθηκευμένων αλλαγών. Μετά το Save EN καθαρίζει μόνο η κουκκίδα EN και το EL εξακολουθεί να δείχνει <strong>Unsaved</strong> δίπλα στα κουμπιά. Η αλλαγή καρτέλας καθαρίζει το πράσινο μήνυμα αποθήκευσης. Μετά την ανανέωση η καρτέλα EN παραμένει επιλεγμένη (<code>?locale=en</code>).</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/DocumentForm.tsx</code> (<code>switchLocale</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-048" data-priority="P3">
+      <h3>Καμία ψευδής προειδοποίηση “changed elsewhere” μετά την αποθήκευση άλλης γλώσσας</h3>
+      <ol class="steps">
+        <li>Στο QA Translate αλλάξτε τον τίτλο EL και μην αποθηκεύσετε.</li>
+        <li>Μεταβείτε στο EN, αλλάξτε τον τίτλο EN και πατήστε <strong>Save EN</strong>. Περιμένετε δύο δευτερόλεπτα.</li>
+        <li>Μεταβείτε στο EL και πατήστε <strong>Save EL</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 2 δείχνει <code>EN saved.</code> και τίποτε άλλο. Το βήμα 3 αποθηκεύει. Αποτυχία (και σημειώστε το κείμενο) αν μετά το βήμα 2 εμφανιστεί πορτοκαλί προειδοποίηση που αρχίζει με <code>This document changed elsewhere — a restored version, or another editor.</code>, αφού κανείς άλλος δεν άλλαξε το έγγραφο.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/DocumentForm.tsx</code> (υιοθέτηση του <code>serverStamp</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-049" data-priority="P2">
+      <h3>Υποχρεωτικό μεταφραζόμενο πεδίο χρειάζεται μόνο την κύρια γλώσσα</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Το <strong>Google reviews &amp; testimonials</strong> είναι επιλεγμένο και αποθηκευμένο στο Settings → Modules, ώστε το <strong>Testimonials</strong> να εμφανίζεται στο πλευρικό μενού.</p>
+      <ol class="steps">
+        <li>Testimonials → <strong>+ New</strong>. <strong>Who said it</strong> <code>QA Customer</code>, slug <code>qa-customer</code>. Στο <strong>What they said</strong> πατήστε την υποκαρτέλα <strong>EN</strong> και πληκτρολογήστε <code>Great service</code>· αφήστε κενή την υποκαρτέλα EL. Status <code>published</code>, πατήστε <strong>Create Testimonial</strong>.</li>
+        <li>Πατήστε την υποκαρτέλα EL, πληκτρολογήστε <code>Εξαιρετική εξυπηρέτηση</code>, αδειάστε το κείμενο EN και πατήστε <strong>Create Testimonial</strong>.</li>
+        <li>Εκτελέστε: <code>SELECT status, JSON_EXTRACT(data, '$.quote') FROM documents WHERE type = 'testimonial' AND slug = 'qa-customer';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>Validation failed.</code> με <code>What they said is required (el)</code> κάτω από το πεδίο. Το βήμα 2 δημοσιεύει, παρόλο που τα αγγλικά είναι κενά. SQL: status <code>published</code>, το quote περιέχει το ελληνικό κείμενο και καμία (ή κενή) τιμή <code>en</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/config/zod.ts</code> (<code>z.partialRecord</code>, έλεγχος refine της κύριας γλώσσας) · <code>src/cms/core/content/testimonial.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-050" data-priority="P3">
+      <h3>Η προσθήκη γλώσσας δεν χαλάει την αποθήκευση υπαρχόντων εγγράφων</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ένα δοκιμαστικό build όπου ένας προγραμματιστής έχει προσθέσει τρίτη γλώσσα (π.χ. <code>de</code>) στο <code>locales</code> του <code>src/site.config.ts</code>, εγκατεστημένο στην ίδια βάση δεδομένων. Διαφορετικά σημειώστε «Δεν ισχύει».</p>
+      <ol class="steps">
+        <li>Ανοίξτε το testimonial <code>qa-customer</code> και το QA Translate. Αλλάξτε μία λέξη και αποθηκεύστε το καθένα (καρτέλα EL).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και τα δύο αποθηκεύονται με <code>EL saved.</code>· κανένα σφάλμα ότι λείπει η νέα γλώσσα από το <strong>What they said</strong>. Καρτέλα DE εμφανίζεται μόλις το DE επιλεγεί στο Editing.</p>
+      <p class="ref">Αναφ.: docs/dev-guides/03-content-model.md §9 (“Localized maps are partial”)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-versions">
+    <h2>Ιστορικό εκδόσεων</h2>
+    <p class="intro">Κάθε αποθήκευση μιας γλώσσας δημιουργεί μια έκδοση. Το πλαίσιο <strong>Version history</strong> στη δεξιά στήλη τις εμφανίζει με τη νεότερη πρώτη, με ώρες σε UTC· κάθε καρτέλα γλώσσας έχει το δικό της ιστορικό. Χρησιμοποιήστε νέα σελίδα <code>QA History</code> (slug <code>qa-history</code>, QA text <code>x</code>). Οι εκδόσεις διαβάζονται με:</p>
+<pre><code>SELECT version, JSON_UNQUOTE(JSON_EXTRACT(snapshot, '$.data.title')) AS title,
+       JSON_UNQUOTE(JSON_EXTRACT(snapshot, '$.status')) AS status, created_at
+FROM document_versions WHERE document_id = &lt;id&gt; ORDER BY version;</code></pre>
+
+    <article class="tc" id="CON-051" data-priority="P1">
+      <h3>Κάθε αποθήκευση προσθέτει μια έκδοση</h3>
+      <ol class="steps">
+        <li>Δημιουργήστε το QA History ως πρόχειρο με τίτλο <code>History A</code>.</li>
+        <li>Αλλάξτε τον τίτλο σε <code>History B</code>, ορίστε <code>published</code> και αποθηκεύστε. Αλλάξτε τον σε <code>History C</code> και αποθηκεύστε.</li>
+        <li>Κοιτάξτε το Version history χωρίς ανανέωση· εκτελέστε το SQL της εισαγωγής.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το πλαίσιο δείχνει <code>v3 (current)</code>, <code>v2</code>, <code>v1</code>, η καθεμία με ώρα <code>YYYY-MM-DD HH:MM UTC</code>· μόνο οι v2 και v1 έχουν κουμπί <strong>Restore</strong>. Η λίστα ενημερώνεται μετά από κάθε αποθήκευση χωρίς ανανέωση. SQL: A/draft, B/published, C/published.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/VersionHistory.tsx</code> · <code>src/cms/core/documents/snapshot.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-052" data-priority="P2">
+      <h3>Επαναφορά παλαιότερης έκδοσης</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>Restore</strong> στη v2.</li>
+        <li>Επιβεβαιώστε με <strong>Restore</strong>.</li>
+        <li>Ανοίξτε το <code>/qa-history</code> χωρίς σύνδεση· εκτελέστε το SQL.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ο τίτλος του παραθύρου διαλόγου είναι <strong>Restore version 2?</strong> με το κείμενο <code>Its content, SEO, status and dates replace what is there now. The current version stays in the list, so you can undo this.</code> Η σελίδα ανανεώνεται και δείχνει <code>History B</code>· το πλαίσιο ξεκινά τώρα με <code>v4 (current)</code>. Η δημόσια σελίδα δείχνει History B. SQL: v4 = B/published.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/collections.ts</code> (<code>collectionRestoreRoute</code>) · <code>src/cms/core/documents/service.ts</code> (<code>restoreVersion</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-053" data-priority="P2">
+      <h3>Η επαναφορά πρόχειρης έκδοσης αφαιρεί τη σελίδα από τον ιστότοπο</h3>
+      <ol class="steps">
+        <li>Επαναφέρετε τη v1 (History A, πρόχειρο) και επιβεβαιώστε.</li>
+        <li>Ανοίξτε το <code>/qa-history</code> χωρίς σύνδεση.</li>
+        <li>Πατήστε μία φορά Save EL αμέσως μετά την ανανέωση, χωρίς να αλλάξετε τίποτα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Μετά την ανανέωση ο τίτλος είναι <code>History A</code> και η ένδειξη <code>draft</code>· το δημόσιο URL καταλήγει στη σελίδα «δεν βρέθηκε». Η επιπλέον αποθήκευση δεν επαναφέρει το History B (η φόρμα δείχνει το αντίγραφο που επανήλθε, όχι παλιό).</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/VersionHistory.tsx</code> (πλήρης ανανέωση μετά την επαναφορά)</p>
+    </article>
+
+    <article class="tc" id="CON-054" data-priority="P3">
+      <h3>Κάθε γλώσσα έχει το δικό της ιστορικό</h3>
+      <ol class="steps">
+        <li>Στο QA History δημιουργήστε έκδοση EN (Copy from EL, <strong>Create EN</strong>) και αποθηκεύστε την άλλη μία φορά.</li>
+        <li>Μεταβείτε εναλλάξ μεταξύ EL και EN και διαβάστε το Version history.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η καρτέλα EN εμφανίζει μόνο <code>v2 (current)</code> και <code>v1</code>· το EL κρατά τη δική του, μεγαλύτερη λίστα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/DocumentForm.tsx</code> (<code>VersionHistory key={active.rowId}</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-055" data-priority="P3">
+      <h3>Ο συντάκτης δεν μπορεί να επαναφέρει δημοσιευμένη έκδοση</h3>
+      <ol class="steps">
+        <li>Συνδεθείτε ως <code>qa-writer@example.com</code>, ανοίξτε το QA History (EL, τώρα πρόχειρο), πατήστε <strong>Restore</strong> στη v2 (δημοσιευμένη) και επιβεβαιώστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κόκκινο κείμενο στο πλαίσιο ιστορικού: <code>Your role cannot publish. Save it as a draft and ask someone with publishing rights to take it live.</code> Δεν αλλάζει τίποτα και δεν δημιουργείται νέα έκδοση.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/documents/publish-rights.ts</code> · <code>src/cms/core/routes/collections.ts</code> (<code>versionRestoreState</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-056" data-priority="P3">
+      <h3>Επαναφορά έκδοσης από πριν από αλλαγή slug</h3>
+      <ol class="steps">
+        <li>Δημοσιεύστε το QA History (EL και EN). Μετονομάστε το σε <code>qa-history-2</code> και αποθηκεύστε.</li>
+        <li>Στο EL επαναφέρετε την έκδοση που αποθηκεύτηκε ακριβώς πριν από τη μετονομασία.</li>
+        <li>Εκτελέστε curl για τα <code>/qa-history</code> και <code>/qa-history-2</code>· εκτελέστε <code>SELECT locale, slug FROM documents WHERE translation_group_id = (SELECT translation_group_id FROM documents WHERE id = &lt;EL id&gt;);</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το EL επιστρέφει στο <code>/qa-history</code> (200) και το <code>/qa-history-2</code> ανακατευθύνει σε αυτό. Καταγράψτε το slug του EN: η επαναφορά αγγίζει μόνο τη γραμμή EL, οπότε αναμένεται το EN να παραμείνει στο <code>qa-history-2</code>. Σημειώστε αν ο επεξεργαστής κάνει ορατή αυτή την απόκλιση.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/documents/service.ts</code> (<code>restoreVersion</code>, <code>canonicalPath</code> από το snapshot)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-locks">
+    <h2>Συγκρούσεις επεξεργασίας &amp; κλειδώματα επεξεργασίας</h2>
+    <p class="intro">Τα κλειδώματα απαιτούν τον αναμεταδότη σε λειτουργία, όπως ρυθμίστηκε στη λίστα ελέγχου 01 (“Realtime edit-lock relay”): ορισμένο <code>CMS_LOCK_INTERNAL_SECRET</code> και <code>npm run locks</code> σε εκτέλεση (σε φιλοξενούμενο περιβάλλον, ο αναμεταδότης πίσω από το <code>/_ws/locks</code>). Ο browser A είναι ο <code>qa-admin@example.com</code> (όνομα <code>QA Admin</code>)· ο browser B είναι ο <code>qa2@example.com</code> (όνομα <code>QA Second</code>). Χρησιμοποιήστε το QA Translate (υπάρχουν EL και EN).</p>
+
+    <article class="tc" id="CON-057" data-priority="P2">
+      <h3>Ίδιος χρήστης, δύο καρτέλες: το παλαιότερο αντίγραφο δεν μπορεί να αντικαταστήσει</h3>
+      <ol class="steps">
+        <li>Στον browser A ανοίξτε το QA Translate σε δύο καρτέλες (καρτέλα 1 και καρτέλα 2).</li>
+        <li>Στην καρτέλα 1 αλλάξτε τον τίτλο EL σε <code>Tab one</code> και πατήστε <strong>Save EL</strong>.</li>
+        <li>Στην καρτέλα 2 (χωρίς ανανέωση) αλλάξτε τον τίτλο EL σε <code>Tab two</code> και πατήστε <strong>Save EL</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Οι καρτέλες δείχνουν τη διακριτική πορτοκαλί σημείωση <code>You have this open in another tab. Whichever tab you save last wins.</code></li>
+        <li>Η αποθήκευση της καρτέλας 2 απορρίπτεται με το κόκκινο πλαίσιο <code>This document changed in another tab or by another editor while you were working. Reload to see the current version — saving now would overwrite their changes.</code> Ο αποθηκευμένος τίτλος παραμένει <code>Tab one</code>.</li>
+        <li>Καταγράψτε ότι το “whichever tab you save last wins” της σημείωσης έρχεται σε αντίφαση με την απόρριψη.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/documents/service.ts</code> (<code>VERSION_CONFLICT_MESSAGE</code>) · <code>src/cms/admin/locks/EditLockBanner.tsx</code></p>
+    </article>
+
+    <article class="tc" id="CON-058" data-priority="P2">
+      <h3>Δεύτερος συντάκτης βλέπει το κλείδωμα και φόρμα μόνο για ανάγνωση</h3>
+      <ol class="steps">
+        <li>Ο browser A ανοίγει το QA Translate.</li>
+        <li>Ο browser B ανοίγει την ίδια σελίδα· προσπαθήστε να πληκτρολογήσετε στον τίτλο και να πατήσετε Save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ο browser B δείχνει πορτοκαλί πλαίσιο <code>QA Admin is editing this — started just now.</code> και <code>The fields are locked so you cannot overwrite their work. Taking over will lock them out instead.</code> με κουμπί <strong>Take over editing</strong>. Τα πεδία και το κουμπί Save του B είναι απενεργοποιημένα. Ο browser A δεν δείχνει κανένα πλαίσιο.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/locks/EditLockBanner.tsx</code> · <code>src/cms/admin/locks/use-edit-lock.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-059" data-priority="P2">
+      <h3>Ανάληψη της επεξεργασίας</h3>
+      <ol class="steps">
+        <li>Στον browser A πληκτρολογήστε κάτι στον τίτλο αλλά μην αποθηκεύσετε.</li>
+        <li>Στον browser B πατήστε <strong>Take over editing</strong> και έπειτα <strong>Take over</strong> στο παράθυρο διαλόγου.</li>
+        <li>Κοιτάξτε τον browser A. Εκτελέστε: <code>SELECT user_id, action, created_at FROM audit_logs WHERE action = 'lock.takeover' ORDER BY id DESC LIMIT 1;</code></li>
+      </ol>
+      <ul class="exp">
+        <li>Ο τίτλος του παραθύρου διαλόγου είναι <strong>Take over from QA Admin?</strong> και προειδοποιεί ότι το μη αποθηκευμένο κείμενο του άλλου χρήστη δεν θα μπορεί πλέον να αποθηκευτεί.</li>
+        <li>Η φόρμα του B γίνεται επεξεργάσιμη· ο B μπορεί να αποθηκεύσει.</li>
+        <li>Μέσα σε λίγα δευτερόλεπτα ο A δείχνει <code>QA Second is editing this — started just now.</code>, τα πεδία και το Save του A απενεργοποιούνται και ο A βλέπει το <strong>Copy my unsaved changes</strong>.</li>
+        <li>SQL: μία νέα γραμμή <code>lock.takeover</code> για τον QA Second.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/locks/policy.ts</code> (<code>takeover</code>) · <code>src/cms/core/locks/service.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-060" data-priority="P3">
+      <h3>Αντιγραφή μη αποθηκευμένων αλλαγών μετά την απώλεια του κλειδώματος</h3>
+      <ol class="steps">
+        <li>Στον browser A (κλειδωμένο, με μη αποθηκευμένο κείμενο) πατήστε <strong>Copy my unsaved changes</strong>.</li>
+        <li>Επικολλήστε σε έναν επεξεργαστή κειμένου.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το κουμπί αλλάζει σε <code>Copied</code>. Το επικολλημένο κείμενο είναι JSON με εγγραφή <code>"el"</code> και εγγραφή <code>"en"</code>, και περιέχει τον μη αποθηκευμένο τίτλο που πληκτρολογήθηκε στον A.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/DocumentForm.tsx</code> (<code>onCopyUnsaved</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-061" data-priority="P3">
+      <h3>Ένα κλείδωμα καλύπτει όλες τις γλώσσες</h3>
+      <ol class="steps">
+        <li>Ο browser A ανοίγει το QA Translate στο EL (<code>?locale=el</code>). Ο browser B ανοίγει την καρτέλα EN του ίδιου εγγράφου (<code>?locale=en</code>, ή ανοίξτε το id της γραμμής EN).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ο B βλέπει το πλαίσιο κλειδώματος με το όνομα QA Admin, παρόλο που βρίσκεται σε άλλη γλώσσα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/locks/keys.ts</code> (<code>documentLockKey</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-062" data-priority="P3">
+      <h3>Ο server απορρίπτει διαγραφή ενώ κάποιος άλλος κατέχει το κλείδωμα</h3>
+      <ol class="steps">
+        <li>Ο browser B κατέχει το κλείδωμα στο QA Translate (ανοιχτός επεξεργαστής).</li>
+        <li>Ο browser A ανοίγει τη λίστα Pages, πατά <strong>Delete</strong> στο QA Translate και επιβεβαιώνει.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κόκκινο κείμενο πάνω από τον πίνακα: <code>QA Second is editing this right now, and saving would overwrite their work. Open the editor and use "Take over" if you need it.</code> Και οι δύο γραμμές εξακολουθούν να υπάρχουν.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/locks/service.ts</code> (<code>assertNotLockedByOther</code>) · <code>src/cms/core/routes/collections.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-063" data-priority="P3">
+      <h3>Χρήστης μόνο για ανάγνωση δεν παίρνει το κλείδωμα</h3>
+      <ol class="steps">
+        <li>Κλείστε όλους τους επεξεργαστές. Ο browser B συνδέεται ως <code>qa-reader@example.com</code> και ανοίγει το QA Translate.</li>
+        <li>Ο browser A ανοίγει την ίδια σελίδα. Εκτελέστε: <code>SELECT user_name FROM editing_locks WHERE resource_type = 'document';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ο browser A δεν έχει πλαίσιο κλειδώματος και μπορεί να αποθηκεύσει· το SQL εμφανίζει μόνο τον QA Admin.</p>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/[collection]/[id]/page.tsx</code> (<code>canWrite</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-064" data-priority="P3">
+      <h3>Σύγκρουση στην άλλη γλώσσα είναι προειδοποίηση, όχι αποτυχία</h3>
+      <ol class="steps">
+        <li>Browser A: ανοίξτε το QA Translate στην καρτέλα 1 στο EL (ένα άτομο μπορεί να επεξεργάζεται σε δύο καρτέλες).</li>
+        <li>Καρτέλα 2: ανοίξτε το ίδιο έγγραφο, καρτέλα EN, αλλάξτε τον τίτλο EN και πατήστε <strong>Save EN</strong>.</li>
+        <li>Καρτέλα 1 (χωρίς ανανέωση): αλλάξτε το slug σε <code>qa-translate-2</code> και πατήστε <strong>Save EL</strong>.</li>
+        <li>Ανανεώστε την καρτέλα 1, επαναφέρετε το slug σε <code>qa-translate</code> και πατήστε <strong>Save EL</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 3: η καρτέλα 1 δείχνει το πορτοκαλί μήνυμα <code>EL was saved. EN changed in another tab or by another editor, so the shared fields were NOT copied there — copying them would have overwritten that work. Reload to pick up their version, then save again.</code> Το EL βρίσκεται στο <code>qa-translate-2</code>, ενώ το EN κρατά το <code>qa-translate</code> και τον τίτλο της καρτέλας 2. Βήμα 4: αποθηκεύει χωρίς προειδοποίηση και οι δύο γλώσσες επιστρέφουν στο <code>qa-translate</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/DocumentForm.tsx</code> (<code>catch</code> της διάδοσης στις άλλες γλώσσες)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-editor">
+    <h2>Προεπισκόπηση &amp; μη αποθηκευμένες αλλαγές</h2>
+
+    <article class="tc" id="CON-065" data-priority="P2">
+      <h3>Προεπισκόπηση πρόχειρου</h3>
+      <ol class="steps">
+        <li>Ανοίξτε την πρόχειρη σελίδα <code>my-post-draft</code>. Πατήστε <strong>Preview draft (EL) ↗</strong> πάνω δεξιά.</li>
+        <li>Στη νέα καρτέλα κοιτάξτε τη σελίδα και τη μπάρα διαχείρισης· έπειτα πατήστε τον σύνδεσμο εξόδου της μπάρας.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ανοίγει νέα καρτέλα στο <code>/my-post-draft</code> μέσω του <code>/api/cms/preview?redirect=…</code> και δείχνει το περιεχόμενο του πρόχειρου. Η μπάρα διαχείρισης δείχνει <strong>Προεπισκόπηση</strong> και <strong>Έξοδος</strong> (ή <strong>Preview</strong> / <strong>Exit preview</strong> για διαχειριστή με αγγλική γλώσσα). Η έξοδος ανανεώνει την ίδια διεύθυνση, η οποία τώρα καταλήγει στη σελίδα «δεν βρέθηκε».</p>
+      <p class="ref">Αναφ.: <code>src/app/api/cms/preview/route.ts</code> · <code>src/lib/cms/resolve-doc.ts</code> · <code>src/components/admin-bar/AdminBar.tsx</code></p>
+    </article>
+
+    <article class="tc" id="CON-066" data-priority="P3">
+      <h3>Η προεπισκόπηση ακολουθεί την καρτέλα γλώσσας και δεν υπάρχει όπου δεν υπάρχει σελίδα</h3>
+      <ol class="steps">
+        <li>Στο QA Translate μεταβείτε στην καρτέλα EN και διαβάστε το κουμπί προεπισκόπησης· πατήστε το.</li>
+        <li>Ανοίξτε τον επεξεργαστή ενός brand και μια νέα μη αποθηκευμένη σελίδα (<strong>+ New</strong>).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Στο EN το κουμπί γράφει <strong>Preview draft (EN) ↗</strong> και ανοίγει τη διεύθυνση <code>/en/…</code>. Τα brands και οι μη αποθηκευμένες σελίδες δεν έχουν κουμπί προεπισκόπησης.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/documents/preview-target.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-067" data-priority="P3">
+      <h3>Η προεπισκόπηση απαιτεί σύνδεση και παραμένει σε αυτόν τον ιστότοπο</h3>
+      <ol class="steps">
+        <li>Σε ιδιωτικό παράθυρο χωρίς σύνδεση ανοίξτε το <code>/api/cms/preview?redirect=/my-post-draft</code>.</li>
+        <li>Με σύνδεση, ανοίξτε το <code>/api/cms/preview?redirect=//evil.example</code> και έπειτα βγείτε από την προεπισκόπηση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 1 απαντά 401 (σφάλμα JSON) και δεν δείχνει ποτέ το πρόχειρο. Το βήμα 2 καταλήγει στην αρχική σελίδα αυτού του ιστότοπου, ποτέ στο evil.example.</p>
+      <p class="ref">Αναφ.: <code>src/app/api/cms/preview/route.ts</code> · <code>src/cms/core/paths.ts</code> (<code>safeRedirectPath</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-068" data-priority="P2">
+      <h3>Προστασία μη αποθηκευμένων αλλαγών</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το QA Translate και αλλάξτε τον τίτλο. Πατήστε <strong>Pages</strong> στο πλευρικό μενού· επιλέξτε Cancel στο παράθυρο διαλόγου του browser.</li>
+        <li>Ανανεώστε την καρτέλα του browser· ακυρώστε το παράθυρο αποχώρησης του browser.</li>
+        <li>Πατήστε το κουμπί <strong>Cancel</strong> της φόρμας· επιλέξτε Discard.</li>
+        <li>Ανοίξτε ξανά τη σελίδα, χωρίς να αλλάξετε τίποτα, και πατήστε Cancel.</li>
+      </ol>
+      <ul class="exp">
+        <li>Μετά την αλλαγή εμφανίζεται <strong>Unsaved</strong> δίπλα στα κουμπιά.</li>
+        <li>Βήμα 1: ο browser ρωτά <code>You have unsaved changes. Leave without saving?</code>· με την ακύρωση παραμένετε στον επεξεργαστή με το κείμενο ανέπαφο.</li>
+        <li>Βήμα 2: εμφανίζεται το παράθυρο “leave site?” του ίδιου του browser.</li>
+        <li>Βήμα 3: παράθυρο διαλόγου μέσα στη σελίδα <strong>Discard unsaved changes?</strong> με το κείμενο <code>Everything you have changed since the last save will be lost.</code> και κουμπί <strong>Discard</strong>· το Discard επιστρέφει στη λίστα και η αλλαγή δεν αποθηκεύεται.</li>
+        <li>Βήμα 4: μεταβαίνει απευθείας στη λίστα χωρίς παράθυρο διαλόγου.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/use-unsaved-changes.ts</code> · <code>src/cms/admin/DocumentForm.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-list">
+    <h2>Οθόνη λίστας: αναζήτηση, φίλτρο, σελιδοποίηση</h2>
+    <p class="intro">Η λίστα δείχνει μία γραμμή ανά έγγραφο με μία ετικέτα ανά γλώσσα, 25 γραμμές ανά σελίδα. Η αναζήτηση, η κατάσταση και η σελίδα διατηρούνται στη γραμμή διευθύνσεων ως <code>?q=</code>, <code>&amp;status=</code>, <code>&amp;page=</code>.</p>
+
+    <article class="tc" id="CON-069" data-priority="P2">
+      <h3>Δημιουργία 210 δημοσιευμένων σελίδων για τις περιπτώσεις λίστας και sitemap</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Μόνο σε βάση δεδομένων δοκιμών. Αφαιρέστε τες με την περίπτωση καθαρισμού στο τέλος.</p>
+      <ol class="steps">
+        <li>Εκτελέστε το παρακάτω SQL.</li>
+        <li>Στο διαχειριστικό ανοίξτε οποιαδήποτε σελίδα και πατήστε μία φορά Save EL (οι λίστες σελίδων στην cache ανανεώνονται μόνο με εγγραφή μέσω του CMS).</li>
+        <li>Ανοίξτε τη λίστα Pages.</li>
+      </ol>
+<pre><code>INSERT INTO documents (type, slug, locale, status, published_at, translation_group_id, canonical_path, data)
+SELECT 'page', CONCAT('qa-bulk-', n.i), 'el', 'published', NOW() - INTERVAL n.i MINUTE,
+       UUID(), CONCAT('/qa-bulk-', n.i), JSON_OBJECT('title', CONCAT('QA bulk ', n.i))
+FROM (SELECT a.d + 10 * b.d + 100 * c.d + 1 AS i
+      FROM (SELECT 0 d UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+            UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) a
+      CROSS JOIN (SELECT 0 d UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+            UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) b
+      CROSS JOIN (SELECT 0 d UNION ALL SELECT 1 UNION ALL SELECT 2) c) n
+WHERE n.i &lt;= 210;</code></pre>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Εισάγονται 210 γραμμές. Το σύνολο της λίστας κάτω από τον πίνακα αυξάνεται κατά 210 και δείχνει <code>Page 1 of N</code> με N ≥ 9. Το <code>/qa-bulk-7</code> εμφανίζει <strong>QA bulk 7</strong>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/db/adapters/mysql/schema/documents.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-070" data-priority="P1">
+      <h3>Η αναζήτηση, το φίλτρο κατάστασης και η σελίδα διατηρούνται μετά από ανανέωση</h3>
+      <ol class="steps">
+        <li>Πληκτρολογήστε <code>qa-bulk-1</code> στο <strong>Search slug or title…</strong>.</li>
+        <li>Πατήστε <strong>Next</strong>.</li>
+        <li>Ανανεώστε την καρτέλα του browser. Έπειτα αντιγράψτε τη διεύθυνση σε νέα καρτέλα.</li>
+        <li>Επιλέξτε <code>draft</code> στο <strong>Filter by status</strong>.</li>
+        <li>Πατήστε μία φορά το κουμπί Back του browser.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: μετά από μια σύντομη παύση η λίστα δείχνει <code>111 total</code> και <code>Page 1 of 5</code>· η διεύθυνση γίνεται <code>/admin/page?q=qa-bulk-1</code>.</li>
+        <li>Βήμα 2: <code>Page 2 of 5</code>· διεύθυνση <code>?q=qa-bulk-1&amp;page=2</code>.</li>
+        <li>Βήμα 3: τόσο η ανανεωμένη όσο και η νέα καρτέλα δείχνουν το ίδιο κείμενο αναζήτησης, τη σελίδα 2 και τις ίδιες γραμμές.</li>
+        <li>Βήμα 4: <code>No documents match.</code>, η σελίδα επανέρχεται στο 1, διεύθυνση <code>?q=qa-bulk-1&amp;status=draft</code>.</li>
+        <li>Βήμα 5: το Back φεύγει από τη λίστα (οι αλλαγές φίλτρου δεν προσθέτουν εγγραφές στο ιστορικό).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/DocumentList.tsx</code> · <code>src/cms/admin/document-list-query.ts</code> · <code>src/app/admin/(shell)/[collection]/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="CON-071" data-priority="P2">
+      <h3>Η αναζήτηση βρίσκει τίτλους· το φίλτρο κατάστασης ταιριάζει σε οποιαδήποτε γλώσσα</h3>
+      <ol class="steps">
+        <li>Καθαρίστε τα φίλτρα. Αναζητήστε <code>Άρθρα</code> (λέξη που υπάρχει μόνο στον τίτλο, όχι στο slug)· έπειτα <code>QA Translate EN</code>.</li>
+        <li>Καθαρίστε την αναζήτηση· επιλέξτε κατάσταση <code>draft</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το πεδίο γράφει “Search slug or title…”, άρα το <code>Άρθρα</code> θα πρέπει να βρίσκει τη σελίδα <code>nea-arthra</code> και το <code>QA Translate EN</code> θα πρέπει να βρίσκει το QA Translate. Σημειώστε Αποτυχία και καταγράψτε το αν κάποιο από τα δύο επιστρέφει <code>No documents match.</code> Το <code>draft</code> εμφανίζει το QA Translate (το EN είναι πρόχειρο, το EL δημοσιευμένο) με ορατές και τις δύο ετικέτες, καθώς και τα υπόλοιπα πρόχειρα· το «i» δίπλα στο φίλτρο γράφει <code>Shows documents where at least one language has this status. All their languages stay listed.</code></p>
+      <p class="ref">Αναφ.: <code>src/cms/core/documents/service.ts</code> (<code>listDocumentGroups</code>: ο τίτλος αναζητείται μόνο όταν η συλλογή δηλώνει <code>titlePath</code>, κάτι που τα Pages δεν κάνουν) · <code>src/site.config.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-072" data-priority="P3">
+      <h3>Αλλοιωμένη διεύθυνση λίστας εξακολουθεί να ανοίγει</h3>
+      <ol class="steps">
+        <li>Ανοίξτε τα <code>/admin/page?page=abc&amp;status=bogus</code> και <code>/admin/page?page=999</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το πρώτο δείχνει τη σελίδα 1 με <strong>All statuses</strong>. Το δεύτερο δεν δείχνει σφάλμα (κενή σελίδα ή την τελευταία σελίδα)· τα Prev και Next παραμένουν χρησιμοποιήσιμα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/document-list-query.ts</code> (<code>parseDocumentListQuery</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-perms">
+    <h2>Δικαιώματα περιεχομένου</h2>
+    <p class="intro">Χρησιμοποιεί τους λογαριασμούς της περίπτωσης «Δημιουργία λογαριασμού συντάκτη και λογαριασμού αναγνώστη». Το <strong>Edit content</strong> επιτρέπει στον χρήστη να γράφει· το <strong>Publish content</strong> χρειάζεται για να δημοσιευτεί ένα έγγραφο, να αποσυρθεί ή να διαγραφεί ενώ κάποια γλώσσα του είναι δημοσιευμένη ή προγραμματισμένη.</p>
+
+    <article class="tc" id="CON-073" data-priority="P2">
+      <h3>Ο συντάκτης μπορεί να γράψει πρόχειρο αλλά όχι να δημοσιεύσει</h3>
+      <ol class="steps">
+        <li>Συνδεθείτε ως <code>qa-writer@example.com</code>. Pages → <strong>+ New</strong>. Ανοίξτε την αναπτυσσόμενη λίστα Status.</li>
+        <li>Δημιουργήστε σελίδα <code>QA Writer Draft</code> (slug <code>qa-writer-draft</code>, QA text <code>x</code>) ως πρόχειρο.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τα <code>published</code> και <code>scheduled</code> είναι γκριζαρισμένα· κάτω από τη λίστα: <code>Your role can write and edit, but not publish. Someone with publishing rights takes it live.</code> Το πεδίο <strong>Published date</strong> είναι απενεργοποιημένο. Το πρόχειρο δημιουργείται.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/status-options.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-074" data-priority="P2">
+      <h3>Ο συντάκτης μπορεί να διορθώσει κείμενο σε δημοσιευμένη σελίδα αλλά όχι να την αποσύρει</h3>
+      <ol class="steps">
+        <li>Ως συντάκτης ανοίξτε το QA Translate (EL δημοσιευμένο). Ανοίξτε την αναπτυσσόμενη λίστα Status.</li>
+        <li>Αλλάξτε μια λέξη στον τίτλο EL, πατήστε <strong>Save EL</strong>· ανανεώστε το <code>/qa-translate</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τα <code>draft</code>, <code>scheduled</code> και <code>archived</code> είναι γκριζαρισμένα· η υπόδειξη γράφει <code>Your role can write and edit, but not publish. This document is live, so only someone with publishing rights can archive it or turn it back into a draft. Your edits still save.</code> Η αποθήκευση πετυχαίνει, η σελίδα παραμένει δημοσιευμένη και η δημόσια σελίδα δείχνει τον νέο τίτλο.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/DocumentForm.tsx</code> (<code>withholdPublishing</code>) · <code>src/cms/core/documents/publish-rights.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-075" data-priority="P2">
+      <h3>Η διαγραφή προσφέρεται μόνο σε όσους επιτρέπεται να διαγράψουν</h3>
+      <ol class="steps">
+        <li>Ως superadmin, κοιτάξτε τη λίστα Pages: ποιες γραμμές έχουν <strong>Delete</strong>.</li>
+        <li>Ως συντάκτης, κοιτάξτε την ίδια λίστα.</li>
+        <li>Ως αναγνώστης, κοιτάξτε την ίδια λίστα.</li>
+      </ol>
+      <ul class="exp">
+        <li>Superadmin: κάθε γραμμή έχει Delete.</li>
+        <li>Συντάκτης: Delete μόνο στις γραμμές των οποίων όλες οι γλώσσες είναι πρόχειρες ή αρχειοθετημένες (π.χ. <code>qa-writer-draft</code>, <code>my-post-draft</code>)· κανένα στο QA Translate (EL δημοσιευμένο) ή σε οποιαδήποτε πλήρως δημοσιευμένη σελίδα.</li>
+        <li>Αναγνώστης: κανένα Delete σε καμία γραμμή.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/document-list-query.ts</code> (<code>canDeleteDocumentGroup</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-076" data-priority="P3">
+      <h3>Ο συντάκτης μπορεί να διαγράψει πρόχειρο</h3>
+      <ol class="steps">
+        <li>Ως συντάκτης διαγράψτε το <code>qa-writer-draft</code> από τη λίστα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η γραμμή αφαιρείται χωρίς σφάλμα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/collections.ts</code> (<code>collectionDeleteRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-077" data-priority="P3">
+      <h3>Ο αναγνώστης δεν μπορεί να δημιουργήσει ή να αποθηκεύσει</h3>
+      <ol class="steps">
+        <li>Ως αναγνώστης πατήστε <strong>+ New</strong> στη λίστα Pages.</li>
+        <li>Ανοίξτε το QA Translate, αλλάξτε τον τίτλο και πατήστε <strong>Save EL</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 1 καταλήγει στο <strong>403 — Forbidden</strong> (<code>You don’t have permission to view this page.</code>). Το βήμα 2 απορρίπτεται (κόκκινο πλαίσιο, προς το παρόν μόνο με τη λέξη <code>forbidden</code>)· δεν αποθηκεύεται τίποτα. Καταγράψτε αν το κουμπί + New και ένα ενεργό Save θα έπρεπε καν να εμφανίζονται σε αναγνώστη.</p>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/[collection]/page.tsx</code> (το + New εμφανίζεται πάντα) · <code>src/cms/modules/auth/guards.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-collections">
+    <h2>Brands, Testimonials, Popups &amp; συλλογές απενεργοποιημένων modules</h2>
+
+    <article class="tc" id="CON-078" data-priority="P2">
+      <h3>Brands: δημιουργία, δημοσίευση, επεξεργασία, διαγραφή</h3>
+      <ol class="steps">
+        <li>Ανοίξτε <strong>Brands</strong> → <strong>+ New</strong>. Ορίστε status <code>published</code> με κενό <strong>Brand name</strong>, slug <code>qa-brand-1</code>, και πατήστε <strong>Create Brand</strong>.</li>
+        <li>Συμπληρώστε Brand name <code>QA Brand 1</code>, επιλέξτε <strong>Logo</strong>, <strong>Website</strong> <code>https://example.com</code> και αποθηκεύστε.</li>
+        <li>Μετονομάστε το σε <code>QA Brand 1b</code> και αποθηκεύστε· έπειτα διαγράψτε το από τη λίστα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>Brand name is required</code>. Η φόρμα έχει μόνο Brand name, Logo, Website και τις ενότητες Document και Publishing: κανένα πλαίσιο SEO και κανένα κουμπί προεπισκόπησης. Κάθε επόμενο βήμα πετυχαίνει και η λίστα το αποτυπώνει.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/content/brand.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-079" data-priority="P2">
+      <h3>Testimonials: πεδία και αστέρια</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Το module Google reviews &amp; testimonials είναι ενεργό.</p>
+      <ol class="steps">
+        <li>Ανοίξτε το testimonial <code>qa-customer</code>. Ορίστε <strong>Role or company</strong> <code>Owner, Blue Café</code>, <strong>Stars</strong> <code>5</code>, επιλέξτε <strong>Photo</strong> και αποθηκεύστε.</li>
+        <li>Εκτελέστε: <code>SELECT JSON_EXTRACT(data, '$.rating'), JSON_EXTRACT(data, '$.role') FROM documents WHERE slug = 'qa-customer' AND type = 'testimonial';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η αποθήκευση πετυχαίνει· το SQL δείχνει <code>"5"</code> και <code>"Owner, Blue Café"</code>. Το <strong>What they said</strong> έχει υποκαρτέλες EL/EN που ξεκινούν από την καρτέλα γλώσσας του εγγράφου. Σημειώστε αν η αναπτυσσόμενη λίστα Stars δείχνει κενή επιλογή εκτός από το <strong>— select —</strong>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/content/testimonial.ts</code> · <code>src/cms/admin/fields/FieldInput.tsx</code> (<code>LocalizedField</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-080" data-priority="P3">
+      <h3>Popups: ενότητες και βασική αποθήκευση</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Το <strong>Popups</strong> είναι επιλεγμένο στο Settings → Modules. Η συμπεριφορά των popups στον ιστότοπο ελέγχεται στη λίστα ελέγχου 07.</p>
+      <ol class="steps">
+        <li>Popups → <strong>+ New</strong>. Κοιτάξτε τις κάρτες.</li>
+        <li>Συμπληρώστε <strong>Title</strong> (EL) <code>QA Popup</code>, slug <code>qa-popup</code>, ανοίξτε το <strong>Design</strong> και πληκτρολογήστε <code>blue</code> στο <strong>Background colour</strong>· αποθηκεύστε ως πρόχειρο. Διορθώστε το σε <code>#0000ff</code> και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Οι κάρτες <strong>Content</strong>, <strong>Where</strong>, <strong>When</strong> είναι ανοιχτές και η <strong>Design</strong> συμπτυγμένη. Η πρώτη αποθήκευση αποτυγχάνει με <code>expected a #rrggbb hex colour</code> και η κάρτα Design ανοίγει μόνη της για να το δείξει· η δεύτερη πετυχαίνει.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/popups/collection.ts</code> · <code>src/cms/admin/DocumentForm.tsx</code> (<code>sectionHasMessage</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-081" data-priority="P2">
+      <h3>Οι συλλογές ενός απενεργοποιημένου module δεν είναι προσβάσιμες</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Αποεπιλέξτε τα <strong>Google reviews &amp; testimonials</strong> και <strong>Popups</strong> (και αφήστε ανενεργά τα Commerce και Booking) και αποθηκεύστε τις ρυθμίσεις.</p>
+      <ol class="steps">
+        <li>Κοιτάξτε το πλευρικό μενού.</li>
+        <li>Στον browser με σύνδεση ανοίξτε τα <code>/api/cms/testimonial</code>, <code>/api/cms/popup</code>, <code>/api/cms/category</code>.</li>
+        <li>Ανοίξτε τα <code>/admin/testimonial</code> και <code>/admin/popup/new</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κανένα <strong>Testimonials</strong> ή <strong>Popups</strong> στο πλευρικό μενού. Κάθε API απαντά 404 με <code>Unknown collection "…"</code>. Τα URL του διαχειριστικού θα πρέπει να δείχνουν “Page not found”· αν αντί γι’ αυτό εμφανίζεται λίστα ή φόρμα, σημειώστε Αποτυχία (ίδιο κενό με το SET-036 στη λίστα ελέγχου 01).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/collections.ts</code> (<code>assertCollection</code>) · <code>src/app/admin/(shell)/[collection]/page.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-richtext">
+    <h2>Επεξεργαστής κειμένου &amp; shortcodes</h2>
+    <p class="intro">Εργαστείτε στο πεδίο <strong>Content</strong> μιας δημοσιευμένης σελίδας <code>QA Rich</code> (slug <code>qa-rich</code>, QA text <code>x</code>) και ελέγξτε το <code>/qa-rich</code> χωρίς σύνδεση μετά από κάθε αποθήκευση· χρησιμοποιήστε το “Inspect” του browser για να διαβάσετε το HTML. Ένα shortcode λειτουργεί μόνο ως αυτόνομη παράγραφος. Το <strong>+ Block</strong> στη γραμμή εργαλείων εισάγει ένα.</p>
+
+    <article class="tc" id="CON-082" data-priority="P1">
+      <h3>Η μορφοποίηση της γραμμής εργαλείων εμφανίζεται στον ιστότοπο</h3>
+      <ol class="steps">
+        <li>Πληκτρολογήστε μια παράγραφο· κάντε μια λέξη έντονη με το <strong>B</strong> και μία πλάγια με το <strong>i</strong>.</li>
+        <li>Προσθέστε μια γραμμή με μορφή <strong>H2</strong>, μια γραμμή <strong>H3</strong>, μια <strong>• List</strong> με δύο στοιχεία, μια <strong>1. List</strong> με δύο στοιχεία και ένα απόσπασμα <strong>❝</strong>.</li>
+        <li>Επιλέξτε μια λέξη, πατήστε <strong>Link</strong> και εισαγάγετε <code>https://example.com</code>. Συνδέστε άλλη μια λέξη με το <code>/about</code>.</li>
+        <li>Αποθηκεύστε και ανοίξτε το <code>/qa-rich</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε κουμπί της γραμμής εργαλείων εμφανίζεται πατημένο όταν ο κέρσορας βρίσκεται σε μορφοποιημένο κείμενο. Η δημόσια σελίδα δείχνει την ίδια μορφοποίηση: <code>&lt;strong&gt;</code>, <code>&lt;em&gt;</code>, <code>&lt;h2&gt;</code>, <code>&lt;h3&gt;</code>, <code>&lt;ul&gt;</code>, <code>&lt;ol&gt;</code>, <code>&lt;blockquote&gt;</code>. Ο σύνδεσμος example.com ανοίγει σε νέα καρτέλα (<code>target="_blank"</code>, <code>rel="noopener noreferrer"</code>)· ο σύνδεσμος <code>/about</code> ανοίγει στην ίδια καρτέλα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/fields/RichTextEditor.tsx</code> (<code>RICH_TEXT_TOOLS</code>) · <code>src/components/cms/RichText.tsx</code></p>
+    </article>
+
+    <article class="tc" id="CON-083" data-priority="P3">
+      <h3>Σύνδεσμος javascript: εξουδετερώνεται</h3>
+      <ol class="steps">
+        <li>Επιλέξτε μια λέξη, πατήστε <strong>Link</strong> και εισαγάγετε <code>javascript:alert(1)</code>. Αποθηκεύστε, ανοίξτε τη δημόσια σελίδα και πατήστε τη λέξη.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Είτε ο επεξεργαστής απορρίπτει τον σύνδεσμο, είτε το <code>href</code> του δημόσιου συνδέσμου είναι <code>#</code>. Δεν εμφανίζεται ποτέ ειδοποίηση alert.</p>
+      <p class="ref">Αναφ.: <code>src/components/ui/Button.tsx</code> (<code>safeHref</code>) · <code>src/components/cms/RichText.tsx</code></p>
+    </article>
+
+    <article class="tc" id="CON-084" data-priority="P2">
+      <h3>Η λίστα του + Block και τα απενεργοποιημένα modules</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Τα Google reviews &amp; testimonials και Popups είναι ανενεργά.</p>
+      <ol class="steps">
+        <li>Πατήστε <strong>+ Block</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ένα πλαίσιο <strong>Insert a block</strong> εμφανίζει τα Google reviews, Testimonials, Form, Popup (inline), Brands, Countdown και Script snippet, το καθένα με περιγραφή μίας γραμμής. Τα Google reviews και Testimonials είναι γκριζαρισμένα με το <code>Switch on the “Google reviews &amp; testimonials” module in Settings → Modules to use this.</code>· το Popup (inline) με την ίδια πρόταση που αναφέρει το <code>Popups</code>. Το <strong>Cancel</strong> κλείνει το πλαίσιο.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/fields/InsertShortcodeDialog.tsx</code> · <code>src/cms/core/shortcodes/all.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-085" data-priority="P2">
+      <h3>Εισαγωγή και εμφάνιση αντίστροφης μέτρησης</h3>
+      <ol class="steps">
+        <li>+ Block → <strong>Countdown</strong>. Συμπληρώστε <strong>To</strong> <code>2030-01-01T12:00</code>, <strong>Label</strong> <code>QA countdown</code> και αφήστε κενό το <strong>Expired</strong>.</li>
+        <li>Διαβάστε τη γκρι προεπισκόπηση κειμένου, πατήστε <strong>Insert</strong>, αποθηκεύστε και ανοίξτε τη δημόσια σελίδα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η προεπισκόπηση γράφει ακριβώς <code>[countdown to="2030-01-01T12:00" label="QA countdown"]</code> και εισάγεται ως αυτόνομη παράγραφος. Η δημόσια σελίδα δείχνει <code>QA countdown</code> πάνω από ένα ρολόι που μετρά αντίστροφα κάθε δευτερόλεπτο· το κείμενο του ίδιου του shortcode δεν είναι ορατό.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/shortcodes/parse.ts</code> (<code>serializeShortcode</code>) · <code>src/components/shortcodes/Countdown.tsx</code></p>
+    </article>
+
+    <article class="tc" id="CON-086" data-priority="P2">
+      <h3>Το μπλοκ Brands δείχνει τα λογότυπα των δημοσιευμένων brands</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Τέσσερα δημοσιευμένα ελληνικά brands <code>Brand 1</code>–<code>Brand 4</code>, τα δύο με λογότυπο και ένα με Website <code>https://example.com</code>.</p>
+      <ol class="steps">
+        <li>+ Block → <strong>Brands</strong>, κρατήστε τις προεπιλογές, <strong>Insert</strong>, αποθηκεύστε· ανοίξτε τη δημόσια σελίδα και το <code>/en/qa-rich</code> (αφού δημιουργήσετε έκδοση EN με Copy from EL).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το κείμενο που εισάγεται είναι <code>[brands layout="row" limit="12"]</code>. Τέσσερα brands εμφανίζονται σε μια σειρά: λογότυπα όπου έχουν οριστεί (εναλλακτικό κείμενο = όνομα brand), αλλιώς το όνομα ως κείμενο· αυτό με τον ιστότοπο συνδέεται σε αυτόν σε νέα καρτέλα. Η αγγλική σελίδα δείχνει τα ίδια ελληνικά brands (το μπλοκ διαβάζει μόνο ελληνικές γραμμές brands· καταγράψτε το αν αυτό δεν είναι αναμενόμενο).</p>
+      <p class="ref">Αναφ.: <code>src/components/shortcodes/Brands.tsx</code></p>
+    </article>
+
+    <article class="tc" id="CON-087" data-priority="P2">
+      <h3>Μπλοκ λίστας επιστρέφει τον ζητούμενο αριθμό ακόμη και με νεότερα μη δημοσιευμένα στοιχεία</h3>
+      <ol class="steps">
+        <li>Δημιουργήστε και δημοσιεύστε τα <code>Brand 5</code> και <code>Brand 6</code> (ώστε να είναι τα νεότερα), έπειτα ορίστε και τα δύο σε <code>archived</code> και δημιουργήστε το <code>Brand 7</code> ως πρόχειρο.</li>
+        <li>Αλλάξτε το shortcode της σελίδας σε <code>[brands limit="3"]</code>, αποθηκεύστε και ανοίξτε τη δημόσια σελίδα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Εμφανίζονται ακριβώς τρία brands, όλα από τα Brand 1–4 (τα τρία πιο πρόσφατα δημοσιευμένα). Τα Brand 5, 6 και 7 δεν εμφανίζονται ποτέ, και δεν εμφανίζονται λιγότερα από τρία.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/read/documents.ts</code> (<code>listPublishedDocuments</code>, <code>visibleWhere</code> πριν από το όριο)</p>
+    </article>
+
+    <article class="tc" id="CON-088" data-priority="P3">
+      <h3>Shortcodes μέσα σε κείμενο και shortcodes με διαφυγή παραμένουν κείμενο</h3>
+      <ol class="steps">
+        <li>Προσθέστε τις παραγράφους <code>See [brands] here</code> και <code>[[brands]]</code>. Αποθηκεύστε και ανοίξτε τη δημόσια σελίδα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η πρώτη εμφανίζεται κατά λέξη ως <code>See [brands] here</code>· η δεύτερη εμφανίζεται ως <code>[brands]</code>. Καμία δεν εμφανίζει λογότυπα.</p>
+      <p class="ref">Αναφ.: <code>src/components/cms/RichText.tsx</code> (<code>unescapeShortcode</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-089" data-priority="P3">
+      <h3>Μη έγκυρα, άγνωστα και απενεργοποιημένα shortcodes δεν εμφανίζουν τίποτα</h3>
+      <ol class="steps">
+        <li>Προσθέστε ξεχωριστές παραγράφους <code>[countdown to="soon"]</code>, <code>[nosuch]</code> και <code>[testimonials]</code> (με το module ανενεργό). Αποθηκεύστε και ανοίξτε τη δημόσια σελίδα.</li>
+        <li>Ενεργοποιήστε το Google reviews &amp; testimonials και ανανεώστε τη δημόσια σελίδα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: κανένα από τα τρία δεν εμφανίζει τίποτα (ούτε ακατέργαστο κείμενο, ούτε σφάλμα, το υπόλοιπο της σελίδας ανέπαφο). Βήμα 2: το μπλοκ testimonials δείχνει τώρα το δημοσιευμένο απόσπασμα του <code>qa-customer</code>.</p>
+      <p class="ref">Αναφ.: <code>src/components/cms/Shortcode.tsx</code> · <code>src/cms/core/shortcodes/registry.ts</code> (<code>resolveShortcode</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-090" data-priority="P3">
+      <h3>Γνωστό κενό: τα [form] και [popup] δεν εμφανίζουν τίποτα</h3>
+      <ol class="steps">
+        <li>Με ενεργό το Popups, εισαγάγετε μέσω του + Block ένα <strong>Form</strong> (id <code>contact</code>) και ένα <strong>Popup (inline)</strong> (id <code>qa-popup</code>). Αποθηκεύστε και ανοίξτε τη δημόσια σελίδα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και τα δύο προσφέρονται στον επεξεργαστή, αλλά δεν εμφανίζεται τίποτα στη δημόσια σελίδα (δεν έχουν ακόμη component στον ιστότοπο). Επιτυχία αν δεν εμφανίζεται τίποτα και η σελίδα κατά τα άλλα είναι ανέπαφη· αναφέρετε αν κάποιο από τα δύο εμφανίζει πλέον κάτι, ώστε να ενημερωθεί αυτή η λίστα ελέγχου.</p>
+      <p class="ref">Αναφ.: <code>src/shortcodes/index.tsx</code> (<code>SHORTCODE_COMPONENTS</code>) · docs/dev-guides/03-content-model.md §9</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-import">
+    <h2>Εισαγωγή markdown</h2>
+
+    <article class="tc" id="CON-091" data-priority="P2">
+      <h3>Η εισαγωγή δεν προσφέρεται: καμία συλλογή δεν έχει σώμα markdown</h3>
+      <ol class="steps">
+        <li>Ανοίξτε τις λίστες Pages και Brands και έναν επεξεργαστή σελίδας· αναζητήστε κουμπί <strong>Import .md</strong>.</li>
+        <li>Με σύνδεση, ανοίξτε το <code>/api/cms/page/import</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κανένα κουμπί Import .md πουθενά (η εισαγωγή απαιτεί ακριβώς ένα πεδίο σώματος markdown, το οποίο δεν έχει καμία βασική συλλογή· ούτε εμφανίζεται επεξεργαστής σώματος markdown). Το URL απαντά 400 με <code>"page" has no markdown body, so there is nothing to import a .md file into.</code></p>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/import.ts</code> · <code>src/cms/core/import/</code> (<code>mdxBodyField</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-092" data-priority="P3">
+      <h3>Ο σύνδεσμος ?import=1 σε συλλογή χωρίς σώμα markdown</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/admin/page/new?import=1</code>.</li>
+        <li>Αν ανοίξει πλαίσιο <strong>Import a .md file</strong>, επιλέξτε σε αυτό οποιοδήποτε μικρό αρχείο <code>.md</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ιδανικά δεν ανοίγει πλαίσιο εισαγωγής. Αν ανοίξει, η επιλογή αρχείου δείχνει το μήνυμα 400 της προηγούμενης περίπτωσης και η φόρμα μένει κενή· καταγράψτε ότι το πλαίσιο είναι προσβάσιμο μέσω URL.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/DocumentForm.tsx</code> (το <code>importOpen</code> δεν συνδέεται με το <code>canImport</code>) · <code>src/cms/admin/ImportMarkdownDialog.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-public">
+    <h2>Δημόσιος ιστότοπος: ανανέωση cache &amp; sitemap</h2>
+
+    <article class="tc" id="CON-093" data-priority="P2">
+      <h3>Η απόσυρση και η διαγραφή ισχύουν αμέσως</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/qa-rich</code> χωρίς σύνδεση. Στο διαχειριστικό ορίστε το σε <code>draft</code> και αποθηκεύστε· ανανεώστε τη δημόσια σελίδα.</li>
+        <li>Δημοσιεύστε το ξανά και ανανεώστε. Έπειτα διαγράψτε το από τη λίστα και ανανεώστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Πρόχειρο: η πρώτη ανανέωση καταλήγει στη σελίδα «δεν βρέθηκε». Δημοσιευμένο: επιστρέφει από την πρώτη ανανέωση. Διαγραμμένο: «δεν βρέθηκε» από την πρώτη ανανέωση.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/read/revalidate.ts</code> · <code>src/cms/core/cache.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-094" data-priority="P2">
+      <h3>Η αρχική σελίδα διαβάζει τη σελίδα “home”</h3>
+      <ol class="steps">
+        <li>Επεξεργαστείτε τη σελίδα <strong>Home</strong> των seeds (slug <code>home</code>, δημοσιευμένη): αλλάξτε τον τίτλο και το κείμενο του σώματος και αποθηκεύστε.</li>
+        <li>Ανοίξτε τα <code>/</code> και <code>/en</code> χωρίς σύνδεση. Έπειτα ορίστε την έκδοση EL της Home σε πρόχειρο και ανανεώστε το <code>/</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η κεντρική ενότητα (hero) της ελληνικής αρχικής δείχνει τον νέο τίτλο και το νέο σώμα από την πρώτη ανανέωση· η αγγλική παραμένει αμετάβλητη. Με το EL σε πρόχειρο, η ελληνική κεντρική ενότητα επιστρέφει στο όνομα του ιστότοπου (και στο σύνθημα, αν έχει οριστεί). Δημοσιεύστε ξανά τη Home στο τέλος.</p>
+      <p class="ref">Αναφ.: <code>src/components/site/HomeSections.tsx</code> (<code>HomeHero</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-095" data-priority="P3">
+      <h3>Μια αλλαγή brand φτάνει στις σελίδες που δείχνουν brands</h3>
+      <ol class="steps">
+        <li>Προσθέστε μια παράγραφο <code>[brands]</code> στη σελίδα QA Reuse (<code>/qa-page-one</code>), αποθηκεύστε και κρατήστε το <code>/qa-page-one</code> ανοιχτό χωρίς σύνδεση.</li>
+        <li>Μετονομάστε το <code>Brand 4</code> σε <code>Brand 4 renamed</code> και αφαιρέστε το λογότυπό του (αν έχει)· αποθηκεύστε.</li>
+        <li>Ανανεώστε τη δημόσια σελίδα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το μπλοκ δείχνει <code>Brand 4 renamed</code> ως κείμενο από την πρώτη ανανέωση.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/read/tags.ts</code> (<code>cms:type:{type}</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-096" data-priority="P1">
+      <h3>Το sitemap περιλαμβάνει κάθε δημοσιευμένη σελίδα, και πέρα από τις 200</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Υπάρχουν οι 210 μαζικές σελίδες.</p>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s http://localhost:3002/sitemap.xml | grep -o '&lt;loc&gt;[^&lt;]*/qa-bulk-[0-9]*&lt;/loc&gt;' | grep -vc '/en/'</code>.</li>
+        <li>Εκτελέστε το ίδιο με <code>grep -c '/en/'</code> στο τέλος.</li>
+        <li>Ανοίξτε το <code>/sitemap.xml</code> στον browser και αναζητήστε τα <code>qa-bulk-210</code>, <code>nea-arthra</code>, <code>my-post-draft</code>, <code>/home</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 1 τυπώνει <code>210</code>. Τα <code>qa-bulk-210</code> και <code>nea-arthra</code> περιλαμβάνονται με <code>lastmod</code>· το πρόχειρο <code>my-post-draft</code> και το <code>/home</code> όχι. Καταγράψτε τη μέτρηση του βήματος 2: οι μαζικές σελίδες δεν έχουν αγγλική έκδοση, άρα μη μηδενική μέτρηση σημαίνει ότι το sitemap περιλαμβάνει αγγλικές διευθύνσεις που καταλήγουν σε «δεν βρέθηκε».</p>
+      <p class="ref">Αναφ.: <code>src/app/sitemap.ts</code> (<code>listAllPublishedDocuments</code>, <code>PAGE_SLUGS_NOT_LISTED</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-097" data-priority="P3">
+      <h3>Καθαρισμός των μαζικών σελίδων</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>DELETE FROM documents WHERE type = 'page' AND slug LIKE 'qa-bulk-%';</code></li>
+        <li>Αποθηκεύστε μία φορά οποιαδήποτε σελίδα στο διαχειριστικό· ανανεώστε τη λίστα Pages και το sitemap.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Διαγράφονται 210 γραμμές· το σύνολο της λίστας μειώνεται κατά 210· το sitemap δεν έχει εγγραφές <code>qa-bulk-</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/read/revalidate.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-editorial">
+    <h2>Παραγόμενες συλλογές αρθρογραφίας (ιστότοποι με blog, FAQ ή case studies)</h2>
+    <p class="intro">Τα Articles, Answers, Case studies, οι κατηγορίες τους και τα Authors δεν υπάρχουν στη βάση του CMS· τα προσθέτει το skill new-site στους παραγόμενους ιστότοπους. Στη βάση, σημειώστε αυτές τις περιπτώσεις ως «Δεν ισχύει». Σε παραγόμενο ιστότοπο, το <code>Articles</code> εμφανίζεται στο πλευρικό μενού και το blog βρίσκεται στο <code>/blog</code>.</p>
+
+    <article class="tc" id="CON-098" data-priority="P3">
+      <h3>Λίστα του blog: 12 ανά σελίδα, κρυφά πρόχειρα, αναζήτηση</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> 13 ή περισσότερα δημοσιευμένα άρθρα και 2 πρόχειρα στα EL.</p>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/blog</code>, έπειτα τα <code>/blog?page=2</code> και <code>/blog?page=99</code>.</li>
+        <li>Αναζητήστε μια λέξη από έναν τίτλο με το πεδίο αναζήτησης της λίστας.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η σελίδα 1 δείχνει 12 άρθρα, η σελίδα 2 τα υπόλοιπα· το <code>page=99</code> δείχνει την τελευταία σελίδα. Δεν εμφανίζεται κανένα πρόχειρο. Η αναζήτηση βρίσκει αποτελέσματα ανεξάρτητα από τόνους και πεζά/κεφαλαία.</p>
+      <p class="ref">Αναφ.: <code>.claude/skills/new-site/templates/content/index-page.tsx.tpl</code> · <code>src/lib/site/content-query.ts</code> (<code>CONTENT_PAGE_SIZE</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-099" data-priority="P3">
+      <h3>Το μπλοκ “latest” της αρχικής δείχνει τρία στοιχεία ακόμη και με νεότερα μη δημοσιευμένα</h3>
+      <ol class="steps">
+        <li>Δημοσιεύστε δύο νέα άρθρα και έπειτα επαναφέρετέ τα σε πρόχειρο (κρατούν την ημερομηνία δημοσίευσής τους). Ανοίξτε το <code>/</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το μπλοκ τελευταίου περιεχομένου εξακολουθεί να δείχνει τρία δημοσιευμένα άρθρα· κανένα από τα δύο πρόχειρα δεν εμφανίζεται.</p>
+      <p class="ref">Αναφ.: <code>src/components/site/HomeSections.tsx</code> (<code>LatestContent</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-100" data-priority="P3">
+      <h3>Σελίδα προφίλ συντάκτη</h3>
+      <ol class="steps">
+        <li>Δημιουργήστε και δημοσιεύστε έναν author, επιλέξτε τον σε ένα δημοσιευμένο άρθρο, ανοίξτε το άρθρο και ακολουθήστε τον σύνδεσμο του author.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η σελίδα του author βρίσκεται στο <code>/authors/&lt;slug&gt;</code>, εμφανίζει μόνο τα δημοσιευμένα άρθρα του και περιλαμβάνεται στο <code>/sitemap.xml</code>. Η διεύθυνση ενός μη δημοσιευμένου author καταλήγει στη σελίδα «δεν βρέθηκε».</p>
+      <p class="ref">Αναφ.: <code>src/lib/site/authors.ts</code> · <code>.claude/skills/new-site/templates/content/author-page.tsx.tpl</code> · <code>src/app/sitemap.ts</code></p>
+    </article>
+  </section>
+
+</main>
+<footer class="page">Λίστα ελέγχου 03 από 12. Τα αποτελέσματα αποθηκεύονται μόνο σε αυτόν τον browser· χρησιμοποιήστε την εξαγωγή πριν καθαρίσετε τα δεδομένα του browser. Στο τέλος επαναφέρετε τους διακόπτες των modules, δημοσιεύστε ξανά τα Home και About, αφαιρέστε τα προσαρμοσμένα πεδία των Pages αν άλλες λίστες ελέγχου δεν αναμένουν κανένα, και διαγράψτε τις σελίδες, τα brands και το testimonial του QA.</footer>
+</body>
+</html>

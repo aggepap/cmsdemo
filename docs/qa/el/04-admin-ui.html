@@ -1,0 +1,1010 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Διαχειριστικό &amp; πλοήγηση</title>
+<link rel="stylesheet" href="../qa.css">
+<script src="../qa.js" defer></script>
+</head>
+<body>
+<nav class="crumbs"><a href="index.html">Χειροκίνητος έλεγχος CMS</a></nav>
+<header class="page">
+  <h1>04 · Διαχειριστικό &amp; πλοήγηση</h1>
+  <p class="scope">Το πλαίσιο του διαχειριστικού και ό,τι περιβάλλει το περιεχόμενο: η σελίδα σύνδεσης, ο πίνακας ελέγχου (dashboard), το πλευρικό μενού ανά module και ανά ρόλο, η επάνω μπάρα και η αποσύνδεση, το “Back to site”, η μπάρα διαχείρισης στον δημόσιο ιστότοπο, η σελίδα 403, η αυτόματη αποσύνδεση λόγω αδράνειας, τα κοινά στοιχεία ελέγχου (καρτέλες, παράθυρα διαλόγου, μηνύματα, πίνακες, η προστασία μη αποθηκευμένων αλλαγών), η φόρτωση κάθε οθόνης του διαχειριστικού με την κενή κατάστασή της, το διαχειριστικό σε μετακινημένη διαδρομή, η διάταξη σε πλάτος κινητού, η χρήση με πληκτρολόγιο και αναγνώστη οθόνης, και ο χρωματικός συνδυασμός. Η επεξεργασία εγγράφων, τα πεδία, η δημοσίευση, οι εκδόσεις, τα κλειδώματα, η αναζήτηση λίστας και τα δικαιώματα διαγραφής βρίσκονται στη λίστα ελέγχου 03· η ασφάλεια σύνδεσης, ο έλεγχος ταυτότητας δύο παραγόντων και η επεξεργασία ρόλων στην 05. Χρειάζεστε δύο browsers (ή ένα κανονικό και ένα ιδιωτικό παράθυρο), τερματικό στο μηχάνημα δοκιμών για να επεξεργαστείτε το <code>.env.local</code>, και για τις περιπτώσεις προσβασιμότητας έναν αναγνώστη οθόνης (NVDA, VoiceOver ή Narrator) ή το δέντρο προσβασιμότητας του browser.</p>
+</header>
+<main>
+
+  <section class="suite" id="suite-prep">
+    <h2>Πριν ξεκινήσετε</h2>
+    <p class="intro">Η λίστα ελέγχου 01 πρέπει να έχει ολοκληρωθεί: τα migrations έχουν εφαρμοστεί, ο superadmin <code>qa-admin@example.com</code> υπάρχει και οι σελίδες των seeds έχουν δημοσιευτεί με <code>npm run db:seed-site -- --force --publish-samples</code>. Τα URL παρακάτω χρησιμοποιούν το <code>http://localhost:3002</code>· σε φιλοξενούμενο περιβάλλον δοκιμών χρησιμοποιήστε τη διεύθυνσή του. Το διαχειριστικό βρίσκεται στο <code>/admin</code>, εκτός αν μια περίπτωση ορίζει διαφορετικά. Το «Συνδεδεμένοι ως X» σημαίνει σύνδεση στο <code>/admin/login</code> με αυτόν τον λογαριασμό (επιλέξτε το πλαίσιο reCAPTCHA· ολοκληρώστε τη ρύθμιση του ελέγχου ταυτότητας δύο παραγόντων αν ζητηθεί, βλ. λίστα ελέγχου 05). Οι περιπτώσεις που χρειάζονται το κατάστημα ή τις κρατήσεις προϋποθέτουν το περιεχόμενο των λιστών ελέγχου 08 και 09 (τουλάχιστον ένα δημοσιευμένο προϊόν σε δημοσιευμένη κατηγορία και ετικέτα, και μία δημοσιευμένη εμπειρία)· αν αυτά τα modules είναι ανενεργά στον υπό έλεγχο ιστότοπο, σημειώστε τις περιπτώσεις αυτές ως Δεν ισχύει.</p>
+
+    <article class="tc" id="ADM-001" data-priority="P2">
+      <h3>Δημιουργία των λογαριασμών που χρησιμοποιούν οι περιπτώσεις ρόλων</h3>
+      <ol class="steps">
+        <li>Συνδεδεμένοι ως <code>qa-admin@example.com</code>, ανοίξτε το <strong>Roles</strong>. Στο <strong>Add a role</strong> συμπληρώστε <strong>Role name</strong> <code>QA limited</code>, αφήστε επιλεγμένο το <strong>Access</strong>, επιλέξτε μόνο τα <strong>View media</strong> και <strong>View audit log</strong> και πατήστε <strong>Add role</strong>.</li>
+        <li>Προσθέστε δεύτερο ρόλο <code>QA no access</code>: αποεπιλέξτε το <strong>Access</strong>, επιλέξτε το <strong>View content</strong> και πατήστε <strong>Add role</strong>.</li>
+        <li>Ανοίξτε το <strong>Users</strong>. Στο <strong>Add a user</strong> δημιουργήστε, πατώντας κάθε φορά <strong>Add user</strong>: τον <code>qa-editor@example.com</code> (όνομα <code>QA Editor</code>, ρόλος <code>editor</code>), τον <code>qa-limited@example.com</code> (όνομα <code>QA Limited</code>, ρόλος <code>QA limited</code>) και τον <code>qa-noaccess@example.com</code> (όνομα <code>QA No Access</code>, ρόλος <code>QA no access</code>), ο καθένας με ισχυρό κωδικό, για παράδειγμα <code>Qa-Admin-Ui-Pass-2026!</code>.</li>
+        <li>Σε τερματικό εκτελέστε <code>npm run db:seed-admin -- qa-en@example.com 'Qa-English-Pass-2026!' 'QA English' --locale en</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Όσο το <strong>Access</strong> είναι αποεπιλεγμένο στο βήμα 2, εμφανίζεται πορτοκαλί σημείωση με το κείμενο <code>Without Access this role cannot open the admin at all — every screen will refuse it.</code> Ο ρόλος αποθηκεύεται κανονικά.</li>
+        <li>Και οι τέσσερις χρήστες δημιουργούνται χωρίς σφάλμα. Ο <code>qa-en@example.com</code> είναι superadmin με αγγλική γλώσσα λογαριασμού.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/RolesManager.tsx</code> · <code>src/cms/admin/UsersManager.tsx</code> · <code>src/cms/db/seeds/roles.ts</code> (δικαιώματα editor)</p>
+    </article>
+
+    <article class="tc" id="ADM-002" data-priority="P2">
+      <h3>Ενεργοποίηση όλων των modules</h3>
+      <ol class="steps">
+        <li>Συνδεδεμένοι ως <code>qa-admin@example.com</code>, ανοίξτε το <code>/admin/settings?tab=Modules</code>. Επιλέξτε όλα τα πλαίσια (Commerce, Booking, Forms, Seo, Newsletter, Customer accounts, Google reviews &amp; testimonials, Popups, Media, Praion.ai connection) και πατήστε <strong>Save settings</strong>.</li>
+        <li>Ανοίξτε την καρτέλα <strong>Ecommerce</strong> και έπειτα την υποκαρτέλα της <strong>Gift cards</strong>. Επιλέξτε το <strong>Sell gift cards</strong> και πατήστε <strong>Save</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 1 εμφανίζει με πράσινο το <code>Settings saved.</code> Το βήμα 2 εμφανίζει <code>Saved.</code> Το πλευρικό μενού έχει πλέον τις επικεφαλίδες <strong>Ecommerce</strong> και <strong>Booking</strong>. Εκτός αν μια περίπτωση ορίζει διαφορετικά, η υπόλοιπη λίστα ελέγχου προϋποθέτει αυτή την κατάσταση· η λίστα ελέγχου 01 επαναφέρει τις προεπιλογές.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SettingsForm.tsx</code> · <code>src/cms/admin/GiftCardSettings.tsx</code> · <code>src/cms/core/settings/modules.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-login">
+    <h2>Σελίδα σύνδεσης</h2>
+    <p class="intro">Η πρώτη σύνδεση, ο άμεσος σύνδεσμος (deep link) και οι βασικές επιθέσεις μέσω <code>next</code> βρίσκονται στη λίστα ελέγχου 01 (SET-025, SET-028, SET-029)· τα σφάλματα λανθασμένου κωδικού και captcha στην SET-027.</p>
+
+    <article class="tc" id="ADM-003" data-priority="P2">
+      <h3>Τι εμφανίζει η σελίδα σύνδεσης</h3>
+      <ol class="steps">
+        <li>Αποσυνδεδεμένοι, ανοίξτε το <code>/admin/login</code>.</li>
+        <li>Πληκτρολογήστε έναν κωδικό και πατήστε το κουμπί με το μάτι στο τέλος του πεδίου κωδικού, έπειτα πατήστε το ξανά.</li>
+        <li>Δείτε τον τίτλο της καρτέλας του browser, έπειτα προβάλετε τον πηγαίο κώδικα της σελίδας και αναζητήστε το <code>robots</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Μια κεντραρισμένη λευκή κάρτα σε ανοιχτό γκρι φόντο: ένα χρυσό τετράγωνο εικονίδιο, το όνομα του ιστότοπου ως επικεφαλίδα και κάτω από αυτό το <strong>CMS · sign in</strong> με μικρά κεφαλαία. Από κάτω: <strong>Email</strong> (με εστίαση κατά τη φόρτωση), <strong>Password</strong>, το πλαίσιο reCAPTCHA και ένα κουμπί <strong>Sign in</strong> σε όλο το πλάτος. Χωρίς πλευρικό μενού ή επάνω μπάρα.</li>
+        <li>Βήμα 2: ο κωδικός γίνεται αναγνώσιμος και το όνομα του κουμπιού αλλάζει από <code>Show password</code> σε <code>Hide password</code> (περάστε τον δείκτη από πάνω ή επιθεωρήστε το)· με δεύτερο πάτημα ο κωδικός κρύβεται.</li>
+        <li>Βήμα 3: ο τίτλος της καρτέλας είναι <code>CMS</code>· ο πηγαίος κώδικας περιέχει <code>&lt;meta name="robots" content="noindex, nofollow"&gt;</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/admin/login/page.tsx</code> · <code>src/cms/admin/LoginForm.tsx</code> · <code>src/cms/admin/ui/PasswordInput.tsx</code> · <code>src/app/admin/layout.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-004" data-priority="P2">
+      <h3>Μια φιλτραρισμένη λίστα και μια καρτέλα γλώσσας διατηρούνται μετά τη σύνδεση</h3>
+      <ol class="steps">
+        <li>Αποσυνδεδεμένοι, πληκτρολογήστε <code>/admin/page?q=about&amp;status=published</code> στη γραμμή διευθύνσεων και συνδεθείτε.</li>
+        <li>Αποσυνδεθείτε. Ανοίξτε τη διεύθυνση επεξεργασίας μιας σελίδας που έχει αγγλική έκδοση, με <code>?locale=en</code> στο τέλος (για παράδειγμα <code>/admin/page/&lt;id&gt;?locale=en</code>), και συνδεθείτε.</li>
+        <li>Αποσυνδεθείτε. Ανοίξτε το <code>/admin/audit?q=Signed</code> και συνδεθείτε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε φορά η διεύθυνση σύνδεσης περιέχει τη ζητούμενη διαδρομή στο <code>next=</code>, και μετά τη σύνδεση καταλήγετε ακριβώς εκεί: στο βήμα 1 στα Pages με <code>about</code> στο πεδίο αναζήτησης και <strong>published</strong> στο φίλτρο κατάστασης· στο βήμα 2 στον επεξεργαστή με επιλεγμένη την καρτέλα EN· στο βήμα 3 στο Audit log φιλτραρισμένο σε <code>Signed</code>.</p>
+      <p class="ref">Αναφ.: <code>src/proxy.ts</code> · <code>src/cms/core/admin-deep-link.ts</code> · <code>src/cms/admin/safe-next.ts</code></p>
+    </article>
+
+    <article class="tc" id="ADM-005" data-priority="P3">
+      <h3>Περισσότερες κακόβουλες τιμές next επιστρέφουν στον πίνακα ελέγχου</h3>
+      <ol class="steps">
+        <li>Αποσυνδεδεμένοι, ανοίξτε καθένα από τα παρακάτω, συνδεθείτε, σημειώστε πού καταλήγετε και αποσυνδεθείτε ξανά:
+          <code>/admin/login?next=https://evil.example</code>,
+          <code>/admin/login?next=/admin@evil.example</code>,
+          <code>/admin/login?next=javascript:alert(1)</code>,
+          <code>/admin/login?next=/about</code>,
+          <code>/admin/login?next=%2F%2Fevil.example</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Όλα καταλήγουν στον πίνακα ελέγχου στο <code>/admin</code> του host δοκιμών. Δεν ανοίγει ποτέ άλλος τομέας, δεν εκτελείται κανένα script και ο προορισμός δεν είναι η δημόσια σελίδα <code>/about</code> (επιτρέπονται μόνο διαδρομές του διαχειριστικού).</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/safe-next.ts</code> (<code>safeNextPath</code>) · <code>test/cms/safe-next.test.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-dashboard">
+    <h2>Πίνακας ελέγχου (dashboard)</h2>
+
+    <article class="tc" id="ADM-006" data-priority="P1">
+      <h3>Περιεχόμενα του πίνακα ελέγχου για superadmin</h3>
+      <ol class="steps">
+        <li>Συνδεδεμένοι ως <code>qa-admin@example.com</code>, ανοίξτε το <code>/admin</code>.</li>
+        <li>Περάστε τον δείκτη πάνω από (ή δώστε εστίαση στο) μικρό “i” δίπλα στο <strong>Content</strong>, έπειτα σε εκείνο δίπλα στο <strong>Recent submissions</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Η επικεφαλίδα είναι το όνομα του ιστότοπου, με το <code>Manage your site content.</code> από κάτω.</li>
+        <li>Μια ενότητα <strong>Content</strong> έχει μία κάρτα για κάθε συλλογή που εμφανίζεται στο πλευρικό μενού, με τη σειρά του πλευρικού μενού (Pages, Brands, Testimonials, Popups, Categories, Size charts, Tags, Products, Categories, Types, Locations, Experiences με όλα τα modules ενεργά). Κάθε κάρτα δείχνει ένα εικονίδιο, το όνομα στον πληθυντικό, <code>N items</code> (ή <code>1 item</code>) και, όταν κάποια είναι πρόχειρα, <code>· M in draft</code> με χρυσό· από κάτω <strong>View</strong> · <strong>New</strong> (με εικονίδιο συν).</li>
+        <li>Μια ενότητα <strong>Recent submissions</strong> παραθέτει έως έξι πιο πρόσφατες υποβολές φορμών (ημερομηνία, φόρμα, email, κατάσταση) με <strong>View all →</strong> στα δεξιά, ή το <code>No submissions yet.</code></li>
+        <li>Οι επεξηγήσεις γράφουν <code>Each item is counted once, however many languages it has. …</code> και <code>The latest messages sent through your site’s forms. …</code></li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/page.tsx</code> · <code>src/cms/admin/shared.ts</code> (<code>visibleAdminCollections</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-007" data-priority="P2">
+      <h3>Οι αριθμοί του πίνακα ελέγχου συμφωνούν με τις λίστες</h3>
+      <ol class="steps">
+        <li>Σημειώστε τα στοιχεία της κάρτας Pages: στοιχεία και πρόχειρα.</li>
+        <li>Πατήστε <strong>View</strong> σε αυτήν και διαβάστε το <code>N total</code> κάτω από τη λίστα. Ορίστε το φίλτρο κατάστασης σε <strong>draft</strong> και διαβάστε ξανά το σύνολο.</li>
+        <li>Επιλέξτε μια σελίδα που έχει και EL και EN έκδοση και ελέγξτε ότι εμφανίζεται μία φορά στη λίστα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ο αριθμός στοιχείων της κάρτας ισούται με το αφιλτράριστο σύνολο της λίστας, και ο αριθμός «in draft» ισούται με το σύνολο με το φίλτρο πρόχειρων. Μια σελίδα με δύο γλώσσες μετράει ως ένα στοιχείο και στα δύο σημεία.</p>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/page.tsx</code> (<code>countOf</code>, <code>draftCountOf</code>) · <code>src/cms/core/documents/service.ts</code> (<code>listDocumentGroups</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-008" data-priority="P2">
+      <h3>Κάθε σύνδεσμος του πίνακα ελέγχου οδηγεί στη σωστή οθόνη</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Υπάρχει τουλάχιστον μία υποβολή φόρμας (στείλτε μία φορά τη φόρμα επικοινωνίας στο <code>/contact</code> από ιδιωτικό παράθυρο).</p>
+      <ol class="steps">
+        <li>Σε κάθε κάρτα πατήστε <strong>View</strong>, ελέγξτε τη διεύθυνση, επιστρέψτε· έπειτα <strong>New</strong>, ελέγξτε, επιστρέψτε.</li>
+        <li>Πατήστε <strong>View all →</strong>.</li>
+        <li>Πίσω στον πίνακα ελέγχου, πατήστε μία γραμμή κάτω από το Recent submissions.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το <strong>View</strong> ανοίγει το <code>/admin/&lt;key&gt;</code> και το <strong>New</strong> το <code>/admin/&lt;key&gt;/new</code>, όπου key είναι τα <code>page</code>, <code>brand</code>, <code>testimonial</code>, <code>popup</code>, <code>category</code>, <code>sizechart</code>, <code>tag</code>, <code>product</code>, <code>booking_category</code>, <code>vessel_type</code>, <code>departure_location</code>, <code>booking</code>. Κανένα δεν καταλήγει σε 404 ή 403 για τον superadmin.</li>
+        <li>Το <strong>View all →</strong> ανοίγει το <code>/admin/submissions</code>.</li>
+        <li>Μια γραμμή ανοίγει το <code>/admin/submissions?search=&lt;that email&gt;</code> με το email ήδη στο πεδίο αναζήτησης και την υποβολή αυτή στη λίστα.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/page.tsx</code> · <code>src/cms/admin/SubmissionsTable.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-009" data-priority="P2">
+      <h3>Πίνακας ελέγχου για τον editor και τον περιορισμένο ρόλο</h3>
+      <ol class="steps">
+        <li>Συνδεθείτε ως <code>qa-editor@example.com</code> και δείτε τον πίνακα ελέγχου.</li>
+        <li>Συνδεθείτε ως <code>qa-limited@example.com</code> και δείτε τον πίνακα ελέγχου. Πατήστε <strong>View</strong> στην κάρτα Pages.</li>
+      </ol>
+      <ul class="exp">
+        <li>Editor: οι ίδιες κάρτες περιεχομένου με τον superadmin και η ενότητα <strong>Recent submissions</strong> (ο editor μπορεί να διαβάζει υποβολές).</li>
+        <li>Περιορισμένος ρόλος: καμία ενότητα <strong>Recent submissions</strong>. Οι κάρτες περιεχομένου εξακολουθούν να εμφανίζονται, αλλά το <strong>View</strong> οδηγεί στο <strong>403 — Forbidden</strong>, επειδή ο ρόλος δεν έχει το <strong>View content</strong>. Καταγράψτε το ως σφάλμα χρηστικότητας: ο πίνακας ελέγχου προσφέρει κάρτες που ο χρήστης δεν μπορεί να ανοίξει.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/page.tsx</code> (<code>canForms</code>· οι κάρτες δεν ελέγχονται από το <code>contentRead</code>) · <code>src/app/admin/(shell)/[collection]/page.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-sidebar">
+    <h2>Πλευρικό μενού</h2>
+    <p class="intro">Το πλευρικό μενού δημιουργείται στον server από τους διακόπτες των modules και τα τρέχοντα δικαιώματα του συνδεδεμένου χρήστη. Οι επιπτώσεις της ενεργοποίησης/απενεργοποίησης κάθε module βρίσκονται επίσης στη λίστα ελέγχου 01 (SET-033 έως SET-043)· η ενότητα αυτή ελέγχει την πλήρη δομή, τις διαφορές ανά ρόλο και την επισήμανση.</p>
+
+    <article class="tc" id="ADM-010" data-priority="P1">
+      <h3>Πλήρες πλευρικό μενού για superadmin με όλα τα modules ενεργά</h3>
+      <ol class="steps">
+        <li>Συνδεδεμένοι ως <code>qa-admin@example.com</code> σε παράθυρο πλάτους υπολογιστή, διαβάστε το πλευρικό μενού από πάνω προς τα κάτω.</li>
+        <li>Περάστε τον δείκτη πάνω από κάθε στοιχείο και διαβάστε τη διεύθυνση του συνδέσμου στη γραμμή κατάστασης του browser.</li>
+      </ol>
+      <ul class="exp">
+        <li>Επάνω: ένα χρυσό εικονίδιο, το όνομα του ιστότοπου και το <code>CMS</code> από κάτω· έπειτα <strong>Back to site</strong> (εικονίδιο βέλους) και <strong>Dashboard</strong>.</li>
+        <li><strong>CONTENT</strong>: Pages, Brands, Testimonials, Popups.</li>
+        <li><strong>ECOMMERCE</strong>: Categories, Size charts, Tags, Products, Orders, Customers, Gift cards, Reviews, Abandoned carts.</li>
+        <li><strong>BOOKING</strong>: Categories, Types, Locations, Experiences, Reservations, Availability.</li>
+        <li><strong>SYSTEM</strong>: Submissions, Newsletter, SEO, Media, Users, Roles, Audit log, Your account, Cookies, Settings, Scripts.</li>
+        <li>Κάθε στοιχείο έχει εικονίδιο. Οι συλλογές οδηγούν στο <code>/admin/&lt;key&gt;</code> (όπως στην ADM-008)· τα εργαλεία οδηγούν στα <code>/admin/orders</code>, <code>/admin/customers</code>, <code>/admin/gift-cards</code>, <code>/admin/reviews</code>, <code>/admin/abandoned</code>, <code>/admin/reservations</code>, <code>/admin/availability</code>, <code>/admin/submissions</code>, <code>/admin/newsletter</code>, <code>/admin/seo</code>, <code>/admin/media</code>, <code>/admin/users</code>, <code>/admin/roles</code>, <code>/admin/audit</code>, <code>/admin/account</code>, <code>/admin/cookies</code>, <code>/admin/settings</code>, <code>/admin/scripts</code>. Το <strong>Back to site</strong> οδηγεί στο <code>/</code>.</li>
+        <li>Αν η λίστα είναι μεγαλύτερη από το παράθυρο, το πλευρικό μενού κυλά αυτόνομα ενώ η σελίδα μένει ακίνητη.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/layout.tsx</code> (εργαλεία) · <code>src/cms/admin/Sidebar.tsx</code> · <code>src/cms/admin/shared.ts</code> (<code>groupSidebarItems</code>, <code>MODULE_GROUPS</code>) · <code>src/site.config.ts</code></p>
+    </article>
+
+    <article class="tc" id="ADM-011" data-priority="P2">
+      <h3>Πλευρικό μενού μόνο με τα προεπιλεγμένα modules</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Στο Settings → Modules είναι επιλεγμένα μόνο τα Forms, Seo και Media (η κατάσταση μετά το seed του ιστότοπου)· αποθηκευμένο.</p>
+      <ol class="steps">
+        <li>Ως superadmin ανανεώστε οποιαδήποτε οθόνη του διαχειριστικού και διαβάστε το πλευρικό μενού.</li>
+        <li>Επιλέξτε το <strong>Newsletter</strong>, αποθηκεύστε, ανανεώστε. Έπειτα επιλέξτε τα <strong>Google reviews &amp; testimonials</strong> και <strong>Popups</strong>, αποθηκεύστε, ανανεώστε.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: το CONTENT έχει μόνο Pages και Brands· δεν υπάρχει καθόλου επικεφαλίδα ECOMMERCE ή BOOKING· το SYSTEM περιέχει Submissions, SEO, Media, Users, Roles, Audit log, Your account, Cookies, Settings, Scripts.</li>
+        <li>Βήμα 2: το <strong>Newsletter</strong> εμφανίζεται στο SYSTEM μεταξύ Submissions και SEO· έπειτα τα <strong>Testimonials</strong> και <strong>Popups</strong> εμφανίζονται στο CONTENT μετά το Brands. Ο πίνακας ελέγχου αποκτά τις αντίστοιχες κάρτες.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/shared.ts</code> (οι κενές ενότητες modules παραλείπονται) · <code>src/app/admin/(shell)/layout.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-012" data-priority="P3">
+      <h3>Customer accounts ενεργό ενώ το Commerce είναι ανενεργό</h3>
+      <ol class="steps">
+        <li>Στο Settings → Modules αποεπιλέξτε το <strong>Commerce</strong>, αφήστε επιλεγμένο το <strong>Customer accounts</strong> και πατήστε <strong>Save settings</strong>.</li>
+        <li>Ανανεώστε και διαβάστε το πλευρικό μενού· πατήστε όποιο στοιχείο πελατών βλέπετε.</li>
+        <li>Επιλέξτε ξανά το Commerce και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Καταγράψτε τι συμβαίνει. Η διαμόρφωση του ιστότοπου ορίζει ότι οι λογαριασμοί πελατών χρειάζονται το κατάστημα, επομένως είτε η καρτέλα Modules πρέπει να απορρίψει ή να εξηγήσει αυτόν τον συνδυασμό, είτε το πλευρικό μενού δεν πρέπει να δείχνει επικεφαλίδα ECOMMERCE. Αν η αποθήκευση πετύχει και εμφανιστεί επικεφαλίδα ECOMMERCE που περιέχει μόνο το <strong>Customers</strong>, σημειώστε Αποτυχία και καταγράψτε το.</p>
+      <p class="ref">Αναφ.: <code>src/site.config.ts</code> (σχόλιο <code>customers</code>) · <code>src/app/admin/(shell)/layout.tsx</code> (το Customers ελέγχεται μόνο από το <code>moduleFlags.customers</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-013" data-priority="P2">
+      <h3>Πλευρικό μενού για τον ρόλο editor</h3>
+      <ol class="steps">
+        <li>Συνδεθείτε ως <code>qa-editor@example.com</code> και διαβάστε το πλευρικό μενού.</li>
+      </ol>
+      <ul class="exp">
+        <li>Εμφανίζονται όλες οι συλλογές των CONTENT, ECOMMERCE και BOOKING.</li>
+        <li>Εργαλεία ECOMMERCE: Orders, Gift cards, Reviews, Abandoned carts. Χωρίς <strong>Customers</strong> (ο ρόλος editor δεν έχει δικαίωμα πελατών).</li>
+        <li>Εργαλεία BOOKING: Reservations, Availability.</li>
+        <li>SYSTEM: Submissions, Newsletter, SEO, Media, Your account. Χωρίς Users, Roles, Audit log, Cookies, Settings ή Scripts.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/db/seeds/roles.ts</code> (<code>editor</code>) · <code>src/app/admin/(shell)/layout.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-014" data-priority="P2">
+      <h3>Πλευρικό μενού για περιορισμένο προσαρμοσμένο ρόλο</h3>
+      <ol class="steps">
+        <li>Συνδεθείτε ως <code>qa-limited@example.com</code> (Access, View media, View audit log) και διαβάστε το πλευρικό μενού.</li>
+        <li>Πατήστε <strong>Media</strong>, έπειτα <strong>Audit log</strong>, έπειτα <strong>Pages</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το SYSTEM δείχνει μόνο <strong>Media</strong>, <strong>Audit log</strong> και <strong>Your account</strong>.</li>
+        <li>Τα Media και Audit log ανοίγουν κανονικά. Το Pages καταλήγει στο <strong>403 — Forbidden</strong>.</li>
+        <li>Καταγράψτε: οι συλλογές στα CONTENT, ECOMMERCE και BOOKING εξακολουθούν να εμφανίζονται, αν και ο ρόλος αυτός δεν μπορεί να ανοίξει καμία (τα στοιχεία συλλογών ελέγχονται μόνο από το module, όχι από το <strong>View content</strong>). Ο οδηγός χρήσης αναφέρει ότι κάθε στοιχείο εμφανίζεται μόνο αν ο ρόλος έχει το αντίστοιχο δικαίωμα, οπότε αναφέρετέ το ως σφάλμα.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/layout.tsx</code> · <code>src/cms/admin/shared.ts</code> (<code>visibleAdminCollections</code>) · docs/user-guides/src/01-vasika.md (“Ο χάρτης της οθόνης”)</p>
+    </article>
+
+    <article class="tc" id="ADM-015" data-priority="P2">
+      <h3>Μια αλλαγή ρόλου φτάνει στο πλευρικό μενού χωρίς νέα σύνδεση</h3>
+      <ol class="steps">
+        <li>Κρατήστε τον <code>qa-limited@example.com</code> συνδεδεμένο στο ιδιωτικό παράθυρο.</li>
+        <li>Στο κανονικό παράθυρο, ως superadmin, ανοίξτε το <strong>Roles</strong>, επεξεργαστείτε τον <code>QA limited</code>, επιλέξτε το <strong>View form submissions</strong> και αποθηκεύστε.</li>
+        <li>Στο ιδιωτικό παράθυρο ανανεώστε τη σελίδα.</li>
+        <li>Αποεπιλέξτε ξανά το δικαίωμα και ανανεώστε το ιδιωτικό παράθυρο άλλη μία φορά.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Μετά το βήμα 3 το <strong>Submissions</strong> εμφανίζεται στο SYSTEM και ανοίγει· μετά το βήμα 4 έχει εξαφανιστεί και το <code>/admin/submissions</code> απαντά 403. Σε καμία περίπτωση δεν απαιτείται αποσύνδεση.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/auth/guards.ts</code> (το <code>requirePerm</code> διαβάζει τα δικαιώματα εκ νέου) · <code>src/app/admin/(shell)/layout.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-016" data-priority="P2">
+      <h3>Οθόνες κρυμμένες από το πλευρικό μενού απορρίπτονται και μέσω διεύθυνσης</h3>
+      <ol class="steps">
+        <li>Ως <code>qa-editor@example.com</code> πληκτρολογήστε απευθείας κάθε διεύθυνση: <code>/admin/users</code>, <code>/admin/roles</code>, <code>/admin/audit</code>, <code>/admin/cookies</code>, <code>/admin/settings</code>, <code>/admin/scripts</code>, <code>/admin/customers</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Όλες καταλήγουν στο <code>/admin/403</code> με <strong>403 — Forbidden</strong>. Καμία δεν εμφανίζει δεδομένα, ούτε στιγμιαία.</p>
+      <p class="ref">Αναφ.: κάθε <code>src/app/admin/(shell)/&lt;tool&gt;/page.tsx</code> (<code>requirePerm</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-017" data-priority="P2">
+      <h3>Επισήμανση ενεργού στοιχείου</h3>
+      <ol class="steps">
+        <li>Ως superadmin ανοίξτε διαδοχικά: <code>/admin</code>, <code>/admin/page</code>, την οθόνη επεξεργασίας μιας σελίδας, <code>/admin/page/new</code>, <code>/admin/settings?tab=Modules</code>, <code>/admin/booking_category</code>, <code>/admin/booking</code>, <code>/admin/category</code>.</li>
+        <li>Κάθε φορά δείτε ποια στοιχεία του πλευρικού μενού είναι επισημασμένα (χρυσό κείμενο σε αχνό χρυσό φόντο).</li>
+      </ol>
+      <ul class="exp">
+        <li>Κάθε φορά είναι επισημασμένο ακριβώς ένα στοιχείο: Dashboard· Pages (για τις οθόνες λίστας, επεξεργασίας και νέου)· Settings· Categories στο BOOKING· Experiences· Categories στο ECOMMERCE.</li>
+        <li>Το Dashboard δεν επισημαίνεται σε καμία οθόνη εκτός από το <code>/admin</code>. Το <strong>Back to site</strong> δεν επισημαίνεται ποτέ.</li>
+        <li>Το <code>/admin/booking</code> δεν επισημαίνει επιπλέον το στοιχείο Categories των κρατήσεων, και το <code>/admin/booking_category</code> δεν επισημαίνει το Experiences.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/Sidebar.tsx</code> (<code>pathname === href || pathname.startsWith(href + '/')</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-018" data-priority="P1">
+      <h3>Back to site</h3>
+      <ol class="steps">
+        <li>Ως superadmin, από οποιαδήποτε οθόνη του διαχειριστικού πατήστε <strong>Back to site</strong> στο επάνω μέρος του πλευρικού μενού.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η δημόσια αρχική σελίδα <code>/</code> ανοίγει στα ελληνικά με πλήρη φόρτωση σελίδας (το πλαίσιο του διαχειριστικού εξαφανίζεται, εμφανίζονται η κεφαλίδα και το υποσέλιδο του ιστότοπου). Η σκούρα μπάρα διαχείρισης βρίσκεται στην κορυφή (βλ. ADM-025). Το κουμπί Πίσω του browser επιστρέφει στην οθόνη του διαχειριστικού που αφήσατε.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/Sidebar.tsx</code> · <code>src/app/[locale]/layout.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-topbar">
+    <h2>Επάνω μπάρα &amp; αποσύνδεση</h2>
+    <p class="intro">Η επάνω μπάρα περιέχει το όνομα της οθόνης, το όνομα του συνδεδεμένου χρήστη και το <strong>Sign out</strong>. Δεν υπάρχει μενού χρήστη: η οθόνη λογαριασμού είναι το <strong>Your account</strong> στο πλευρικό μενού.</p>
+
+    <article class="tc" id="ADM-019" data-priority="P2">
+      <h3>Όνομα οθόνης στην επάνω μπάρα</h3>
+      <ol class="steps">
+        <li>Ως superadmin ανοίξτε τα <code>/admin</code>, <code>/admin/page</code>, την οθόνη επεξεργασίας μιας σελίδας, <code>/admin/page/new</code>, <code>/admin/settings</code>, <code>/admin/account</code>, <code>/admin/orders</code>.</li>
+        <li>Κάθε φορά διαβάστε το κείμενο επάνω αριστερά και την επικεφαλίδα της ίδιας της σελίδας από κάτω.</li>
+      </ol>
+      <ul class="exp">
+        <li>Επάνω μπάρα: <code>Dashboard</code>, <code>Pages</code>, <code>Pages · Edit</code>, <code>Pages · New</code>, <code>Settings</code>, <code>Your account</code>, <code>Orders</code>.</li>
+        <li>Το κείμενο της επάνω μπάρας δεν είναι επικεφαλίδα· η σελίδα εμφανίζει τη δική της επικεφαλίδα (για παράδειγμα <strong>Pages</strong>, τον τίτλο της σελίδας, <strong>New Page</strong>, <strong>Settings</strong>, <strong>Your account</strong> με το όνομα και το email του χρήστη από κάτω).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/TopBar.tsx</code> · <code>src/app/admin/(shell)/[collection]/new/page.tsx</code> · <code>src/app/admin/(shell)/account/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-020" data-priority="P1">
+      <h3>Αποσύνδεση</h3>
+      <ol class="steps">
+        <li>Ως superadmin ελέγξτε τη δεξιά πλευρά της επάνω μπάρας και έπειτα πατήστε <strong>Sign out</strong>.</li>
+        <li>Πατήστε το κουμπί Πίσω του browser.</li>
+        <li>Σε δεύτερη καρτέλα του ίδιου browser ανοίξτε το <code>/admin/page</code>.</li>
+        <li>Συνδεθείτε ξανά και ανοίξτε το <strong>Audit log</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: η επάνω μπάρα δείχνει το όνομα του χρήστη (<code>QA Admin</code>) και ένα κουμπί <strong>Sign out</strong> με εικονίδιο εξόδου. Μετά το πάτημα βρίσκεστε στο <code>/admin/login</code>.</li>
+        <li>Βήματα 2 και 3: δεν εμφανίζεται περιεχόμενο του διαχειριστικού· μεταφέρεστε στη σελίδα σύνδεσης (με <code>next=</code> στο βήμα 3).</li>
+        <li>Βήμα 4: οι πιο πρόσφατες καταχωρίσεις περιλαμβάνουν <em>Signed out</em> για τον <code>qa-admin@example.com</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/TopBar.tsx</code> · <code>src/cms/core/audit-labels.ts</code></p>
+    </article>
+
+    <article class="tc" id="ADM-021" data-priority="P3">
+      <h3>Αποσύνδεση ενώ η συνεδρία έχει ήδη λήξει</h3>
+      <ol class="steps">
+        <li>Συνδεθείτε και έπειτα διαγράψτε το cookie συνεδρίας του διαχειριστικού για τον ιστότοπο από τα εργαλεία προγραμματιστή του browser (Application → Cookies).</li>
+        <li>Χωρίς ανανέωση, πατήστε <strong>Sign out</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Καταλήγετε κανονικά στο <code>/admin/login</code> χωρίς μήνυμα σφάλματος και χωρίς κενή οθόνη.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/TopBar.tsx</code> (ανακατεύθυνση στο <code>finally</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-adminbar">
+    <h2>Μπάρα διαχείρισης στον δημόσιο ιστότοπο</h2>
+    <p class="intro">Μια σκούρα λωρίδα πάνω από την κεφαλίδα του ιστότοπου, που εμφανίζεται μόνο σε όποιον είναι συνδεδεμένος στο διαχειριστικό με <strong>Access</strong>. Οι ετικέτες της ακολουθούν τη γλώσσα του διαχειριστή, όχι της σελίδας: οι Έλληνες χρήστες βλέπουν <strong>Διαχείριση</strong> και <strong>Επεξεργασία</strong>, οι Αγγλόφωνοι <strong>Admin</strong> και <strong>Edit</strong>. Το <strong>Επεξεργασία</strong> εμφανίζεται μόνο σε σελίδες που προβάλλουν ένα έγγραφο του CMS και μόνο για χρήστες με <strong>View content</strong>. Η λειτουργία προεπισκόπησης από τον επεξεργαστή βρίσκεται στη λίστα ελέγχου 03 (CON-065)· οι σύνδεσμοι σε μετακινημένο διαχειριστικό στην 01 (SET-056). Η μπάρα δεν έχει στοιχείο κλεισίματος ή απόκρυψης.</p>
+
+    <article class="tc" id="ADM-022" data-priority="P1">
+      <h3>Η μπάρα εμφανίζεται σε συνδεδεμένο διαχειριστή</h3>
+      <ol class="steps">
+        <li>Συνδεδεμένοι ως <code>qa-admin@example.com</code>, ανοίξτε το <code>/about</code> στον ίδιο browser.</li>
+        <li>Πατήστε <strong>Διαχείριση</strong> στη μπάρα.</li>
+      </ol>
+      <ul class="exp">
+        <li>Μια σκούρα μπλε (navy) λωρίδα βρίσκεται πάνω από την κεφαλίδα του ιστότοπου και περιέχει <strong>Διαχείριση</strong> (εικονίδιο dashboard), <strong>Επεξεργασία</strong> (εικονίδιο μολυβιού) και, στα δεξιά, <code>QA Admin</code>.</li>
+        <li>Το <strong>Διαχείριση</strong> ανοίγει τον πίνακα ελέγχου στο <code>/admin</code> με πλήρη φόρτωση σελίδας.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/admin-bar/AdminBar.tsx</code> · <code>src/lib/admin-bar.ts</code> (<code>adminBarFor</code>) · <code>src/app/[locale]/layout.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-023" data-priority="P1">
+      <h3>Οι επισκέπτες δεν βλέπουν ποτέ τη μπάρα ή τη διεύθυνση του διαχειριστικού</h3>
+      <ol class="steps">
+        <li>Σε αποσυνδεδεμένο ιδιωτικό παράθυρο ανοίξτε τα <code>/</code>, <code>/about</code> και <code>/en/about</code>.</li>
+        <li>Στο <code>/about</code> προβάλετε τον πηγαίο κώδικα της σελίδας και αναζητήστε σε αυτόν τα <code>Εργαλεία διαχειριστή</code>, <code>Admin tools</code>, <code>/admin</code> και <code>?locale=</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Καμία σκούρα λωρίδα πάνω από την κεφαλίδα σε καμία σελίδα. Κανένα από τα ζητούμενα κείμενα δεν υπάρχει στον πηγαίο κώδικα, άρα η διεύθυνση του διαχειριστικού και το id του εγγράφου δεν δημοσιεύονται στους επισκέπτες.</p>
+      <p class="ref">Αναφ.: <code>src/components/admin-bar/AdminEditTarget.tsx</code> (δεν αποδίδει τίποτα για επισκέπτες) · <code>test/components/admin-bar.test.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-024" data-priority="P2">
+      <h3>Ένας συνδεδεμένος πελάτης του καταστήματος δεν βλέπει τη μπάρα</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Commerce και Customer accounts ενεργά· υπάρχει λογαριασμός πελάτη (λίστα ελέγχου 08).</p>
+      <ol class="steps">
+        <li>Σε ιδιωτικό παράθυρο συνδεθείτε ως ο πελάτης στο <code>/account</code>.</li>
+        <li>Ανοίξτε τα <code>/</code>, <code>/about</code> και μια σελίδα προϊόντος.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Καμία μπάρα διαχείρισης σε καμία σελίδα. Η συνεδρία πελάτη δεν είναι συνεδρία διαχειριστικού.</p>
+      <p class="ref">Αναφ.: <code>src/lib/admin-bar.ts</code> · <code>src/cms/modules/auth/current-user.ts</code></p>
+    </article>
+
+    <article class="tc" id="ADM-025" data-priority="P1">
+      <h3>Το Edit ανοίγει τον επεξεργαστή της σελίδας στη σωστή γλώσσα</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Μια σελίδα δημοσιευμένη και στις δύο γλώσσες, για παράδειγμα η About με δημοσιευμένη την EN έκδοσή της (ή η QA Translate από τη λίστα ελέγχου 03). Σημειώστε το id της από τη λίστα του διαχειριστικού.</p>
+      <ol class="steps">
+        <li>Ως superadmin ανοίξτε το <code>/about</code>, περάστε τον δείκτη πάνω από το <strong>Επεξεργασία</strong> και διαβάστε τη διεύθυνση· πατήστε το.</li>
+        <li>Ανοίξτε το <code>/en/about</code> και πατήστε <strong>Επεξεργασία</strong>.</li>
+        <li>Ανοίξτε το <code>/</code> (αρχική) και πατήστε <strong>Επεξεργασία</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: ο σύνδεσμος είναι <code>/admin/page/&lt;id&gt;?locale=el</code>· ο επεξεργαστής ανοίγει με επιλεγμένη την καρτέλα EL.</li>
+        <li>Βήμα 2: ο σύνδεσμος τελειώνει σε <code>?locale=en</code>· ο επεξεργαστής ανοίγει στην καρτέλα EN.</li>
+        <li>Βήμα 3: ανοίγει ο επεξεργαστής της σελίδας με slug <code>home</code> στην καρτέλα EL.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/lib/admin-bar.ts</code> (<code>adminEditHref</code>) · <code>src/app/[locale]/[slug]/page.tsx</code> · <code>src/components/site/HomeSections.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-026" data-priority="P2">
+      <h3>Edit από σελίδες του καταστήματος: προϊόν, κατηγορία, ετικέτα</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Commerce ενεργό· ένα δημοσιευμένο προϊόν με δημοσιευμένη κατηγορία και ετικέτα, με δημοσιευμένες τις EN εκδόσεις.</p>
+      <ol class="steps">
+        <li>Ως superadmin ανοίξτε το <code>/shop/&lt;product-slug&gt;</code> και πατήστε <strong>Επεξεργασία</strong>. Επαναλάβετε στο <code>/en/shop/&lt;product-slug&gt;</code>.</li>
+        <li>Ανοίξτε το <code>/shop/category/&lt;category-slug&gt;</code> και πατήστε <strong>Επεξεργασία</strong>· επαναλάβετε κάτω από το <code>/en</code>.</li>
+        <li>Ανοίξτε το <code>/shop/tag/&lt;tag-slug&gt;</code> και πατήστε <strong>Επεξεργασία</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το προϊόν ανοίγει το <code>/admin/product/&lt;id&gt;?locale=el</code> (έπειτα <code>?locale=en</code>) στο συγκεκριμένο προϊόν. Η κατηγορία ανοίγει το <code>/admin/category/&lt;id&gt;?locale=el</code> / <code>en</code>. Η ετικέτα ανοίγει το <code>/admin/tag/&lt;id&gt;?locale=el</code>. Σε κάθε περίπτωση το id είναι αυτό του ίδιου του εγγράφου και είναι επιλεγμένη η αντίστοιχη καρτέλα γλώσσας.</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/shop/[slug]/page.tsx</code> · <code>src/app/[locale]/shop/category/[slug]/page.tsx</code> · <code>src/app/[locale]/shop/tag/[slug]/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-027" data-priority="P2">
+      <h3>Edit από εμπειρία κρατήσεων και από τη σελίδα επικοινωνίας</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Booking ενεργό· μια δημοσιευμένη εμπειρία. Μια δημοσιευμένη σελίδα με slug <code>contact</code> για το βήμα 2 (διαφορετικά παραλείψτε το βήμα 2).</p>
+      <ol class="steps">
+        <li>Ως superadmin ανοίξτε τα <code>/booking/&lt;experience-slug&gt;</code> και <code>/en/booking/&lt;experience-slug&gt;</code>· πατήστε <strong>Επεξεργασία</strong> κάθε φορά.</li>
+        <li>Ανοίξτε το <code>/contact</code> και πατήστε <strong>Επεξεργασία</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η εμπειρία ανοίγει το <code>/admin/booking/&lt;id&gt;?locale=el</code> (έπειτα <code>en</code>), δηλαδή τον επεξεργαστή Experiences για τη συγκεκριμένη εμπειρία. Η σελίδα επικοινωνίας ανοίγει το <code>/admin/page/&lt;id of contact&gt;?locale=el</code>.</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/booking/[slug]/page.tsx</code> · <code>src/app/[locale]/contact/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-028" data-priority="P2">
+      <h3>Χωρίς Edit σε σελίδες που δεν αντιστοιχούν σε ένα έγγραφο</h3>
+      <ol class="steps">
+        <li>Ως superadmin ανοίξτε τα <code>/shop</code>, <code>/booking</code>, <code>/cart</code>, μια νομική σελίδα κάτω από το <code>/legal/</code> και το <code>/page-not-found</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η μπάρα δείχνει μόνο το <strong>Διαχείριση</strong> και το όνομα χρήστη· δεν υπάρχει σύνδεσμος <strong>Επεξεργασία</strong> σε αυτές τις σελίδες.</p>
+      <p class="ref">Αναφ.: <code>src/components/admin-bar/AdminBar.tsx</code> (Edit μόνο όταν μια σελίδα έχει καταχωρίσει στόχο)</p>
+    </article>
+
+    <article class="tc" id="ADM-029" data-priority="P3">
+      <h3>Ο σύνδεσμος Edit ακολουθεί την πλοήγηση μέσα στον ιστότοπο</h3>
+      <ol class="steps">
+        <li>Ως superadmin ανοίξτε το <code>/about</code> και σημειώστε τη διεύθυνση του Edit.</li>
+        <li>Με τους συνδέσμους της κεφαλίδας του ιστότοπου (όχι τη γραμμή διευθύνσεων), μεταβείτε στην αρχική σελίδα, έπειτα στο κατάστημα, έπειτα σε ένα προϊόν.</li>
+        <li>Ελέγξτε τον σύνδεσμο Edit μετά από κάθε πάτημα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Μετά από κάθε πλοήγηση ο σύνδεσμος δείχνει στο έγγραφο που εμφανίζεται τώρα στην οθόνη: στο id της αρχικής σελίδας, έπειτα κανένας σύνδεσμος Edit στο <code>/shop</code>, έπειτα στο id του προϊόντος. Δεν συνεχίζει ποτέ να δείχνει στην προηγούμενη σελίδα.</p>
+      <p class="ref">Αναφ.: <code>src/components/admin-bar/AdminBar.tsx</code> (καθαρισμός του <code>RegisterEditTarget</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-030" data-priority="P3">
+      <h3>Αγγλικές ετικέτες για διαχειριστή με αγγλική γλώσσα</h3>
+      <ol class="steps">
+        <li>Συνδεθείτε ως <code>qa-en@example.com</code>. Ανοίξτε το <code>/about</code> (ελληνική σελίδα) και το <code>/en/about</code>.</li>
+        <li>Επιθεωρήστε το όνομα της λωρίδας στο δέντρο προσβασιμότητας του browser.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και στις δύο σελίδες η μπάρα γράφει <strong>Admin</strong>, <strong>Edit</strong> και <code>QA English</code>. Το ορόσημο (landmark) πλοήγησης ονομάζεται <code>Admin tools</code>. (Για Έλληνα διαχειριστή είναι <code>Εργαλεία διαχειριστή</code>.)</p>
+      <p class="ref">Αναφ.: <code>src/components/admin-bar/AdminBar.tsx</code> (<code>LABELS</code>) · <code>src/lib/admin-bar.ts</code> (<code>barLocale</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-031" data-priority="P2">
+      <h3>Χρήστες χωρίς δικαιώματα περιεχομένου ή χωρίς πρόσβαση</h3>
+      <ol class="steps">
+        <li>Συνδεθείτε ως <code>qa-limited@example.com</code> (Access χωρίς View content) και ανοίξτε το <code>/about</code>.</li>
+        <li>Αποσυνδεθείτε. Συνδεθείτε ως <code>qa-noaccess@example.com</code> (χωρίς Access) και ανοίξτε το <code>/about</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: η μπάρα δείχνει <strong>Διαχείριση</strong> και <code>QA Limited</code>, αλλά όχι <strong>Επεξεργασία</strong>.</li>
+        <li>Βήμα 2: καμία μπάρα.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/lib/admin-bar.ts</code> (<code>adminAccessFor</code>: απαιτείται Access, το Edit χρειάζεται <code>cms.content.read</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-032" data-priority="P3">
+      <h3>Η μπάρα μετά από αλλαγή ρόλου ή αποσύνδεση</h3>
+      <ol class="steps">
+        <li>Συνδεθείτε ως <code>qa-editor@example.com</code> στο ιδιωτικό παράθυρο και ανοίξτε το <code>/about</code>: εμφανίζεται το Edit.</li>
+        <li>Στο κανονικό παράθυρο, ως superadmin, αφαιρέστε το <strong>View content</strong> από τον ρόλο <code>editor</code> και αποθηκεύστε.</li>
+        <li>Στο ιδιωτικό παράθυρο ανανεώστε το <code>/about</code> και πατήστε Edit αν εξακολουθεί να υπάρχει.</li>
+        <li>Επαναφέρετε το <strong>View content</strong> στον ρόλο editor. Στο ιδιωτικό παράθυρο αποσυνδεθείτε από το διαχειριστικό και ανανεώστε το <code>/about</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 3: ο σύνδεσμος Edit μπορεί να εξακολουθεί να εμφανίζεται μέχρι ο editor να συνδεθεί ξανά (η δημόσια μπάρα διαβάζει το στιγμιότυπο της σύνδεσης, όχι τη βάση δεδομένων). Αν εμφανίζεται, το πάτημά του καταλήγει στο <strong>403 — Forbidden</strong>· δεν εμφανίζεται κανένα έγγραφο. Σημειώστε ποιο από τα δύο είδατε.</li>
+        <li>Βήμα 4: μετά την αποσύνδεση η μπάρα έχει εξαφανιστεί κατά την ανανέωση.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/layout.tsx</code> (<code>getCurrentUser</code> = υπογεγραμμένο cookie, χωρίς ΒΔ) · <code>src/app/admin/(shell)/[collection]/[id]/page.tsx</code> (νέος έλεγχος)</p>
+    </article>
+
+    <article class="tc" id="ADM-033" data-priority="P3">
+      <h3>Μπάρα μόνο προεπισκόπησης μετά από αποσύνδεση κατά την προεπισκόπηση</h3>
+      <ol class="steps">
+        <li>Ως superadmin ανοίξτε τον επεξεργαστή μιας πρόχειρης σελίδας και πατήστε <strong>Preview draft (EL) ↗</strong> (βλ. CON-065). Κρατήστε ανοιχτή την καρτέλα προεπισκόπησης.</li>
+        <li>Στην καρτέλα του διαχειριστικού πατήστε <strong>Sign out</strong>.</li>
+        <li>Ανανεώστε την καρτέλα προεπισκόπησης. Έπειτα πατήστε τον σύνδεσμο εξόδου της μπάρας.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Μετά την ανανέωση η μπάρα δείχνει μόνο τη χρυσή ένδειξη <strong>Προεπισκόπηση</strong> και το <strong>Έξοδος</strong>: χωρίς Διαχείριση, χωρίς Edit, χωρίς όνομα χρήστη. (Σε σελίδα <code>/en/…</code> οι ετικέτες είναι <strong>Preview</strong> και <strong>Exit preview</strong>.) Η έξοδος επιστρέφει στην ίδια διεύθυνση χωρίς λειτουργία πρόχειρου, που για μη δημοσιευμένη σελίδα είναι η σελίδα «δεν βρέθηκε», και η μπάρα εξαφανίζεται.</p>
+      <p class="ref">Αναφ.: <code>src/lib/admin-bar.ts</code> (κλάδος προεπισκόπησης του <code>adminBarFor</code>) · <code>src/lib/admin-bar.ts</code> (<code>exitPreviewHref</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-034" data-priority="P3">
+      <h3>Μπάρα διαχείρισης: πληκτρολόγιο, διάταξη και απουσία απόκρυψης</h3>
+      <ol class="steps">
+        <li>Ως superadmin ανοίξτε το <code>/about</code>, κάντε κλικ στη γραμμή διευθύνσεων και πατήστε Tab επανειλημμένα.</li>
+        <li>Στενέψτε το παράθυρο στα 390 px (λειτουργία συσκευής στα εργαλεία προγραμματιστή) και δείτε τη μπάρα.</li>
+        <li>Αναζητήστε οποιοδήποτε στοιχείο ελέγχου που κρύβει ή κλείνει τη μπάρα.</li>
+      </ol>
+      <ul class="exp">
+        <li>Οι πρώτες στάσεις του Tab είναι το <strong>Διαχείριση</strong> και έπειτα το <strong>Επεξεργασία</strong>, το καθένα με ορατό χρυσό δακτύλιο εστίασης· το Enter ακολουθεί τον σύνδεσμο.</li>
+        <li>Στα 390 px η μπάρα παραμένει ύψους μίας γραμμής, το όνομα χρήστη συντομεύεται με αποσιωπητικά αν χρειάζεται, και η σελίδα δεν κυλά οριζόντια.</li>
+        <li>Δεν υπάρχει στοιχείο απόκρυψης ή κλεισίματος· η μπάρα βρίσκεται σε κάθε δημόσια σελίδα όσο είστε συνδεδεμένοι. Σημειώστε στο αποτέλεσμα αν ο υπεύθυνος προϊόντος αναμένει τέτοιο στοιχείο.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/admin-bar/AdminBar.tsx</code> (<code>LINK_CLASS</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-403">
+    <h2>Άρνηση πρόσβασης &amp; απενεργοποιημένες οθόνες</h2>
+
+    <article class="tc" id="ADM-035" data-priority="P2">
+      <h3>Η σελίδα 403</h3>
+      <ol class="steps">
+        <li>Ως <code>qa-limited@example.com</code> ανοίξτε το <code>/admin/users</code>.</li>
+        <li>Πατήστε <strong>Back to dashboard</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η διεύθυνση γίνεται <code>/admin/403</code>. Μια κεντραρισμένη σελίδα χωρίς πλευρικό μενού ή επάνω μπάρα δείχνει <strong>403 — Forbidden</strong>, <code>You don’t have permission to view this page.</code> και έναν σύνδεσμο <strong>Back to dashboard</strong>, ο οποίος ανοίγει τον πίνακα ελέγχου στο <code>/admin</code>.</p>
+      <p class="ref">Αναφ.: <code>src/app/admin/403/page.tsx</code> · <code>src/cms/modules/auth/guards.ts</code></p>
+    </article>
+
+    <article class="tc" id="ADM-036" data-priority="P2">
+      <h3>Ένας χρήστης χωρίς Access εγκλωβίζεται στο 403</h3>
+      <ol class="steps">
+        <li>Συνδεθείτε ως <code>qa-noaccess@example.com</code>.</li>
+        <li>Πατήστε <strong>Back to dashboard</strong>. Αναζητήστε τρόπο αποσύνδεσης.</li>
+        <li>Ανοίξτε το <code>/admin/account</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Μετά τη σύνδεση καταλήγετε στο <strong>403 — Forbidden</strong>· το <strong>Back to dashboard</strong> οδηγεί κατευθείαν πίσω σε αυτό· το <code>/admin/account</code> είναι επίσης 403.</li>
+        <li>Καταγράψτε: η σελίδα 403 δεν προσφέρει <strong>Sign out</strong>, οπότε ο χρήστης αυτός μπορεί να φύγει μόνο διαγράφοντας τα cookies ή περιμένοντας να λήξει η συνεδρία. Αναφέρετέ το ως σφάλμα χρηστικότητας (ένας σύνδεσμος <strong>Sign out</strong> στη σελίδα 403 θα το διόρθωνε).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/admin/403/page.tsx</code> · <code>src/app/admin/(shell)/layout.tsx</code> (<code>requirePerm(PERMISSIONS.access)</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-037" data-priority="P2">
+      <h3>Στοιχείο Gift cards όταν η πώληση δωροκαρτών είναι ανενεργή</h3>
+      <ol class="steps">
+        <li>Ως superadmin ανοίξτε Settings → <strong>Ecommerce</strong> → <strong>Gift cards</strong>, αποεπιλέξτε το <strong>Sell gift cards</strong> και πατήστε <strong>Save</strong>.</li>
+        <li>Ανανεώστε και αναζητήστε το <strong>Gift cards</strong> στην ενότητα ECOMMERCE· πατήστε το αν υπάρχει.</li>
+        <li>Επιλέξτε ξανά το <strong>Sell gift cards</strong> και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το πλευρικό μενού δεν πρέπει να προσφέρει οθόνη που δεν υπάρχει. Η οθόνη Gift cards απαντά “Page not found” όσο η πώληση είναι ανενεργή, οπότε αν το στοιχείο <strong>Gift cards</strong> παραμένει στο πλευρικό μενού και οδηγεί σε αυτή τη σελίδα «δεν βρέθηκε», σημειώστε Αποτυχία (το στοιχείο ελέγχεται μόνο από το Commerce, όχι από τη ρύθμιση των δωροκαρτών).</p>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/gift-cards/page.tsx</code> (<code>if (!enabled) notFound()</code>) · <code>src/app/admin/(shell)/layout.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-038" data-priority="P3">
+      <h3>Οι οθόνες απενεργοποιημένων modules απαντούν «δεν βρέθηκε», ανεξαρτήτως ρόλου</h3>
+      <ol class="steps">
+        <li>Αποεπιλέξτε τα <strong>Newsletter</strong> και <strong>Booking</strong> στο Settings → Modules και αποθηκεύστε.</li>
+        <li>Ως superadmin ανοίξτε τα <code>/admin/newsletter</code>, <code>/admin/reservations</code> και <code>/admin/availability</code>.</li>
+        <li>Ως <code>qa-limited@example.com</code> ανοίξτε τις ίδιες τρεις διευθύνσεις.</li>
+        <li>Επιλέξτε ξανά και τα δύο modules και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Superadmin: και οι τρεις δείχνουν “Page not found”. Περιορισμένος ρόλος: τα <code>/admin/reservations</code> και <code>/admin/availability</code> δείχνουν “Page not found”· το <code>/admin/newsletter</code> δείχνει αντί γι' αυτό <strong>403 — Forbidden</strong>, επειδή η οθόνη αυτή ελέγχει το δικαίωμα πριν από το module. Καταγράψτε τη διαφορά του newsletter ως μικρή ασυνέπεια.</p>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/newsletter/page.tsx</code> (πρώτα το δικαίωμα) · <code>src/app/admin/(shell)/reservations/page.tsx</code> (πρώτα το module)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-idle">
+    <h2>Αυτόματη αποσύνδεση λόγω αδράνειας</h2>
+    <p class="intro">Η βασική προειδοποίηση, η αποσύνδεση, το “Stay signed in” και η συμπεριφορά μεταξύ καρτελών βρίσκονται στη λίστα ελέγχου 01 (SET-054, SET-055). Για αυτές τις περιπτώσεις ορίστε <code>ADMIN_SESSION_IDLE_MINUTES=2</code> στο <code>.env.local</code> και επανεκκινήστε τον server· στο τέλος επαναφέρετέ το σε <code>60</code> και επανεκκινήστε. Η προειδοποίηση εμφανίζεται μετά από περίπου ένα λεπτό χωρίς κλικ, πληκτρολόγηση, κύλιση ή αγγίγματα.</p>
+
+    <article class="tc" id="ADM-039" data-priority="P2">
+      <h3>Άμεση αποσύνδεση από την προειδοποίηση</h3>
+      <ol class="steps">
+        <li>Συνδεδεμένοι ως superadmin, ανοίξτε τον πίνακα ελέγχου και περιμένετε την προειδοποίηση στην κάτω δεξιά γωνία.</li>
+        <li>Διαβάστε την και έπειτα πατήστε <strong>Sign out now</strong>.</li>
+        <li>Συνδεθείτε ξανά και ανοίξτε το <strong>Audit log</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το πορτοκαλί πλαίσιο γράφει <strong>You are about to be signed out</strong> και <code>You have been inactive for a while. Anything unsaved will be lost.</code> με τα <strong>Stay signed in</strong> και <strong>Sign out now</strong>.</li>
+        <li>Το <strong>Sign out now</strong> οδηγεί κατευθείαν στο <code>/admin/login?timeout=1</code> με το <code>You were signed out because you had been inactive. Please sign in again.</code></li>
+        <li>Το audit log δείχνει <em>Signed out automatically (inactive)</em>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/IdleLogout.tsx</code> · <code>src/cms/core/audit-labels.ts</code></p>
+    </article>
+
+    <article class="tc" id="ADM-040" data-priority="P3">
+      <h3>Η προειδοποίηση με πληκτρολόγιο και αναγνώστη οθόνης</h3>
+      <ol class="steps">
+        <li>Με ενεργό αναγνώστη οθόνης, περιμένετε την προειδοποίηση χωρίς να αγγίξετε τίποτα.</li>
+        <li>Όταν εμφανιστεί, πατήστε Tab μία φορά.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ο αναγνώστης οθόνης ανακοινώνει το <code>You are about to be signed out</code> ως ειδοποίηση (alert) όταν εμφανίζεται το πλαίσιο. Κάθε πάτημα πλήκτρου μετράει ως δραστηριότητα: μετά το Tab το πλαίσιο εξαφανίζεται και παραμένετε συνδεδεμένοι. Η εστίαση δεν μεταφέρεται μέσα στο πλαίσιο· καταγράψτε αν ένας χρήστης πληκτρολογίου μπορεί να φτάσει στα κουμπιά του πριν εξαφανιστεί (αναμένεται ότι δεν μπορεί, επειδή οποιοδήποτε πλήκτρο το κλείνει).</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/IdleLogout.tsx</code> (<code>role="alertdialog"</code>, το <code>keydown</code> μετράει ως δραστηριότητα)</p>
+    </article>
+
+    <article class="tc" id="ADM-041" data-priority="P3">
+      <h3>Επιστροφή σε κρυφή καρτέλα μετά την προθεσμία</h3>
+      <ol class="steps">
+        <li>Συνδεδεμένοι, ανοίξτε τον πίνακα ελέγχου και έπειτα μεταβείτε σε άλλη καρτέλα ή ελαχιστοποιήστε τον browser για τουλάχιστον τρία λεπτά.</li>
+        <li>Επιστρέψτε στην καρτέλα του διαχειριστικού και περιμένετε δέκα δευτερόλεπτα χωρίς να κάνετε τίποτε άλλο.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Μέσα σε λίγα δευτερόλεπτα από την επιστροφή, η καρτέλα μεταφέρεται στο <code>/admin/login?timeout=1</code> με την ειδοποίηση αδράνειας· δεν παραμένει σε πίνακα ελέγχου όπου η επόμενη αποθήκευση θα αποτύγχανε. Το εκ νέου άνοιγμα του <code>/admin</code> ζητά σύνδεση.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/IdleLogout.tsx</code> (έλεγχος λήξης στον server σε κάθε κύκλο 5 δευτερολέπτων)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-kit">
+    <h2>Κοινά στοιχεία ελέγχου: καρτέλες, παράθυρα διαλόγου, μηνύματα, πίνακες, μη αποθηκευμένη εργασία</h2>
+
+    <article class="tc" id="ADM-042" data-priority="P2">
+      <h3>Καρτέλες γλώσσας: βέλη, Home και End</h3>
+      <ol class="steps">
+        <li>Ανοίξτε στον επεξεργαστή μια σελίδα που έχει EL και EN. Κάντε κλικ ακριβώς πάνω από τις καρτέλες και πατήστε Tab μέχρι η εστίαση να φτάσει στις καρτέλες γλώσσας.</li>
+        <li>Πατήστε Δεξί βέλος, ξανά Δεξί βέλος, Αριστερό βέλος, End, Home.</li>
+        <li>Πατήστε Tab άλλη μία φορά.</li>
+      </ol>
+      <ul class="exp">
+        <li>Μόνο η επιλεγμένη καρτέλα είναι στάση του Tab. Κάθε πάτημα βέλους μετακινεί την εστίαση <em>και</em> την επιλογή· το <code>?locale=</code> στη γραμμή διευθύνσεων ενημερώνεται αντίστοιχα· τα βέλη περνούν κυκλικά από την τελευταία καρτέλα στην πρώτη· το Home επιλέγει την πρώτη γλώσσα, το End την τελευταία.</li>
+        <li>Η καρτέλα με εστίαση δείχνει χρυσό δακτύλιο εστίασης.</li>
+        <li>Το βήμα 3 μεταφέρει την εστίαση στη φόρμα από κάτω, όχι στην άλλη καρτέλα γλώσσας.</li>
+        <li>Ένας αναγνώστης οθόνης ανακοινώνει λίστα καρτελών με όνομα <code>Language</code> και την κατάσταση επιλογής.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/ui/Tabs.tsx</code> (<code>TabList</code>, <code>nextTabIndex</code>) · <code>src/cms/admin/DocumentForm.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-043" data-priority="P2">
+      <h3>Οι καρτέλες της ενότητας SEO διατηρούν ό,τι πληκτρολογήσατε</h3>
+      <ol class="steps">
+        <li>Στον επεξεργαστή μιας σελίδας κυλήστε στην ενότητα <strong>SEO &amp; AEO</strong>. Πληκτρολογήστε έναν meta title στην καρτέλα <strong>General</strong>.</li>
+        <li>Με το πληκτρολόγιο μετακινηθείτε στα <strong>Social</strong>, <strong>AEO</strong>, <strong>Advanced</strong> με το Δεξί βέλος και έπειτα πατήστε Home.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Οι καρτέλες συμπεριφέρονται όπως στην ADM-042 (μία στάση Tab, βέλη, Home/End, κυκλική μετάβαση· λίστα καρτελών με όνομα <code>SEO sections</code>). Πίσω στο General ο meta title που πληκτρολογήσατε υπάρχει ακόμη, και η καρτέλα General δείχνει χρυσή ένδειξη πλήθους (που ο αναγνώστης οθόνης διαβάζει ως <code>1 filled in</code>).</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SeoPanel.tsx</code> · <code>src/cms/core/seo/fields.ts</code> (<code>SEO_TABS</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-044" data-priority="P3">
+      <h3>Καρτέλες του Settings με το πληκτρολόγιο</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <strong>Settings</strong>. Με Tab φτάστε στη σειρά καρτελών στο επάνω μέρος και πατήστε Δεξί βέλος, End και Home.</li>
+        <li>Πατήστε Tab επανειλημμένα κατά μήκος της σειράς καρτελών.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Οι καρτέλες του Settings πρέπει να λειτουργούν όπως στην ADM-042: μία στάση Tab, τα βέλη μετακινούν μεταξύ καρτελών. Ο τρέχων κώδικας δίνει σε αυτά τα κουμπιά ρόλο καρτέλας αλλά χωρίς χειρισμό βελών: τα βέλη δεν κάνουν τίποτα και κάθε καρτέλα είναι ξεχωριστή στάση Tab. Αν αυτό βλέπετε, σημειώστε Αποτυχία και καταγράψτε «Η σειρά καρτελών του Settings δεν έχει το μοτίβο πληκτρολογίου».</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SettingsForm.tsx</code> (χειροποίητο <code>role="tablist"</code>, όχι <code>ui/Tabs</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-045" data-priority="P2">
+      <h3>Παράθυρο διαλόγου επιβεβαίωσης: εστίαση, παγίδευση, Escape</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Υπάρχει μια πρόχειρη σελίδα μίας χρήσης <code>qa-confirm</code>.</p>
+      <ol class="steps">
+        <li>Στη λίστα Pages, μόνο με πληκτρολόγιο, φτάστε με Tab στο <strong>Delete</strong> της γραμμής <code>qa-confirm</code> και πατήστε Enter.</li>
+        <li>Πατήστε Tab αρκετές φορές, έπειτα Shift+Tab αρκετές φορές. Προσπαθήστε να κυλήσετε τη σελίδα από πίσω με τη ροδέλα του ποντικιού.</li>
+        <li>Πατήστε Escape.</li>
+        <li>Ανοίξτε ξανά το παράθυρο διαλόγου και κάντε κλικ στη σκούρα περιοχή έξω από αυτό.</li>
+        <li>Ανοίξτε το άλλη μία φορά και επιλέξτε <strong>Delete</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Ανοίγει παράθυρο διαλόγου με τίτλο <strong>Delete this document?</strong> και <code>This cannot be undone.</code> πάνω από σκιασμένη σελίδα· η εστίαση ξεκινά στο κόκκινο κουμπί <strong>Delete</strong>.</li>
+        <li>Τα Tab και Shift+Tab εναλλάσσονται μόνο μεταξύ <strong>Cancel</strong> και <strong>Delete</strong>· η σελίδα από πίσω δεν κυλά.</li>
+        <li>Το Escape και το κλικ έξω από το παράθυρο το κλείνουν χωρίς να διαγραφεί τίποτα, και η εστίαση επιστρέφει στο κουμπί Delete της γραμμής.</li>
+        <li>Το βήμα 5 αφαιρεί τη γραμμή.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/ui/ConfirmDialog.tsx</code> · <code>src/cms/admin/ui/use-dialog.ts</code> · <code>src/cms/admin/DocumentList.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-046" data-priority="P2">
+      <h3>Οι καταστροφικές ενέργειες ζητούν πρώτα επιβεβαίωση</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ένα στοιχείο μίας χρήσης σε κάθε σημείο: μια ανεβασμένη εικόνα, μια ανακατεύθυνση, ένα απόσπασμα script, μια κατηγορία cookies και μια υπηρεσία cookies μέσα σε αυτήν (<strong>Add service</strong>), ένας ρόλος χωρίς χρήστες, και ο <code>qa-limited@example.com</code>.</p>
+      <ol class="steps">
+        <li>Πατήστε το στοιχείο διαγραφής για καθένα από τα παρακάτω, διαβάστε το παράθυρο διαλόγου και επιλέξτε <strong>Cancel</strong>:
+          Media → διαγραφή ενός αρχείου·
+          SEO → διαγραφή μιας ανακατεύθυνσης·
+          Scripts → διαγραφή ενός αποσπάσματος·
+          Cookies → το <strong>Delete</strong> μιας κατηγορίας·
+          Roles → διαγραφή του αχρησιμοποίητου ρόλου·
+          Users → το κουμπί κατάστασης του <code>QA Limited</code> (γράφει <strong>active</strong>) και το <strong>Delete</strong> του.</li>
+        <li>Cookies → το <strong>remove</strong> της υπηρεσίας μίας χρήσης.</li>
+      </ol>
+      <ul class="exp">
+        <li>Τίτλοι στο βήμα 1: <code>Delete this file?</code>· <code>Delete the redirect for &lt;source&gt;?</code> (κουμπί <strong>Delete redirect</strong>)· <code>Delete “&lt;name&gt;”?</code>· <code>Delete this category?</code> (<code>Every service inside it is deleted too. …</code>)· <code>Delete the role "&lt;name&gt;"?</code> (κουμπί <strong>Delete role</strong>)· <code>Disable QA Limited?</code> (κουμπί <strong>Disable account</strong>) και <code>Delete QA Limited?</code> (κουμπί <strong>Delete account</strong>). Το Cancel αφήνει κάθε στοιχείο αμετάβλητο.</li>
+        <li>Το βήμα 2 πρέπει επίσης να ζητά πρώτα επιβεβαίωση. Ο τρέχων κώδικας αφαιρεί την υπηρεσία cookies αμέσως χωρίς παράθυρο διαλόγου· αν συμβαίνει αυτό, σημειώστε Αποτυχία.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/MediaLibrary.tsx</code> · <code>src/cms/admin/SeoManager.tsx</code> · <code>src/cms/admin/ScriptsManager.tsx</code> · <code>src/cms/admin/CookiesManager.tsx</code> (<code>removeService</code>) · <code>src/cms/admin/RolesManager.tsx</code> · <code>src/cms/admin/UsersManager.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-047" data-priority="P2">
+      <h3>Πλευρικά πάνελ και επιλογείς: εστίαση, Escape, επιστροφή</h3>
+      <ol class="steps">
+        <li>Στο <strong>Users</strong>, φτάστε με Tab στο <strong>Edit</strong> μιας γραμμής και πατήστε Enter. Μετακινηθείτε με Tab μέσα στο πάνελ· πατήστε Escape.</li>
+        <li>Ανοίξτε ξανά το πάνελ και κάντε κλικ στη σκιασμένη περιοχή στα αριστερά του.</li>
+        <li>Στον επεξεργαστή μιας σελίδας, φτάστε με Tab στο <strong>Choose image…</strong> κάτω από το Hero image και πατήστε Enter· πατήστε Tab μερικές φορές, έπειτα Escape.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το πάνελ χρήστη γλιστρά από τα δεξιά με το email του λογαριασμού ως επικεφαλίδα και ένα κουμπί <strong>Close</strong> (✕)· η εστίαση βρίσκεται μέσα του και το Tab δεν βγαίνει ποτέ από αυτό. Το Escape και το κλικ έξω από αυτό το κλείνουν· η εστίαση επιστρέφει στο κουμπί Edit που το άνοιξε.</li>
+        <li>Ο επιλογέας ανοίγει ως παράθυρο διαλόγου με τίτλο <strong>Media library</strong> και <strong>Upload</strong>· η εστίαση μένει μέσα του· το Escape το κλείνει και η εστίαση επιστρέφει στο <strong>Choose image…</strong>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/UsersManager.tsx</code> · <code>src/cms/admin/fields/MediaPicker.tsx</code> · <code>src/cms/admin/ui/Drawer.tsx</code> · <code>src/cms/admin/ui/use-dialog.ts</code></p>
+    </article>
+
+    <article class="tc" id="ADM-048" data-priority="P2">
+      <h3>Μηνύματα αποθήκευσης, προειδοποίησης και σφάλματος</h3>
+      <ol class="steps">
+        <li>Στο Settings (καρτέλα General) αλλάξτε μια τιμή και πατήστε <strong>Save settings</strong>.</li>
+        <li>Ως superadmin επεξεργαστείτε τον ρόλο <code>QA limited</code>: επιλέξτε το <strong>View settings &amp; cookies</strong> (όχι το <strong>Edit settings &amp; cookies</strong>) και αποθηκεύστε. Στο ιδιωτικό παράθυρο, συνδεδεμένοι ως <code>qa-limited@example.com</code>, ανοίξτε το Settings, αλλάξτε μια τιμή και πατήστε <strong>Save settings</strong>. Στη συνέχεια αποεπιλέξτε ξανά το δικαίωμα.</li>
+        <li>Επαναλάβετε τα βήματα 1 και 2 με ενεργό αναγνώστη οθόνης.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: ένα πράσινο πλαίσιο <code>Settings saved.</code> εμφανίζεται πάνω από τις καρτέλες και παραμένει μέχρι την επόμενη αλλαγή.</li>
+        <li>Βήμα 2: ένα κόκκινο πλαίσιο εμφανίζεται πάνω από τις καρτέλες και η ρύθμιση δεν αποθηκεύεται (ελέγξτε με ανανέωση). Καταγράψτε το ακριβές κείμενο: ο κώδικας δείχνει το σκέτο σφάλμα του server, πιθανότατα μόνο <code>forbidden</code>, και η φόρμα προσφέρει ενεργό <strong>Save settings</strong> σε χρήστη που δεν μπορεί να αποθηκεύσει (συγκρίνετε με την CON-077).</li>
+        <li>Βήμα 3: το μήνυμα επιτυχίας ανακοινώνεται διακριτικά (status) και το σφάλμα επιτακτικά (alert) χωρίς μετακίνηση της εστίασης. Δεν υπάρχουν αναδυόμενες ειδοποιήσεις (toasts) στο διαχειριστικό· κάθε μήνυμα εμφανίζεται ενσωματωμένο κοντά στην κορυφή της οθόνης ή δίπλα στο κουμπί.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SettingsForm.tsx</code> · <code>src/cms/admin/api-error-text.ts</code> · docs/dev-guides/04-admin-ui.md §6 (Messages)</p>
+    </article>
+
+    <article class="tc" id="ADM-049" data-priority="P3">
+      <h3>Επεξηγήσεις «i»</h3>
+      <ol class="steps">
+        <li>Στον πίνακα ελέγχου περάστε τον δείκτη πάνω από το “i” δίπλα στο Content και απομακρυνθείτε· έπειτα φτάστε σε αυτό με Tab· πατήστε Escape.</li>
+        <li>Κάντε κλικ σε αυτό (παραμένει ανοιχτό), κάντε ξανά κλικ· κάντε κλικ σε αυτό και έπειτα κλικ οπουδήποτε αλλού.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τόσο το πέρασμα του δείκτη όσο και η εστίαση πληκτρολογίου εμφανίζουν το σκούρο συννεφάκι και το κρύβουν όταν απομακρυνθείτε· το Escape το κλείνει. Ένα κλικ το καρφιτσώνει ανοιχτό μέχρι δεύτερο κλικ, κλικ έξω από αυτό, κύλιση ή αλλαγή μεγέθους. Ένας αναγνώστης οθόνης διαβάζει το κουμπί ως <code>About these counts</code> με το κείμενο του συννεφακίου ως περιγραφή του. Το συννεφάκι δεν ξεπερνά ποτέ το δεξί άκρο του παραθύρου.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/ui/InfoTip.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-050" data-priority="P2">
+      <h3>Πίνακες: σελιδοποίηση, κύλιση, χωρίς ταξινόμηση</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Το audit log έχει περισσότερες από μία σελίδες (συνδεθείτε και αποσυνδεθείτε μερικές φορές, ή χρησιμοποιήστε τις μαζικές σελίδες της CON-069, των οποίων οι αποθηκεύσεις καταγράφονται).</p>
+      <ol class="steps">
+        <li>Ανοίξτε το <strong>Audit log</strong>. Διαβάστε τη γραμμή κάτω από τον πίνακα και χρησιμοποιήστε τα <strong>Next</strong> και <strong>Previous</strong>.</li>
+        <li>Φιλτράρετε με μια λέξη αναζήτησης και έπειτα προχωρήστε στην επόμενη σελίδα.</li>
+        <li>Πατήστε κάθε κεφαλίδα στήλης του Audit log και της λίστας Pages.</li>
+        <li>Στενέψτε το παράθυρο στα 390 px και φτάστε με Tab στον πίνακα.</li>
+      </ol>
+      <ul class="exp">
+        <li>Η γραμμή γράφει <code>Showing 1–&lt;n&gt; of &lt;total&gt;</code>· οι σύνδεσμοι σελιδοποίησης βρίσκονται σε περιοχή πλοήγησης με όνομα <code>Audit log pages</code> με <code>Page 1 of &lt;n&gt;</code>. Το Previous λείπει στη σελίδα 1 και το Next στην τελευταία σελίδα. Η διεύθυνση περιέχει <code>?page=</code> και διατηρεί το φίλτρο.</li>
+        <li>Οι κεφαλίδες είναι απλό κείμενο· το πάτημά τους δεν κάνει τίποτα (κανένας πίνακας σε αυτή την έκδοση δεν ταξινομείται).</li>
+        <li>Στα 390 px ο πίνακας κυλά οριζόντια μέσα στο δικό του πλαίσιο· το πλαίσιο δέχεται εστίαση πληκτρολογίου (χρυσός δακτύλιος, όνομα <code>Table, scrollable</code>) και τα βέλη το κυλούν. Η ίδια η σελίδα δεν κυλά οριζόντια.</li>
+        <li>Η σελιδοποίηση της λίστας Pages καλύπτεται από την CON-070.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/audit/page.tsx</code> · <code>src/cms/admin/ui/index.tsx</code> (<code>Table</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-051" data-priority="P2">
+      <h3>Προστασία μη αποθηκευμένων αλλαγών στο Settings</h3>
+      <ol class="steps">
+        <li>Στο Settings αλλάξτε ένα πεδίο χωρίς να αποθηκεύσετε. Πατήστε <strong>Pages</strong> στο πλευρικό μενού και επιλέξτε Cancel στο παράθυρο διαλόγου του browser.</li>
+        <li>Πατήστε <strong>Back to site</strong>· επιλέξτε Cancel.</li>
+        <li>Ανανεώστε την καρτέλα· ακυρώστε το παράθυρο αποχώρησης του browser.</li>
+        <li>Ctrl+κλικ (Cmd+κλικ σε Mac) στο <strong>Pages</strong>.</li>
+        <li>Πατήστε <strong>Save settings</strong> και έπειτα <strong>Pages</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήματα 1 και 2: ο browser ρωτά <code>You have unsaved changes. Leave without saving?</code>· το Cancel σας κρατά στο Settings με την αλλαγή ανέπαφη.</li>
+        <li>Βήμα 3: εμφανίζεται το εγγενές παράθυρο «αποχώρηση από τον ιστότοπο;» του browser.</li>
+        <li>Βήμα 4: το Pages ανοίγει σε νέα καρτέλα χωρίς ερώτηση· η καρτέλα Settings διατηρεί την αλλαγή.</li>
+        <li>Βήμα 5: καμία ερώτηση μετά την αποθήκευση. (Η προστασία του επεξεργαστή εγγράφων είναι η CON-068.)</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/use-unsaved-changes.ts</code> · <code>src/cms/admin/SettingsForm.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-052" data-priority="P3">
+      <h3>Εγκατάλειψη μη αποθηκευμένης εργασίας μέσω Sign out ή του κουμπιού Πίσω</h3>
+      <ol class="steps">
+        <li>Ανοίξτε μια σελίδα στον επεξεργαστή από τη λίστα Pages, αλλάξτε τον τίτλο και μην αποθηκεύσετε. Πατήστε το κουμπί Πίσω του browser.</li>
+        <li>Ανοίξτε ξανά τη σελίδα, αλλάξτε τον τίτλο και πατήστε <strong>Sign out</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και τα δύο πρέπει να προειδοποιούν πριν απορριφθεί η αλλαγή. Η προστασία παρακολουθεί μόνο κλικ σε συνδέσμους και εκφορτώσεις σελίδας, οπότε ο κώδικας δεν προειδοποιεί για το κουμπί Πίσω (πλοήγηση εντός εφαρμογής) ούτε για το Sign out (κουμπί). Αν η αλλαγή χαθεί χωρίς ερώτηση, σημειώστε Αποτυχία και αναφέρετε ποιο από τα δύο.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/use-unsaved-changes.ts</code> · <code>src/cms/admin/TopBar.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-screens">
+    <h2>Κάθε οθόνη του διαχειριστικού φορτώνει και δείχνει την κενή κατάστασή της</h2>
+
+    <article class="tc" id="ADM-053" data-priority="P1">
+      <h3>Κάθε οθόνη φορτώνει για superadmin</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Όλα τα modules ενεργά και η πώληση δωροκαρτών ενεργή (ADM-002). Συνδεδεμένοι ως <code>qa-admin@example.com</code>. Κρατήστε ανοιχτή την κονσόλα του browser (F12).</p>
+      <ol class="steps">
+        <li>Ανοίξτε κάθε διεύθυνση του πίνακα. Επιλέξτε το πλαίσιο όταν η οθόνη δείχνει την επικεφαλίδα της, κανένα κείμενο σφάλματος, κανένα ατέρμονο “Loading…” και κανένα κόκκινο σφάλμα στην κονσόλα.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>OK</th><th>Διεύθυνση</th><th>Επικεφαλίδα στη σελίδα</th></tr></thead>
+          <tbody>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Dashboard"></td><td><code>/admin</code></td><td>όνομα ιστότοπου</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Pages"></td><td><code>/admin/page</code></td><td>Pages</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η νέα σελίδα"></td><td><code>/admin/page/new</code></td><td>New Page</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η επεξεργασία σελίδας"></td><td><code>/admin/page/&lt;id&gt;</code></td><td>ο τίτλος της σελίδας</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Brands"></td><td><code>/admin/brand</code></td><td>Brands</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Testimonials"></td><td><code>/admin/testimonial</code></td><td>Testimonials</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Popups"></td><td><code>/admin/popup</code></td><td>Popups</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνουν οι κατηγορίες καταστήματος"></td><td><code>/admin/category</code></td><td>Categories</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Size charts"></td><td><code>/admin/sizechart</code></td><td>Size charts</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Tags"></td><td><code>/admin/tag</code></td><td>Tags</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Products"></td><td><code>/admin/product</code></td><td>Products</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνουν οι κατηγορίες κρατήσεων"></td><td><code>/admin/booking_category</code></td><td>Categories</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Types"></td><td><code>/admin/vessel_type</code></td><td>Types</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Locations"></td><td><code>/admin/departure_location</code></td><td>Locations</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Experiences"></td><td><code>/admin/booking</code></td><td>Experiences</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Orders"></td><td><code>/admin/orders</code></td><td>Orders</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Customers"></td><td><code>/admin/customers</code></td><td>Customers</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Gift cards"></td><td><code>/admin/gift-cards</code></td><td>Gift cards</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Reviews"></td><td><code>/admin/reviews</code></td><td>Reviews</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Abandoned carts"></td><td><code>/admin/abandoned</code></td><td>Abandoned carts</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Reservations"></td><td><code>/admin/reservations</code></td><td>Reservations</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Availability"></td><td><code>/admin/availability</code></td><td>Availability</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Submissions"></td><td><code>/admin/submissions</code></td><td>Submissions</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Newsletter"></td><td><code>/admin/newsletter</code></td><td>Newsletter</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το SEO"></td><td><code>/admin/seo</code></td><td>SEO</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Media"></td><td><code>/admin/media</code></td><td>Media</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Users"></td><td><code>/admin/users</code></td><td>Users</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Roles"></td><td><code>/admin/roles</code></td><td>Roles</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Audit log"></td><td><code>/admin/audit</code></td><td>Audit log</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Your account"></td><td><code>/admin/account</code></td><td>Your account</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Cookies"></td><td><code>/admin/cookies</code></td><td>Cookies</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Settings"></td><td><code>/admin/settings</code> (πατήστε κάθε καρτέλα και υποκαρτέλα)</td><td>Settings</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το Scripts"></td><td><code>/admin/scripts</code></td><td>Scripts</td></tr>
+          <tr><td><input type="checkbox" aria-label="Λειτουργεί η ανακατεύθυνση API tokens"></td><td><code>/admin/api-tokens</code></td><td>ανακατευθύνει στο Settings, καρτέλα <strong>Connect to Praion.ai</strong></td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η σελίδα 403"></td><td><code>/admin/403</code></td><td>403 — Forbidden</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η σελίδα σύνδεσης"></td><td><code>/admin/login</code> (σε ιδιωτικό παράθυρο)</td><td>όνομα ιστότοπου, CMS · sign in</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Όλα τα πλαίσια μπορούν να επιλεγούν. Τα πλαίσια είναι βοήθημα εργασίας και δεν αποθηκεύονται· καταγράψτε στις σημειώσεις κάθε διεύθυνση που αποτυγχάνει.</p>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/**/page.tsx</code> · docs/dev-guides/04-admin-ui.md §5.1</p>
+    </article>
+
+    <article class="tc" id="ADM-054" data-priority="P2">
+      <h3>Οθόνες δημιουργίας και επεξεργασίας για κάθε συλλογή</h3>
+      <ol class="steps">
+        <li>Για κάθε κλειδί συλλογής της ADM-008, ανοίξτε το <code>/admin/&lt;key&gt;/new</code> και έπειτα ανοίξτε ένα υπάρχον στοιχείο από τη λίστα της (παραλείψτε το βήμα επεξεργασίας όπου η λίστα είναι κενή).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε οθόνη δημιουργίας δείχνει <strong>New &lt;singular name&gt;</strong> (New Page, New Brand, New Testimonial, New Popup, New Category, New Size chart, New Tag, New Product, New Category, New Type, New Location, New Experience) με τις καρτέλες γλώσσας και το κουμπί Save. Κάθε οθόνη επεξεργασίας ανοίγει με τον τίτλο του στοιχείου ως επικεφαλίδα. Η επάνω μπάρα γράφει <code>&lt;Plural&gt; · New</code> / <code>&lt;Plural&gt; · Edit</code>. Καμία οθόνη δεν εμφανίζει σφάλμα.</p>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/[collection]/new/page.tsx</code> · <code>src/app/admin/(shell)/[collection]/[id]/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-055" data-priority="P3">
+      <h3>Άγνωστες διευθύνσεις του διαχειριστικού</h3>
+      <ol class="steps">
+        <li>Ως superadmin ανοίξτε τα <code>/admin/does-not-exist</code>, <code>/admin/does-not-exist/new</code> και <code>/admin/settings?tab=Nope</code>.</li>
+        <li>Ανοίξτε το <code>/admin/api-tokens</code> με το module <strong>Praion.ai connection</strong> απενεργοποιημένο.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τα δύο πρώτα δείχνουν “Page not found”, ποτέ σφάλμα server. Το <code>?tab=Nope</code> ανοίγει το Settings στην πρώτη του καρτέλα. Με το Praion.ai ανενεργό, το <code>/admin/api-tokens</code> εξακολουθεί να ανακατευθύνει στο Settings και καταλήγει στην πρώτη καρτέλα (η καρτέλα Praion.ai δεν υπάρχει τότε).</p>
+      <p class="ref">Αναφ.: <code>src/lib/cms/collection-route.ts</code> (<code>resolveAdminCollection</code>) · <code>src/app/admin/(shell)/api-tokens/page.tsx</code> · <code>src/cms/admin/SettingsForm.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-056" data-priority="P2">
+      <h3>Κενές καταστάσεις σε νέο ιστότοπο</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ένας νεοεγκατεστημένος ιστότοπος δοκιμών (λίστα ελέγχου 01) με όλα τα modules ενεργά, πριν υπάρξει οποιοδήποτε περιεχόμενο, παραγγελία, κράτηση, ανέβασμα αρχείου, υποβολή ή συνδρομητής.</p>
+      <ol class="steps">
+        <li>Ανοίξτε κάθε οθόνη παρακάτω και διαβάστε τι εμφανίζει εκεί όπου θα βρίσκονταν τα δεδομένα.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Οθόνη</th><th>Αναμενόμενο κείμενο κενής κατάστασης</th></tr></thead>
+          <tbody>
+          <tr><td>Dashboard, Recent submissions</td><td><code>No submissions yet.</code></td></tr>
+          <tr><td>Οποιαδήποτε κενή λίστα συλλογής (π.χ. Brands)</td><td><code>No documents match.</code> και <code>0 total</code></td></tr>
+          <tr><td>Submissions</td><td><code>No submissions.</code></td></tr>
+          <tr><td>Newsletter</td><td><code>Nobody has subscribed yet. The footer band and the article sidebar cards feed this list.</code></td></tr>
+          <tr><td>SEO</td><td><code>No redirects.</code>, <code>No 404s logged.</code>, <code>No overrides.</code> στις αντίστοιχες ενότητες</td></tr>
+          <tr><td>Media</td><td><code>No media yet — upload a file to get started.</code></td></tr>
+          <tr><td>Orders</td><td><code>No orders yet.</code></td></tr>
+          <tr><td>Customers</td><td><code>No customer accounts yet.</code></td></tr>
+          <tr><td>Gift cards</td><td><code>No gift cards yet.</code></td></tr>
+          <tr><td>Reviews</td><td><code>No reviews in this view.</code></td></tr>
+          <tr><td>Abandoned carts</td><td><code>No carts in this view.</code></td></tr>
+          <tr><td>Reservations</td><td><code>No bookings match these filters.</code></td></tr>
+          <tr><td>Availability</td><td><strong>Nothing to schedule yet</strong> και <code>Publish an experience and it appears here. …</code></td></tr>
+          <tr><td>Scripts</td><td><code>No script snippets yet.</code></td></tr>
+          <tr><td>Cookies (μόνο αν δεν έχει εκτελεστεί το seed των cookies)</td><td><code>No cookie categories yet.</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε οθόνη δείχνει το κείμενο του πίνακα, με την κανονική επικεφαλίδα και τα στοιχεία ελέγχου της, και χωρίς σφάλμα. Το Media με αναζήτηση χωρίς αποτελέσματα δείχνει <code>No files match “&lt;search&gt;”.</code>· το Users φιλτραρισμένο χωρίς αποτελέσματα δείχνει <code>No accounts match “&lt;search&gt;”.</code>· το Audit log φιλτραρισμένο χωρίς αποτελέσματα δείχνει <code>No entries match this filter.</code> και <code>No entries</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/*Table.tsx</code> · <code>src/cms/admin/MediaLibrary.tsx</code> · <code>src/cms/admin/SeoManager.tsx</code> · <code>src/cms/admin/AvailabilityCalendar.tsx</code> · <code>src/app/admin/(shell)/audit/page.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-path">
+    <h2>Προσαρμοσμένη διαδρομή διαχειριστικού</h2>
+    <p class="intro">Ορίστε <code>ADMIN_PATH=studio</code> στο <code>.env.local</code> και επανεκκινήστε τον server πριν από αυτή την ενότητα· στο τέλος επαναφέρετέ το σε <code>admin</code> και επανεκκινήστε. Το πλευρικό μενού, η επάνω μπάρα, η αποσύνδεση, οι άμεσοι σύνδεσμοι, η αυτόματη αποσύνδεση λόγω αδράνειας και η μπάρα διαχείρισης στη μετακινημένη διαδρομή βρίσκονται στη λίστα ελέγχου 01 (SET-050 έως SET-058)· οι περιπτώσεις αυτές καλύπτουν τους υπόλοιπους συνδέσμους και τις ανακατευθύνσεις.</p>
+
+    <article class="tc" id="ADM-057" data-priority="P2">
+      <h3>Οι σύνδεσμοι του πίνακα ελέγχου, της λίστας και του επεξεργαστή μένουν στο /studio</h3>
+      <ol class="steps">
+        <li>Συνδεδεμένοι στο <code>/studio</code>, περάστε τον δείκτη πάνω από κάθε <strong>View</strong>, <strong>New</strong>, <strong>View all →</strong> και γραμμή υποβολής στον πίνακα ελέγχου.</li>
+        <li>Ανοίξτε το Pages· περάστε τον δείκτη πάνω από τον τίτλο μιας γραμμής· πατήστε <strong>+ New</strong>.</li>
+        <li>Δημιουργήστε μια πρόχειρη σελίδα <code>qa-studio</code> και αποθηκεύστε την. Έπειτα πατήστε το <strong>Cancel</strong> της φόρμας.</li>
+        <li>Αλλάξτε την αναζήτηση και το φίλτρο κατάστασης της λίστας· προχωρήστε στην επόμενη σελίδα αν είναι δυνατό.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε σύνδεσμος ξεκινά με <code>/studio/</code>. Μετά την πρώτη αποθήκευση η διεύθυνση γίνεται <code>/studio/page/&lt;id&gt;</code>· το Cancel επιστρέφει στο <code>/studio/page</code>· τα φίλτρα της λίστας ενημερώνουν το <code>/studio/page?q=…</code>. Τίποτα δεν καταλήγει ποτέ σε <code>/admin/…</code> ή σε 404.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/DocumentForm.tsx</code> (<code>router.push</code> μετά τη δημιουργία) · <code>src/cms/admin/DocumentList.tsx</code> · <code>src/app/admin/(shell)/page.tsx</code> · <code>src/cms/admin/admin-path.ts</code></p>
+    </article>
+
+    <article class="tc" id="ADM-058" data-priority="P2">
+      <h3>Επισήμανση και όνομα οθόνης κάτω από το /studio</h3>
+      <ol class="steps">
+        <li>Ανοίξτε τα <code>/studio/page</code>, τον επεξεργαστή μιας σελίδας, <code>/studio/settings</code> και <code>/studio</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ακριβώς όπως στις ADM-017 και ADM-019: Pages επισημασμένο με επάνω μπάρα <code>Pages</code> / <code>Pages · Edit</code>, Settings επισημασμένο με <code>Settings</code>, Dashboard επισημασμένο με <code>Dashboard</code>. Αν τίποτα δεν είναι επισημασμένο και η επάνω μπάρα γράφει <code>Dashboard</code> σε κάθε οθόνη, ο browser βλέπει την εσωτερική διαδρομή <code>/admin</code>: σημειώστε Αποτυχία.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/Sidebar.tsx</code> · <code>src/cms/admin/TopBar.tsx</code> (και τα δύο συγκρίνουν το <code>usePathname()</code> με συνδέσμους <code>/studio/…</code>) · <code>src/proxy.ts</code> (rewrite)</p>
+    </article>
+
+    <article class="tc" id="ADM-059" data-priority="P3">
+      <h3>Ανακατευθύνσεις 403, ψευδωνύμων και καταργημένων σελίδων κάτω από το /studio</h3>
+      <ol class="steps">
+        <li>Ως <code>qa-limited@example.com</code> ανοίξτε το <code>/studio/users</code>· πατήστε <strong>Back to dashboard</strong>.</li>
+        <li>Ως superadmin ανοίξτε τα <code>/studio/pages</code> και <code>/studio/api-tokens</code>.</li>
+        <li>Στο <code>/studio/audit</code> προχωρήστε στην επόμενη σελίδα και αλλάξτε καρτέλες στο Settings.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 1 καταλήγει στο <code>/studio/403</code> και το Back to dashboard οδηγεί στο <code>/studio</code>. Το <code>/studio/pages</code> ανακατευθύνει στο <code>/studio/page</code>· το <code>/studio/api-tokens</code> ανακατευθύνει στο <code>/studio/settings?tab=Connect%20to%20Praion.ai</code>. Η σελιδοποίηση του Audit και οι καρτέλες του Settings διατηρούν το <code>/studio/…</code> στη διεύθυνση.</p>
+      <p class="ref">Αναφ.: <code>src/app/admin/403/page.tsx</code> · <code>src/lib/cms/collection-route.ts</code> · <code>src/app/admin/(shell)/api-tokens/page.tsx</code> · <code>src/app/admin/(shell)/audit/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-060" data-priority="P3">
+      <h3>Το Edit της μπάρας διαχείρισης σε σελίδες καταστήματος και κρατήσεων χρησιμοποιεί το /studio</h3>
+      <ol class="steps">
+        <li>Ως superadmin ανοίξτε μια σελίδα προϊόντος, μια σελίδα κατηγορίας καταστήματος και μια σελίδα εμπειρίας στον δημόσιο ιστότοπο· περάστε κάθε φορά τον δείκτη πάνω από το <strong>Επεξεργασία</strong> και πατήστε ένα από αυτά.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Οι σύνδεσμοι είναι <code>/studio/product/&lt;id&gt;?locale=el</code>, <code>/studio/category/&lt;id&gt;?locale=el</code> και <code>/studio/booking/&lt;id&gt;?locale=el</code> και ανοίγουν τον σωστό επεξεργαστή. Το <strong>Διαχείριση</strong> οδηγεί στο <code>/studio</code>.</p>
+      <p class="ref">Αναφ.: <code>src/components/admin-bar/AdminEditTarget.tsx</code> · <code>src/lib/admin-bar.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-responsive">
+    <h2>Πλάτος κινητού &amp; διάταξη</h2>
+    <p class="intro">Χρησιμοποιήστε τη λειτουργία συσκευής του browser στα 390 × 844 (ή πραγματικό κινητό). Κάτω από 768 px πλάτος το πλευρικό μενού γίνεται συρτάρι μενού.</p>
+
+    <article class="tc" id="ADM-061" data-priority="P2">
+      <h3>Συρτάρι μενού πλοήγησης σε κινητό</h3>
+      <ol class="steps">
+        <li>Ως superadmin ανοίξτε το <code>/admin</code> στα 390 px.</li>
+        <li>Πατήστε το κουμπί με τις τρεις γραμμές επάνω αριστερά.</li>
+        <li>Πατήστε <strong>Pages</strong>.</li>
+        <li>Ανοίξτε ξανά το συρτάρι μενού και πατήστε τη σκιασμένη περιοχή· ανοίξτε το ξανά και πατήστε Escape (με συνδεδεμένο πληκτρολόγιο).</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: δεν φαίνεται πλευρικό μενού· η επάνω μπάρα δείχνει το κουμπί με τις τρεις γραμμές, το όνομα της οθόνης και ένα κουμπί αποσύνδεσης μόνο με εικονίδιο (χωρίς όνομα χρήστη).</li>
+        <li>Βήμα 2: το πλευρικό μενού γλιστρά από τα αριστερά πάνω από σκιασμένη σελίδα· το κουμπί γίνεται X.</li>
+        <li>Βήμα 3: το Pages ανοίγει και το συρτάρι μενού κλείνει μόνο του.</li>
+        <li>Βήμα 4: τόσο το πάτημα στο φόντο όσο και το Escape κλείνουν το συρτάρι μενού.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/AdminNav.tsx</code> · <code>src/cms/admin/Sidebar.tsx</code> · <code>src/cms/admin/TopBar.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-062" data-priority="P2">
+      <h3>Χωρίς οριζόντια κύλιση στα 390 px</h3>
+      <ol class="steps">
+        <li>Στα 390 px ανοίξτε τον πίνακα ελέγχου, τη λίστα Pages, τον επεξεργαστή μιας σελίδας, το Settings (καρτέλες Modules και Fields), Users, Roles, Media, Audit log και Orders.</li>
+        <li>Σε καθεμία, προσπαθήστε να σύρετε τη σελίδα αριστερά και δεξιά.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η σελίδα δεν κυλά ποτέ οριζόντια και τίποτα σημαντικό δεν αποκόπτεται. Οι κάρτες του πίνακα ελέγχου στοιβάζονται σε μία στήλη. Οι φαρδιοί πίνακες κυλούν μέσα στο δικό τους πλαίσιο (ADM-050). Τα κουμπιά και οι σύνδεσμοι είναι αρκετά μεγάλα ώστε να πατηθούν χωρίς μεγέθυνση.</p>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/layout.tsx</code> (<code>overflow-x-hidden</code> στο main) · <code>src/cms/admin/ui/index.tsx</code> (<code>Table</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-063" data-priority="P3">
+      <h3>Αλλαγή μεγέθους πέρα από το σημείο αλλαγής διάταξης και μεγέθυνση 200%</h3>
+      <ol class="steps">
+        <li>Στα 390 px ανοίξτε το συρτάρι μενού και έπειτα φαρδύνετε το παράθυρο πέρα από τα 768 px.</li>
+        <li>Σε κανονικό πλάτος υπολογιστή ορίστε τη μεγέθυνση του browser στο 200%.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: το συρτάρι μενού γίνεται η κανονική αριστερή στήλη και το σκιασμένο φόντο εξαφανίζεται· τίποτα δεν μένει να καλύπτει τη σελίδα. Βήμα 2: η διάταξη αλλάζει στη διάταξη κινητού με το κουμπί τριών γραμμών· όλο το περιεχόμενο είναι προσβάσιμο χωρίς οριζόντια κύλιση.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/AdminNav.tsx</code> (<code>md:hidden</code>) · <code>src/cms/admin/Sidebar.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-a11y">
+    <h2>Πληκτρολόγιο, εστίαση &amp; αναγνώστης οθόνης</h2>
+
+    <article class="tc" id="ADM-064" data-priority="P2">
+      <h3>Χρήση του πλαισίου μόνο με πληκτρολόγιο σε υπολογιστή</h3>
+      <ol class="steps">
+        <li>Στον πίνακα ελέγχου σε πλάτος υπολογιστή, κάντε κλικ στη γραμμή διευθύνσεων και έπειτα πατήστε Tab επανειλημμένα σε όλη την οθόνη, και Shift+Tab προς τα πίσω.</li>
+        <li>Πατήστε Enter στο <strong>Pages</strong> και συνεχίστε με Tab μέχρι μια γραμμή· ανοίξτε την με Enter.</li>
+      </ol>
+      <ul class="exp">
+        <li>Σειρά Tab: Back to site, Dashboard, κάθε στοιχείο του πλευρικού μενού από πάνω προς τα κάτω, Sign out, και έπειτα το περιεχόμενο της σελίδας με σειρά ανάγνωσης. Καμία στάση εστίασης δεν είναι αόρατη.</li>
+        <li>Κάθε στοιχείο με εστίαση δείχνει ευδιάκριτο περίγραμμα ή χρυσό δακτύλιο, και οι σύνδεσμοι του πλευρικού μενού στο σκούρο φόντο.</li>
+        <li>Το Enter ανοίγει συνδέσμους· κάθε ενέργεια σε αυτές τις οθόνες μπορεί να γίνει χωρίς ποντίκι.</li>
+        <li>Καταγράψτε: δεν υπάρχει σύνδεσμος παράκαμψης (“skip to content”), οπότε για να φτάσετε στο περιεχόμενο πρέπει να περάσετε με Tab περίπου 30 στοιχεία του πλευρικού μενού με όλα τα modules ενεργά. Αναφέρετέ το ως σφάλμα προσβασιμότητας.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/Sidebar.tsx</code> · <code>src/cms/admin/TopBar.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-065" data-priority="P3">
+      <h3>Πληκτρολόγιο με το συρτάρι μενού σε πλάτος κινητού</h3>
+      <ol class="steps">
+        <li>Στα 390 px με συνδεδεμένο πληκτρολόγιο (αρκεί η λειτουργία συσκευής σε browser υπολογιστή), φορτώστε τον πίνακα ελέγχου, κάντε κλικ στη γραμμή διευθύνσεων και πατήστε Tab αργά, παρακολουθώντας πού πηγαίνει η εστίαση.</li>
+        <li>Φτάστε με Tab στο κουμπί τριών γραμμών και πατήστε Enter· πατήστε Tab.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Με το συρτάρι μενού κλειστό, η εστίαση δεν πρέπει ποτέ να πέφτει στους κρυφούς συνδέσμους του πλευρικού μενού, και μετά το άνοιγμα του συρταριού το Tab πρέπει να μεταφέρεται μέσα σε αυτό. Το συρτάρι απλώς μετακινείται εκτός οθόνης, δεν κρύβεται από το πληκτρολόγιο, και προηγείται της επάνω μπάρας στη σελίδα, οπότε οι πρώτες στάσεις του Tab είναι πιθανότατα αόρατοι σύνδεσμοι. Αν η εστίαση χάνεται εκτός οθόνης, σημειώστε Αποτυχία και καταγράψτε πόσα πατήματα χρειάστηκαν για να φτάσετε στο κουμπί μενού.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/Sidebar.tsx</code> (μόνο <code>-translate-x-full</code>) · <code>src/cms/admin/AdminNav.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-066" data-priority="P2">
+      <h3>Ορόσημα (landmarks) και επικεφαλίδες</h3>
+      <ol class="steps">
+        <li>Με αναγνώστη οθόνης (ή το δέντρο προσβασιμότητας του browser), καταγράψτε τα ορόσημα και τις επικεφαλίδες στον πίνακα ελέγχου, στη λίστα Pages και στον επεξεργαστή μιας σελίδας.</li>
+      </ol>
+      <ul class="exp">
+        <li>Μία περιοχή <strong>main</strong>· η επάνω μπάρα ως banner/header· το πλευρικό μενού ως ορόσημο με όνομα <code>Primary navigation</code> (ανακοινώνεται ως complementary επειδή είναι <code>aside</code>· σημειώστε αν θα έπρεπε να είναι ορόσημο πλοήγησης).</li>
+        <li>Ακριβώς μία επικεφαλίδα επιπέδου 1 ανά οθόνη: η επικεφαλίδα της ίδιας της σελίδας. Το όνομα οθόνης της επάνω μπάρας δεν διαβάζεται ως επικεφαλίδα.</li>
+        <li>Στον επεξεργαστή κάθε κάρτα (Content, Document, Publishing, SEO &amp; AEO, προσαρμοσμένες ενότητες) είναι περιοχή (region) με όνομα τον τίτλο της.</li>
+        <li>Η δημόσια μπάρα διαχείρισης είναι ορόσημο πλοήγησης με όνομα <code>Εργαλεία διαχειριστή</code> (ή <code>Admin tools</code>).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/Sidebar.tsx</code> · <code>src/cms/admin/TopBar.tsx</code> · <code>src/cms/admin/ui/Section.tsx</code> · <code>src/components/admin-bar/AdminBar.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-067" data-priority="P2">
+      <h3>Τα κουμπιά μόνο με εικονίδιο έχουν ονόματα</h3>
+      <ol class="steps">
+        <li>Με αναγνώστη οθόνης, ή επιθεωρώντας το προσβάσιμο όνομα κάθε στοιχείου ελέγχου, ελέγξτε τα στοιχεία με τη σειρά του πίνακα: κουμπί μενού σε πλάτος κινητού (κλειστό και ανοιχτό), Sign out σε πλάτος κινητού, το ✕ του πάνελ Users, το κλείσιμο ενός παραθύρου διαλόγου Media library, το μάτι του κωδικού στη σελίδα σύνδεσης, το “i” του πίνακα ελέγχου, τα κουμπιά γραμμής σε πεδίο repeater (τα QA rows της CON-002), το δείγμα χρώματος σε πεδίο χρώματος.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τα ονόματα είναι, με τη σειρά: <code>Open navigation menu</code> / <code>Close navigation menu</code> (με expanded false / true), <code>Sign out</code>, <code>Close</code>, <code>Close</code>, <code>Show password</code> / <code>Hide password</code>, <code>About these counts</code>, <code>Move up</code>, <code>Move down</code>, <code>Duplicate</code>, <code>Remove</code>, <code>Pick colour</code>. Κανένα στοιχείο δεν ανακοινώνεται απλώς ως “button”.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/AdminNav.tsx</code> · <code>src/cms/admin/TopBar.tsx</code> · <code>src/cms/admin/fields/FieldInput.tsx</code> · <code>src/cms/admin/ui/PasswordInput.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-068" data-priority="P3">
+      <h3>Γνωστά κενά προσβασιμότητας προς επιβεβαίωση</h3>
+      <ol class="steps">
+        <li>Με αναγνώστη οθόνης, δώστε εστίαση στην κεφαλίδα μιας πτυσσόμενης κάρτας στον επεξεργαστή σελίδας (για παράδειγμα Publishing) και εναλλάξτε την.</li>
+        <li>Στο Cookies, περάστε από τα πεδία της φόρμας <strong>Add service</strong>.</li>
+        <li>Στη λίστα Pages, μετακινηθείτε στις ετικέτες γλώσσας μιας γραμμής.</li>
+        <li>Ανοίξτε διάφορες οθόνες του διαχειριστικού και διαβάστε τους τίτλους των καρτελών του browser.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Όλα πρέπει να ανακοινώνονται πλήρως. Ο τρέχων κώδικας υποδεικνύει τα παρακάτω κενά· σημειώστε Αποτυχία για καθένα που επιβεβαιώνετε και καταγράψτε τα στις σημειώσεις: (1) η κεφαλίδα της κάρτας δεν δηλώνει αν είναι ανεπτυγμένη/συμπτυγμένη· (2) τα πεδία Provider και Purpose έχουν ως ετικέτα μόνο το κείμενο placeholder, και τα πεδία ονόματος EL/EN ονομάζονται και τα δύο απλώς “Name”· (3) μια ετικέτα διαβάζεται μόνο “EL”/“EN” χωρίς την κατάστασή της (η κατάσταση φαίνεται μόνο με χρώμα και τίτλο κατά το πέρασμα του δείκτη)· (4) κάθε καρτέλα του διαχειριστικού έχει τίτλο <code>CMS</code>, οπότε οι οθόνες δεν ξεχωρίζουν στη λίστα καρτελών ή στο ιστορικό.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/ui/Section.tsx</code> · <code>src/cms/admin/CookiesManager.tsx</code> · <code>src/cms/admin/DocumentList.tsx</code> (<code>STATUS_COLORS</code>) · <code>src/app/admin/layout.tsx</code> (<code>title: 'CMS'</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-theme">
+    <h2>Χρωματικός συνδυασμός</h2>
+
+    <article class="tc" id="ADM-069" data-priority="P3">
+      <h3>Σκούρα ρύθμιση συστήματος</h3>
+      <ol class="steps">
+        <li>Αλλάξτε το λειτουργικό σύστημα (ή το “prefers-color-scheme” στα εργαλεία προγραμματιστή του browser) σε σκούρο.</li>
+        <li>Ανοίξτε το <code>/admin/login</code>, τον πίνακα ελέγχου, τον επεξεργαστή μιας σελίδας με τα παράθυρα διαλόγου του, και μια δημόσια σελίδα με τη μπάρα διαχείρισης.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το διαχειριστικό δεν έχει σκούρο θέμα: κάθε οθόνη εμφανίζεται με τα ίδια ανοιχτά χρώματα όπως με τη φωτεινή ρύθμιση, με το σκούρο πλευρικό μενού αμετάβλητο. Το κείμενο παραμένει αναγνώσιμο παντού· δεν υπάρχει μισοσκότεινος συνδυασμός, όπως σκούρα στοιχεία φόρμας σε λευκές κάρτες ή ανοιχτόχρωμο κείμενο σε ανοιχτό φόντο. Η μπάρα διαχείρισης είναι η ίδια σκούρα μπλε (navy) λωρίδα και στις δύο ρυθμίσεις.</p>
+      <p class="ref">Αναφ.: <code>src/app/admin/layout.tsx</code> · <code>src/app/globals.css</code> · <code>src/cms/core/brand/BrandStyle.tsx</code></p>
+    </article>
+  </section>
+
+</main>
+<footer class="page">Λίστα ελέγχου 04 από 12. Τα αποτελέσματα αποθηκεύονται μόνο σε αυτόν τον browser· χρησιμοποιήστε την εξαγωγή πριν καθαρίσετε τα δεδομένα του browser. Στο τέλος επαναφέρετε τα <code>ADMIN_PATH=admin</code> και <code>ADMIN_SESSION_IDLE_MINUTES</code>, επαναφέρετε τους διακόπτες των modules και τον ρόλο editor, και διαγράψτε τους λογαριασμούς και τους ρόλους του QA αν άλλες λίστες ελέγχου δεν αναμένουν κανέναν.</footer>
+</body>
+</html>

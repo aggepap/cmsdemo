@@ -1,0 +1,1239 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Φόρμες, email, newsletter, popups, cookies</title>
+<link rel="stylesheet" href="../qa.css">
+<script src="../qa.js" defer></script>
+</head>
+<body>
+<nav class="crumbs"><a href="index.html">Χειροκίνητος έλεγχος CMS</a></nav>
+<header class="page">
+  <h1>07 · Φόρμες, email, newsletter, popups, cookies &amp; scripts</h1>
+  <p class="scope">Η φόρμα επικοινωνίας στο <code>/contact</code> και στο <code>/en/contact</code> (επικύρωση, honeypot, καταστάσεις επιτυχίας και σφάλματος), τι αποθηκεύει στο <code>form_submissions</code> και το email ειδοποίησης που στέλνει μέσω Microsoft Graph (παραλήπτης, θέμα, Reply-To, σώμα HTML, τμήμα απλού κειμένου), πώς συμπεριφέρεται η εφαρμογή όταν η ρύθμιση αλληλογραφίας λείπει ή είναι λανθασμένη, η οθόνη Submissions, η εγγραφή στο newsletter και η οθόνη Newsletter με τα γνωστά κενά τους, ο υπογεγραμμένος σύνδεσμος διαγραφής από τη λίστα (unsubscribe) και το <code>email_suppressions</code>, το banner cookies και η εγγραφή συγκατάθεσης, η οθόνη Cookies με τον σαρωτή cookies και τη δήλωση στο <code>/legal/cookies</code>, τα scripts που εξαρτώνται από τη συγκατάθεση και το Google Analytics, τα popups (περιεχόμενο, στόχευση, ημερομηνίες, συχνότητα, ενεργοποιήσεις, χρήση πληκτρολογίου, μετρητές) και η ημιτελής ενσωμάτωση των κριτικών Google. Τα όρια ρυθμού των δημόσιων endpoints για τη φόρμα επικοινωνίας και τη συγκατάθεση (AUTH-071 έως AUTH-073), ο πίνακας ανά δικαίωμα (AUTH-055), οι Recent submissions του πίνακα ελέγχου (λίστα ελέγχου 04), το λογότυπο των email (MED-034), οι ενότητες και ο έλεγχος χρωμάτων του επεξεργαστή popup (CON-080), οι διακόπτες των modules (SET-039, SET-040, CON-081) και τα shortcodes <code>[form]</code> / <code>[popup]</code> (CON-090) καλύπτονται αλλού και αναφέρονται με το ID τους. Χρειάζεστε ένα γραμματοκιβώτιο που μπορείτε να διαβάσετε για το <code>CONTACT_RECIPIENT_EMAIL</code>, μια δεύτερη διεύθυνση που θα παίζει τον ρόλο του επισκέπτη, τερματικό με <code>curl</code> και <code>openssl</code>, πρόσβαση στη βάση δεδομένων μέσω client, και browser με εργαλεία προγραμματιστή καθώς και ιδιωτικό παράθυρο.</p>
+</header>
+<main>
+
+  <section class="suite" id="suite-prep">
+    <h2>Πριν ξεκινήσετε</h2>
+    <p class="intro">Η λίστα ελέγχου 01 πρέπει να έχει ολοκληρωθεί (migrations, seeds μαζί με το <code>npm run db:seed-cookies</code> από τη SET-018, superadmin <code>qa-admin@example.com</code>). Συνδεθείτε ως <code>qa-admin@example.com</code>, εκτός αν μια περίπτωση ελέγχου ορίζει διαφορετικά. Τα URL χρησιμοποιούν το <code>http://localhost:3002</code>· σε φιλοξενούμενο περιβάλλον δοκιμών χρησιμοποιήστε τη διεύθυνσή του. Τα ελληνικά είναι η προεπιλεγμένη γλώσσα και δεν έχουν πρόθεμα: το <code>/contact</code> είναι ελληνικά, το <code>/en/contact</code> αγγλικά.</p>
+    <div class="callout">
+      <p><strong>Τερματικό.</strong> Στον φάκελο του έργου εκτελέστε <code>BASE=http://localhost:3002</code>. Για κλήσεις του API του διαχειριστικού αντιγράψτε το cookie <code>cms_session</code> στο <code>S</code> όπως στη λίστα ελέγχου 05 («Χρήση του curl με συνεδρία») και προσθέστε το <code>-b "cms_session=$S"</code>. Τα δημόσια endpoints έχουν όριο ρυθμού ανά διεύθυνση· δώστε σε κάθε curl το δικό του <code>-H 'X-Real-IP: 10.70.0.N'</code> (νέο N ανά περίπτωση), ώστε μια περίπτωση να μην εξαντλεί το όριο μιας άλλης.</p>
+      <p><strong>Browser επισκέπτη.</strong> «Νέο ιδιωτικό παράθυρο» σημαίνει: κλείστε κάθε ιδιωτικό παράθυρο και ανοίξτε ένα νέο. Το Local Storage του (εργαλεία προγραμματιστή → Application → Local Storage στον Chrome, Storage στον Firefox) δεν περιέχει τότε κανένα από τα κλειδιά <code>site-…</code>. Τα κλειδιά που χρησιμοποιούνται εδώ είναι τα <code>site-cookie-consent</code>, <code>site-cookie-categories</code>, <code>site-visitor-ref</code> και <code>site-popup-seen</code>.</p>
+      <p><strong>Ακύρωση μιας επιλογής για τα cookies.</strong> Το banner δεν μπορεί να ανοίξει ξανά από τον ιστότοπο (βλ. MKT-054). Για να σας ρωτήσει ξανά στο ίδιο παράθυρο, εκτελέστε αυτό στην κονσόλα και ανανεώστε τη σελίδα:</p>
+<pre><code>localStorage.removeItem('site-cookie-consent'); localStorage.removeItem('site-cookie-categories');</code></pre>
+    </div>
+
+    <article class="tc" id="MKT-001" data-priority="P1">
+      <h3>Ρύθμιση της εξερχόμενης αλληλογραφίας</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Μια εφαρμογή Entra με το δικαίωμα εφαρμογής <code>Mail.Send</code> (με συγκατάθεση διαχειριστή) και ένα γραμματοκιβώτιο από το οποίο επιτρέπεται να στέλνει. Χωρίς αυτά, σημειώστε τις περιπτώσεις email ως Μπλοκαρισμένο και εκτελέστε παρ' όλα αυτά τη MKT-018.</p>
+      <ol class="steps">
+        <li>Στο <code>.env.local</code> συμπληρώστε τα <code>AZURE_TENANT_ID</code>, <code>AZURE_CLIENT_ID</code>, <code>AZURE_CLIENT_SECRET</code>, <code>GRAPH_SENDER_ADDRESS</code> (το γραμματοκιβώτιο αποστολής) και <code>CONTACT_RECIPIENT_EMAIL</code> (ένα γραμματοκιβώτιο που μπορείτε να διαβάσετε). Σημειώστε τις δύο διευθύνσεις.</li>
+        <li>Επανεκκινήστε την εφαρμογή.</li>
+        <li>Ανοίξτε το <strong>Your account</strong> στο πλευρικό μενού και ξεκινήστε τη ρύθμιση του ελέγχου ταυτότητας δύο παραγόντων.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Προσφέρεται η επιλογή <strong>Email me a code</strong> (όχι γκριζαρισμένη), που είναι ο τρόπος με τον οποίο η εφαρμογή δείχνει ότι υπάρχουν και οι πέντε μεταβλητές αλληλογραφίας (βλ. AUTH-029). Ακυρώστε τη ρύθμιση· τίποτε άλλο δεν αλλάζει.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/email/graph.ts</code> (<code>readEnv</code>, <code>graphMailConfigured</code>) · <code>.env.example</code></p>
+    </article>
+
+    <article class="tc" id="MKT-002" data-priority="P2">
+      <h3>Ενεργοποίηση των modules που χρησιμοποιεί αυτή η λίστα ελέγχου</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/admin/settings?tab=Modules</code>, επιλέξτε <strong>Newsletter</strong> και <strong>Popups</strong> και πατήστε <strong>Save settings</strong>.</li>
+        <li>Ανοίξτε το <strong>Cookies</strong> στο πλευρικό μενού.</li>
+        <li>Ανοίξτε το <strong>Roles</strong> και δημιουργήστε έναν ρόλο <code>QA mkt view</code> με επιλεγμένα μόνο τα <strong>Access</strong>, <strong>View form submissions</strong> και <strong>View newsletter</strong>. Δημιουργήστε έναν χρήστη <code>qa-mkt-view@example.com</code> με αυτόν τον ρόλο (όπως στη λίστα ελέγχου 05).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το <strong>Newsletter</strong> εμφανίζεται στο πλευρικό μενού και τα <strong>Popups</strong> κάτω από τις συλλογές περιεχομένου. Η οθόνη Cookies εμφανίζει τις τρεις κατηγορίες του seed: <code>necessary</code> (υποχρεωτική), <code>analytics</code> και <code>marketing</code>. Ο ρόλος και ο χρήστης αποθηκεύονται.</p>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/layout.tsx</code> · <code>src/cms/modules/auth/permission-labels.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-contact">
+    <h2>Φόρμα επικοινωνίας: σελίδα και επικύρωση</h2>
+    <p class="intro">Η φόρμα ελέγχει το όνομα, το email και το μήνυμα στον browser πριν από την αποστολή· ο διακομιστής τα ελέγχει όλα ξανά. Το τηλέφωνο είναι προαιρετικό και δεν επικυρώνεται ποτέ πέρα από το μήκος του.</p>
+
+    <article class="tc" id="MKT-003" data-priority="P1">
+      <h3>Η σελίδα επικοινωνίας και στις δύο γλώσσες</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/contact</code>, έπειτα το <code>/en/contact</code> και έπειτα το <code>/el/contact</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Ελληνικά: πεδία <strong>Όνομα</strong>, <strong>Email</strong>, <strong>Τηλέφωνο (προαιρετικό)</strong>, <strong>Μήνυμα</strong> και το κουμπί <strong>Αποστολή</strong>· δίπλα τους ένα πλαίσιο <strong>Στοιχεία επικοινωνίας</strong> με το email, το τηλέφωνο και τη διεύθυνση από τις Ρυθμίσεις → Branding (μια γραμμή λείπει όταν η αντίστοιχη τιμή είναι κενή).</li>
+        <li>Αγγλικά: <strong>Name</strong>, <strong>Email</strong>, <strong>Phone (optional)</strong>, <strong>Message</strong>, κουμπί <strong>Send message</strong>, πλαίσιο <strong>Contact details</strong>.</li>
+        <li>Το <code>/el/contact</code> ανακατευθύνει στο <code>/contact</code>.</li>
+        <li>Κάθε ετικέτα είναι συνδεδεμένη με το πεδίο της: ένα κλικ στο κείμενο της ετικέτας τοποθετεί τον κέρσορα στο πεδίο.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/contact/page.tsx</code> · <code>src/components/site/ContactForm.tsx</code> · <code>messages/el.json</code>, <code>messages/en.json</code> (<code>contact.form</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-004" data-priority="P2">
+      <h3>Τα κενά πεδία απορρίπτονται πριν σταλεί οτιδήποτε</h3>
+      <ol class="steps">
+        <li>Στο <code>/en/contact</code> ανοίξτε εργαλεία προγραμματιστή → Network. Πατήστε <strong>Send message</strong> με όλα τα πεδία κενά.</li>
+        <li>Πληκτρολογήστε τρία κενά στα Name και Message και πατήστε ξανά.</li>
+        <li>Επαναλάβετε το βήμα 1 στο <code>/contact</code>.</li>
+        <li>Επιθεωρήστε το πεδίο Name στο πάνελ Elements.</li>
+      </ol>
+      <ul class="exp">
+        <li>Δεν γίνεται κανένα αίτημα στο <code>/api/contact</code>. Κάτω από τα Name και Message: <code>This field is required.</code>· κάτω από το Email: <code>Please enter a valid email address.</code> Τα σκέτα κενά μετρούν ως κενό πεδίο.</li>
+        <li>Ελληνικά: <code>Το πεδίο είναι υποχρεωτικό.</code> και <code>Εισάγετε μια έγκυρη διεύθυνση email.</code></li>
+        <li>Το πεδίο έχει <code>aria-invalid="true"</code> και <code>aria-describedby="name-error"</code>, που δείχνει στο μήνυμα. Το περίγραμμα του πεδίου γίνεται κόκκινο. Το Phone δεν εμφανίζει ποτέ σφάλμα.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/site/ContactForm.tsx</code> (<code>onSubmit</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-005" data-priority="P2">
+      <h3>Λανθασμένες διευθύνσεις email</h3>
+      <ol class="steps">
+        <li>Στο <code>/en/contact</code> συμπληρώστε τα Name και Message και δοκιμάστε τις τιμές email <code>qa</code>, <code>qa@example</code>, <code>qa @example.com</code> και <code>qa@example.com</code>, πατώντας <strong>Send message</strong> μετά από καθεμία (σταματήστε στην τελευταία μόνο αν θέλετε πραγματική υποβολή· διαφορετικά καθαρίστε τη φόρμα).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Οι τρεις πρώτες εμφανίζουν <code>Please enter a valid email address.</code> και δεν στέλνουν τίποτα. Η διόρθωση της τιμής και η νέα αποστολή εξαφανίζουν το μήνυμα.</p>
+      <p class="ref">Αναφ.: <code>src/components/site/ContactForm.tsx</code> (<code>EMAIL</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-006" data-priority="P3">
+      <h3>Το honeypot είναι αόρατο και απορρίπτει την υποβολή</h3>
+      <ol class="steps">
+        <li>Στο <code>/en/contact</code> πατήστε Tab από το πεδίο Name σε όλη τη φόρμα. Επιθεωρήστε το στοιχείο μετά το πλαίσιο Message.</li>
+        <li>Σημειώστε το νεότερο id: <code>SELECT MAX(id) FROM form_submissions;</code></li>
+        <li>Εκτελέστε:
+<pre><code>curl -s -X POST "$BASE/api/contact" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.70.0.1' \
+  -d '{"kind":"contact","locale":"en","name":"Bot","email":"bot@example.com","message":"spam","_hp":"http://spam.example"}' -w '\n%{http_code}\n'</code></pre></li>
+        <li>Επαναλάβετε το βήμα 2 και ελέγξτε το γραμματοκιβώτιο του παραλήπτη.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το Tab δεν σταματά ποτέ σε κρυφό πεδίο· η σήμανση έχει ένα <code>div</code> με <code>aria-hidden="true"</code> και κλάση <code>hidden</code> που περιέχει ένα πεδίο με όνομα <code>_hp</code>. Το curl εμφανίζει <code>{"ok":true}</code> και <code>200</code>, ακριβώς όπως σε πραγματική επιτυχία, αλλά το μεγαλύτερο id δεν αλλάζει και δεν φτάνει κανένα email.</p>
+      <p class="ref">Αναφ.: <code>src/app/api/contact/route.ts</code> (<code>_hp</code>) · <code>src/components/site/ContactForm.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MKT-007" data-priority="P3">
+      <h3>Ο διακομιστής επικυρώνει ανεξάρτητα</h3>
+      <ol class="steps">
+        <li>Στείλτε καθένα από τα παρακάτω σώματα με <code>curl -s -X POST "$BASE/api/contact" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.70.0.2' -d '&lt;body&gt;' -w ' %{http_code}\n'</code> (αλλάζετε τον τελευταίο αριθμό της διεύθυνσης κάθε πέντε αιτήματα):
+          <ul>
+            <li><code>{"kind":"contact","name":"QA","email":"qa@example.com"}</code> (χωρίς μήνυμα)</li>
+            <li><code>{"kind":"contact","name":"QA","email":"not-an-email","message":"x"}</code></li>
+            <li><code>{"kind":"quote","name":"QA","email":"qa@example.com","message":"x"}</code></li>
+            <li><code>{"kind":"contact","name":"QA","email":"qa@example.com","message":"x","locale":"de"}</code></li>
+          </ul></li>
+        <li>Στείλτε ένα έγκυρο σώμα με <code>-H 'Content-Type: text/plain'</code> αντί γι' αυτό.</li>
+        <li>Στείλτε ένα σώμα μεγαλύτερο από 16 KB: <code>head -c 17000 /dev/zero | tr '\0' 'x' &gt; big.txt</code>, και έπειτα <code>curl -s -X POST "$BASE/api/contact" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.70.0.3' --data-binary @big.txt -w ' %{http_code}\n'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: καθένα απαντά <code>{"ok":false,"error":"invalid_payload"}</code> <code>400</code>. Βήμα 2: <code>{"ok":false,"error":"bad_request"}</code> <code>400</code>. Βήμα 3: <code>{"ok":false,"error":"too_large"}</code> <code>413</code>. Δεν προστίθεται καμία γραμμή στο <code>form_submissions</code> και δεν στέλνεται κανένα email.</p>
+      <p class="ref">Αναφ.: <code>src/app/api/contact/route.ts</code> (<code>contactSchema</code>, <code>MAX_BODY_BYTES</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-008" data-priority="P3">
+      <h3>Ένα μήνυμα άνω των 4000 χαρακτήρων λαμβάνει μόνο γενικό σφάλμα</h3>
+      <ol class="steps">
+        <li>Στο <code>/en/contact</code> εκτελέστε <code>copy('x'.repeat(4001))</code> στην κονσόλα, επικολλήστε στο Message, συμπληρώστε τα Name και Email και πατήστε <strong>Send message</strong>.</li>
+        <li>Κάντε το ίδιο με όνομα 121 χαρακτήρων (<code>copy('n'.repeat(121))</code>) και σύντομο μήνυμα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η φόρμα δέχεται το κείμενο, το αίτημα απαντά <code>400</code> <code>invalid_payload</code> και η φόρμα εμφανίζει <code>Something went wrong. Please try again or email info@example.com.</code> διατηρώντας τις τιμές. Δεν αποθηκεύεται τίποτα. Καταγράψτε ως σφάλμα χρηστικότητας ότι ο επισκέπτης δεν ενημερώνεται για το όριο (τα πεδία δεν έχουν <code>maxLength</code>), και σημειώστε αν το <code>info@example.com</code> είναι η σωστή διεύθυνση για αυτόν τον ιστότοπο (είναι σταθερό κείμενο στα <code>messages/*.json</code>, όχι το email του Branding).</p>
+      <p class="ref">Αναφ.: <code>src/app/api/contact/route.ts</code> (<code>max(120)</code>, <code>max(4000)</code>) · <code>messages/en.json</code> (<code>contact.form.error</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-009" data-priority="P3">
+      <h3>Καμία captcha στις δημόσιες φόρμες</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Κλειδιά reCAPTCHA ορισμένα στο <code>.env.local</code> (η σύνδεση στο διαχειριστικό εμφανίζει το πλαίσιο ελέγχου).</p>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/en/contact</code> και τη ζώνη newsletter στο <code>/en/about</code>.</li>
+        <li>Στείλτε ένα έγκυρο σώμα επικοινωνίας με curl (χωρίς κανένα token), όπως στη MKT-007 με μήνυμα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Καμία από τις δύο φόρμες δεν εμφανίζει reCAPTCHA. Το αίτημα curl γίνεται δεκτό (<code>200</code>, ή <code>502</code> αν η αλληλογραφία είναι ανενεργή) και αποθηκεύεται. Η προστασία από spam είναι το honeypot (MKT-006), τα όρια μήκους, το όριο ανά διεύθυνση (AUTH-071) και, στην παραγωγή, ο έλεγχος προέλευσης (AUTH-073). Σημειώστε Επιτυχία αν αυτό ισχύει· η απουσία captcha είναι σχεδιαστική επιλογή, όχι σφάλμα.</p>
+      <p class="ref">Αναφ.: docs/dev-guides/07-forms-email-marketing.md §3.1 (“There is no captcha on public forms”)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-notify">
+    <h2>Φόρμα επικοινωνίας: αποθηκευμένη υποβολή και email ειδοποίησης</h2>
+    <p class="intro">Ο διακομιστής αποθηκεύει πρώτα το αίτημα και μετά το στέλνει με email. Χρησιμοποιήστε τη δεύτερη διεύθυνσή σας (του επισκέπτη) ως email στη φόρμα, για παράδειγμα το <code>qa-visitor@example.com</code> αντικατεστημένο με πραγματικό γραμματοκιβώτιο.</p>
+
+    <article class="tc" id="MKT-010" data-priority="P1">
+      <h3>Ένα έγκυρο αίτημα γίνεται δεκτό</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/en/contact</code> με ανοιχτή την καρτέλα Network. Συμπληρώστε Name <code>QA Tester EN</code>, στο Email τη διεύθυνση του επισκέπτη, Phone <code>+30 210 000 0000</code>, και στο Message δύο γραμμές: <code>Line one</code> Enter <code>Line two</code>.</li>
+        <li>Πατήστε <strong>Send message</strong> και παρατηρήστε το κουμπί.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το κουμπί γράφει <code>Sending…</code> και είναι απενεργοποιημένο όσο εκτελείται το αίτημα. Το <code>POST /api/contact</code> απαντά <code>200</code> <code>{"ok":true}</code>. Η φόρμα αντικαθίσταται από το <code>Thank you — your message has been sent.</code> σε πλαίσιο που ανακοινώνεται στους αναγνώστες οθόνης (<code>role="status"</code>).</p>
+      <p class="ref">Αναφ.: <code>src/components/site/ContactForm.tsx</code> · <code>src/app/api/contact/route.ts</code></p>
+    </article>
+
+    <article class="tc" id="MKT-011" data-priority="P1">
+      <h3>Το αίτημα αποθηκεύεται μαζί με την προέλευσή του</h3>
+      <ol class="steps">
+        <li>Εκτελέστε:
+<pre><code>SELECT id, form_type, email, payload, source_page_slug, source_locale, referrer_url,
+       ua, email_status, email_error, status, notes, ip_hash
+FROM form_submissions ORDER BY id DESC LIMIT 1;</code></pre></li>
+      </ol>
+      <ul class="exp">
+        <li><code>form_type</code> <code>contact</code>, <code>email</code> η διεύθυνση του επισκέπτη, <code>status</code> <code>new</code>, <code>notes</code> NULL.</li>
+        <li>Το <code>payload</code> περιέχει τα κλειδιά <code>Name</code>, <code>Email</code>, <code>Phone</code>, <code>Message</code> (με την αλλαγή γραμμής) και <code>Locale</code> = <code>"EN"</code> (η σειρά των κλειδιών μπορεί να διαφέρει).</li>
+        <li><code>source_page_slug</code> <code>/contact</code> (χωρίς το πρόθεμα γλώσσας), <code>source_locale</code> <code>en</code>, <code>referrer_url</code> <code>http://localhost:3002/en/contact</code>, <code>ua</code> ο user agent του browser σας.</li>
+        <li><code>email_status</code> <code>sent</code>, <code>email_error</code> NULL. Το <code>ip_hash</code> είναι NULL (δεν γράφεται ποτέ).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/lib/contact-submission.ts</code> (<code>pageSlugFromReferer</code>) · <code>src/cms/core/forms/service.ts</code></p>
+    </article>
+
+    <article class="tc" id="MKT-012" data-priority="P1">
+      <h3>Το email ειδοποίησης φτάνει με το αίτημα</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το γραμματοκιβώτιο <code>CONTACT_RECIPIENT_EMAIL</code> και βρείτε το νεότερο μήνυμα.</li>
+        <li>Ανοίξτε τον φάκελο Sent Items του γραμματοκιβωτίου <code>GRAPH_SENDER_ADDRESS</code>, αν έχετε πρόσβαση.</li>
+      </ol>
+      <ul class="exp">
+        <li>Από: το γραμματοκιβώτιο <code>GRAPH_SENDER_ADDRESS</code>. Προς: μόνο το <code>CONTACT_RECIPIENT_EMAIL</code> (χωρίς Cc/Bcc).</li>
+        <li>Θέμα: <code>New enquiry — QA Tester EN</code>.</li>
+        <li>Σώμα: ένας πίνακας δύο στηλών με έντονες ετικέτες, με αυτή τη σειρά: <strong>Name</strong> <code>QA Tester EN</code>, <strong>Email</strong>, <strong>Phone</strong> <code>+30 210 000 0000</code>, <strong>Message</strong> με τις δύο γραμμές σε ξεχωριστές γραμμές, <strong>Locale</strong> <code>EN</code>. Αν έχει οριστεί Logo στο Branding και η διεύθυνση του ιστότοπου είναι προσβάσιμη από το πρόγραμμα αλληλογραφίας, το λογότυπο βρίσκεται πάνω από τον πίνακα (λεπτομέρειες στη MED-034).</li>
+        <li>Υπάρχει αντίγραφο στα Sent Items του αποστολέα.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/api/contact/route.ts</code> (<code>subject</code>, <code>rows</code>) · <code>src/lib/email/rows.ts</code> (<code>rowsToHtml</code>) · <code>src/cms/core/email/graph.ts</code> (<code>saveToSentItems</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-013" data-priority="P2">
+      <h3>Το Reply-To αναφέρει τον αποστολέα της φόρμας και τη φόρμα</h3>
+      <ol class="steps">
+        <li>Στο email της MKT-012 πατήστε Reply. Κοιτάξτε το πεδίο To (εμφανίστε την πλήρη διεύθυνση).</li>
+        <li>Σημειώστε το <strong>Site name</strong> στις Ρυθμίσεις → Branding. Αλλάξτε το σε <code>QA Brand Mail</code>, αποθηκεύστε, στείλτε ένα ακόμη αίτημα, απαντήστε σε αυτό και έπειτα επαναφέρετε το όνομα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η απάντηση πηγαίνει στη διεύθυνση του επισκέπτη, όχι στο γραμματοκιβώτιο του αποστολέα, με εμφανιζόμενο όνομα <code>QA Tester EN (via &lt;site name&gt; contact form)</code>. Μετά την αλλαγή γράφει <code>(via QA Brand Mail contact form)</code>.</p>
+      <p class="ref">Αναφ.: <code>src/app/api/contact/route.ts</code> (<code>replyToSuffix</code>) · <code>src/cms/core/email/graph.ts</code> (<code>replyTo</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-014" data-priority="P2">
+      <h3>Ένα ελληνικό αίτημα χωρίς τηλέφωνο</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/contact</code>. Name <code>Δοκιμή Ελληνικά</code>, το email του επισκέπτη, Phone κενό, Message <code>Γεια σας — ερώτηση για «προϊόν» €10</code>. Πατήστε <strong>Αποστολή</strong>.</li>
+        <li>Εκτελέστε το SQL της MKT-011 και ανοίξτε το νέο email.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η σελίδα εμφανίζει <code>Ευχαριστούμε — το μήνυμά σας στάλθηκε.</code> SQL: <code>source_page_slug</code> <code>/contact</code>, <code>source_locale</code> <code>el</code>, το <code>payload</code> έχει <code>Locale</code> <code>"EL"</code> και <strong>κανένα</strong> κλειδί <code>Phone</code>. Θέμα email <code>New enquiry — Δοκιμή Ελληνικά</code>· ο πίνακας δεν έχει γραμμή Phone· τα ελληνικά γράμματα, τα εισαγωγικά, η παύλα και το € εμφανίζονται σωστά (χωρίς <code>?</code> ή κωδικούς <code>&amp;#…;</code>).</p>
+      <p class="ref">Αναφ.: <code>src/app/api/contact/route.ts</code> (οι κενές τιμές παραλείπονται) · <code>src/lib/email/rows.ts</code> (<code>filled</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-015" data-priority="P3">
+      <h3>Η σήμανση που πληκτρολογείται στη φόρμα παραμένει κείμενο</h3>
+      <ol class="steps">
+        <li>Στο <code>/en/contact</code> στείλτε Name <code>&lt;b&gt;QA&lt;/b&gt; &amp; Co</code> και Message <code>&lt;script&gt;alert(1)&lt;/script&gt; &lt;a href="https://example.com"&gt;link&lt;/a&gt;</code>.</li>
+        <li>Ανοίξτε το email και έπειτα την υποβολή στο διαχειριστικό → Submissions (MKT-023).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το θέμα γράφει κυριολεκτικά <code>New enquiry — &lt;b&gt;QA&lt;/b&gt; &amp; Co</code>. Στο σώμα το όνομα δεν είναι έντονο, οι ετικέτες εμφανίζονται ως κείμενο και δεν υπάρχει σύνδεσμος που να πατιέται. Το πλαϊνό πάνελ του διαχειριστικού εμφανίζει το ίδιο κυριολεκτικό κείμενο και δεν ανοίγει ποτέ παράθυρο alert.</p>
+      <p class="ref">Αναφ.: <code>src/lib/email/rows.ts</code> (<code>escapeHtml</code>) · <code>src/cms/admin/SubmissionsTable.tsx</code> (<code>PayloadView</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-016" data-priority="P3">
+      <h3>Γνωστό κενό: η έκδοση απλού κειμένου δεν στέλνεται</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το email της MKT-012 και δείτε τον πηγαίο κώδικά του (Outlook: File → Properties ή “View message source”· Gmail: Show original).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το μήνυμα στέλνεται μόνο με σώμα HTML. Η διαδρομή (route) δημιουργεί μια έκδοση κειμένου (<code>Name: …</code>, <code>Email: …</code>, ένα ανά γραμμή), αλλά ο μηχανισμός αποστολής περνά στο Graph μόνο ένα σώμα, οπότε αυτό το κείμενο δεν φεύγει ποτέ από τον διακομιστή. Αν ο πηγαίος κώδικας έχει τμήμα <code>text/plain</code>, αυτό δημιουργήθηκε από το Exchange από το HTML και δεν θα έχει τις γραμμές <code>Label: value</code>. Σημειώστε Επιτυχία αν αυτό βλέπετε· αναφέρετε αν εμφανίζεται το κείμενο <code>Label: value</code>, ώστε να ενημερωθεί αυτή η λίστα ελέγχου.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/email/format.ts</code> (<code>graphMailBody</code>) · docs/dev-guides/07-forms-email-marketing.md §9 (“One body per Graph message”)</p>
+    </article>
+
+    <article class="tc" id="MKT-017" data-priority="P3">
+      <h3>Το «Inquiry notification emails» δεν αλλάζει τον παραλήπτη της φόρμας επικοινωνίας</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/admin/settings?tab=Notifications</code>. Βάλτε μια δεύτερη διεύθυνση που μπορείτε να διαβάσετε στο <strong>Inquiry notification emails</strong> και πατήστε <strong>Save settings</strong>.</li>
+        <li>Στείλτε ένα αίτημα από το <code>/en/contact</code>. Ελέγξτε και τα δύο γραμματοκιβώτια.</li>
+        <li>Αδειάστε ξανά τη ρύθμιση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Σύμφωνα με τον τρέχοντα κώδικα, το email πηγαίνει μόνο στο <code>CONTACT_RECIPIENT_EMAIL</code>· η διεύθυνση της ρύθμισης δεν λαμβάνει τίποτα (τη ρύθμιση τη διαβάζουν μόνο οι ειδοποιήσεις παραγγελιών του καταστήματος). Η βοήθεια του πεδίου λέει <code>Comma- or newline-separated recipients for form + quote notifications.</code>, οπότε καταγράψτε σφάλμα: είτε η φόρμα επικοινωνίας πρέπει να τη χρησιμοποιεί είτε το κείμενο βοήθειας είναι λάθος. (Η MED-034 λέει επίσης στον ελεγκτή ότι το email πηγαίνει σε αυτή τη ρύθμιση.)</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/settings/schema.ts</code> (<code>notifications.inquiryEmails</code>) · <code>src/cms/modules/commerce/orders.ts</code> (ο μόνος που τη διαβάζει)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-mailfail">
+    <h2>Όταν το email δεν μπορεί να σταλεί</h2>
+    <p class="intro">Επανεκκινήστε την εφαρμογή μετά από κάθε αλλαγή στο <code>.env.local</code>. Επαναφέρετε τις σωστές τιμές στο τέλος κάθε περίπτωσης.</p>
+
+    <article class="tc" id="MKT-018" data-priority="P2">
+      <h3>Ρυθμίσεις αλληλογραφίας που λείπουν: αποθηκεύεται, σημειώνεται ως μη παραδοθέν, ο επισκέπτης βλέπει σφάλμα</h3>
+      <ol class="steps">
+        <li>Αδειάστε το <code>AZURE_CLIENT_SECRET=</code> στο <code>.env.local</code> και επανεκκινήστε.</li>
+        <li>Στο <code>/en/contact</code> στείλτε ένα έγκυρο αίτημα με Name <code>QA No Mail</code> (με ανοιχτή την καρτέλα Network). Παρακολουθήστε το τερματικό του διακομιστή.</li>
+        <li>Εκτελέστε το SQL της MKT-011.</li>
+        <li>Ανοίξτε την υποβολή στο διαχειριστικό → Submissions και περάστε τον δείκτη πάνω από το κείμενο του Notification.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το αίτημα απαντά <code>502</code> <code>{"ok":false,"error":"send_failed"}</code>. Η φόρμα μένει συμπληρωμένη και εμφανίζει <code>Something went wrong. Please try again or email info@example.com.</code> (<code>role="alert"</code>). Το τερματικό καταγράφει <code>[api/contact] send failed</code>.</li>
+        <li>Η γραμμή υπάρχει παρ' όλα αυτά: <code>email_status</code> <code>failed</code>, <code>email_error</code> <code>Error: Missing email env vars: AZURE_CLIENT_SECRET</code>.</li>
+        <li>Η γραμμή Notification του πάνελ γράφει <code>Not sent — nobody was notified, so this one needs a reply</code>· το tooltip εμφανίζει το κείμενο του σφάλματος. Δεν φτάνει κανένα μήνυμα.</li>
+        <li>Καταγράψτε ως πρόβλημα χρηστικότητας ότι ο επισκέπτης ενημερώνεται πως η αποστολή απέτυχε, παρότι το αίτημα κρατήθηκε, κάτι που οδηγεί σε διπλοεγγραφή.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/api/contact/route.ts</code> (πρώτα αποθήκευση, <code>markSubmissionUndelivered</code>) · <code>src/cms/core/email/graph.ts</code> (<code>readEnv</code>) · <code>src/cms/admin/SubmissionsTable.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MKT-019" data-priority="P3">
+      <h3>Λανθασμένο client secret</h3>
+      <ol class="steps">
+        <li>Ορίστε <code>AZURE_CLIENT_SECRET=wrong-secret-qa</code>, επανεκκινήστε και στείλτε ένα αίτημα με όνομα <code>QA Bad Secret</code>.</li>
+        <li>Εκτελέστε <code>SELECT email_status, email_error FROM form_submissions ORDER BY id DESC LIMIT 1;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το ίδιο αποτέλεσμα για τον επισκέπτη όπως στη MKT-018 (<code>502</code>, μήνυμα σφάλματος). <code>email_status</code> <code>failed</code>· το <code>email_error</code> ξεκινά με όνομα σφάλματος ταυτοποίησης του Azure (για παράδειγμα <code>AuthenticationError</code> ή <code>CredentialUnavailableError</code>) και αναφέρει <code>AADSTS7000215</code> (μη έγκυρο client secret) ή κάτι παρόμοιο. Το ίδιο το secret δεν εμφανίζεται στο σφάλμα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/email/graph.ts</code> (<code>getCredential</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-020" data-priority="P3">
+      <h3>Γραμματοκιβώτιο αποστολέα που η εφαρμογή δεν επιτρέπεται να χρησιμοποιήσει</h3>
+      <ol class="steps">
+        <li>Επαναφέρετε το secret. Ορίστε <code>GRAPH_SENDER_ADDRESS=nobody-qa@&lt;your tenant domain&gt;</code> (μια διεύθυνση που δεν υπάρχει), επανεκκινήστε και στείλτε ένα αίτημα με όνομα <code>QA Bad Sender</code>.</li>
+        <li>Ελέγξτε το <code>email_error</code> όπως στη MKT-019. Επαναφέρετε τον αποστολέα και επανεκκινήστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>email_status</code> <code>failed</code>, το <code>email_error</code> ξεκινά με <code>Error: Graph sendMail failed (404):</code> (ή <code>(403)</code> αν η εφαρμογή δεν έχει δικαίωμα για αυτό το γραμματοκιβώτιο) και ακολουθεί το μήνυμα του ίδιου του Graph. Για τον επισκέπτη όπως στη MKT-018.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/email/graph.ts</code> (<code>Graph sendMail failed</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-021" data-priority="P3">
+      <h3>Γνωστό κενό: οι αποτυχημένες ειδοποιήσεις δεν ξαναδοκιμάζονται ποτέ</h3>
+      <ol class="steps">
+        <li>Με την αλληλογραφία να λειτουργεί ξανά, ανανεώστε το διαχειριστικό → Submissions και ανοίξτε το <code>QA No Mail</code>.</li>
+        <li>Περιμένετε λίγα λεπτά και ελέγξτε το γραμματοκιβώτιο του παραλήπτη.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η υποβολή εξακολουθεί να γράφει <code>Not sent — nobody was notified, so this one needs a reply</code>· δεν υπάρχει κουμπί επαναποστολής και δεν φτάνει ποτέ email για αυτήν. Η διατύπωση της οθόνης ήδη λέει στο προσωπικό να απαντήσει χειροκίνητα. Σημειώστε Επιτυχία αν ισχύει αυτό.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SubmissionsTable.tsx</code> · <code>src/cms/core/forms/service.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-submissions">
+    <h2>Οθόνη Submissions</h2>
+    <p class="intro">Ανοίξτε το <strong>Submissions</strong> στο πλευρικό μενού (<code>/admin/submissions</code>). Η λίστα εμφανίζει 25 γραμμές ανά σελίδα, τις νεότερες πρώτες. Τίποτα σε αυτή την οθόνη δεν στέλνει email σε κανέναν ούτε αλλάζει τον ιστότοπο.</p>
+
+    <article class="tc" id="MKT-022" data-priority="P1">
+      <h3>Η λίστα εμφανίζει τα νέα αιτήματα</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/admin/submissions</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Επικεφαλίδα <strong>Submissions</strong>· φίλτρα <strong>Type</strong> (All, contact), <strong>Status</strong> (All, new, handled, archived, spam) και <strong>Search</strong> (placeholder <code>email or source…</code>). Στήλες Date, Type, Email, Source, Status. Τα αιτήματα αυτής της λίστας ελέγχου εμφανίζονται με τα νεότερα πρώτα, με ημερομηνία <code>YYYY-MM-DD</code>, τύπο <code>contact</code>, τη διεύθυνση του επισκέπτη, προέλευση <code>/contact</code>, μπλε σήμα <code>new</code> και κουμπί <strong>View</strong>. Το «i» δίπλα στο Status εξηγεί τις τέσσερις καταστάσεις και λέει <code>The status only sorts this list; nothing is sent or deleted.</code></p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SubmissionsTable.tsx</code> · <code>src/app/admin/(shell)/submissions/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MKT-023" data-priority="P2">
+      <h3>Άνοιγμα μίας υποβολής</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>View</strong> στο <code>QA Tester EN</code>.</li>
+        <li>Ανοίξτε το <strong>Raw JSON</strong>. Πατήστε τη διεύθυνση email. Κλείστε το πάνελ με το ✕, ανοίξτε το ξανά και κλείστε το πατώντας στη σκιασμένη περιοχή.</li>
+      </ol>
+      <ul class="exp">
+        <li>Ένα πάνελ γλιστρά από τα δεξιά με τίτλο <code>contact · #&lt;id&gt;</code>. Εμφανίζει Email (σύνδεσμο <code>mailto:</code>), Date <code>YYYY-MM-DD HH:MM UTC</code>, Source <code>/contact (en)</code>, Notification <code>Sent to the team</code>.</li>
+        <li>Το <strong>Form entries</strong> παραθέτει Name, Email, Phone, Message (σε όλο το πλάτος, με διατήρηση και των δύο γραμμών) και Locale. Το <strong>Raw JSON</strong> αναπτύσσεται στο αποθηκευμένο αντικείμενο με τη σημείωση <code>Exactly what the form sent, field names included — useful when a value is missing above.</code></li>
+        <li>Από κάτω: κουμπιά <strong>Status</strong> new / handled / archived / spam (το τρέχον με περίγραμμα) και <strong>Notes</strong> με <strong>Save notes</strong>. Και οι δύο τρόποι κλεισίματος λειτουργούν.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SubmissionsTable.tsx</code> (<code>SubmissionDetailPanel</code>, <code>PayloadView</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-024" data-priority="P2">
+      <h3>Αλλαγή κατάστασης και προσθήκη σημειώσεων</h3>
+      <ol class="steps">
+        <li>Στο πάνελ πατήστε <strong>handled</strong>. Πληκτρολογήστε <code>Called back — QA</code> στο Notes και πατήστε <strong>Save notes</strong>.</li>
+        <li>Κλείστε το πάνελ και ανανεώστε τη λίστα.</li>
+        <li>Εκτελέστε <code>SELECT status, notes FROM form_submissions WHERE id = &lt;id&gt;;</code> και <code>SELECT action, subject_type, subject_id FROM audit_logs ORDER BY id DESC LIMIT 2;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το περίγραμμα μετακινείται αμέσως στο handled και το σήμα της γραμμής γίνεται πράσινο <code>handled</code>. Το κουμπί εμφανίζει για λίγο <code>Saving…</code>. SQL: <code>handled</code> και η σημείωση· δύο γραμμές ελέγχου (audit) με ενέργεια <code>submission.update</code>. Ο επισκέπτης δεν λαμβάνει τίποτα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/forms.ts</code> (<code>submissionUpdateRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-025" data-priority="P2">
+      <h3>Φίλτρα, αναζήτηση και η γραμμή διευθύνσεων</h3>
+      <ol class="steps">
+        <li>Επιλέξτε Status <strong>handled</strong>. Κοιτάξτε τη γραμμή διευθύνσεων.</li>
+        <li>Καθαρίστε το, πληκτρολογήστε μέρος της διεύθυνσης του επισκέπτη στο Search, έπειτα <code>/contact</code> και έπειτα <code>zzz-none</code>.</li>
+        <li>Ορίστε Status <strong>new</strong> και έναν όρο αναζήτησης, ανανεώστε τη σελίδα και αντιγράψτε το URL σε άλλη καρτέλα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η λίστα περιορίζεται καθώς πληκτρολογείτε (η αναζήτηση ταιριάζει στο email ή στη σελίδα προέλευσης). Το URL αποκτά <code>?status=handled</code>, <code>?search=…</code> και τα διατηρεί μετά από ανανέωση ή στην άλλη καρτέλα, με τα στοιχεία ελέγχου συμπληρωμένα. Το <code>zzz-none</code> εμφανίζει <code>No submissions.</code></p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SubmissionsTable.tsx</code> (<code>syncUrl</code>) · <code>src/cms/core/forms/service.ts</code> (<code>listSubmissions</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-026" data-priority="P3">
+      <h3>Σελιδοποίηση, άλλος τύπος φόρμας και ειδοποίηση που παραλείφθηκε</h3>
+      <ol class="steps">
+        <li>Εισαγάγετε 30 γραμμές δοκιμής:
+<pre><code>INSERT INTO form_submissions (form_type, email, payload, email_status, status)
+SELECT 'qa-bulk', CONCAT('bulk', a.n * 10 + b.n, '@example.com'),
+       JSON_OBJECT('Name', CONCAT('Bulk ', a.n * 10 + b.n)), 'skipped', 'new'
+FROM (SELECT 0 n UNION ALL SELECT 1 UNION ALL SELECT 2) a
+CROSS JOIN (SELECT 0 n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+            UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) b;</code></pre></li>
+        <li>Ανανεώστε το <code>/admin/submissions</code>. Χρησιμοποιήστε τα <strong>Next</strong> και <strong>Prev</strong>. Ανοίξτε το φίλτρο Type. Δείτε (View) μία γραμμή <code>qa-bulk</code>.</li>
+        <li>Διαγράψτε τις γραμμές: <code>DELETE FROM form_submissions WHERE form_type = 'qa-bulk';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάτω από τον πίνακα <code>&lt;N&gt; total · page 1/2</code>, με το Prev απενεργοποιημένο στη σελίδα 1 και το Next απενεργοποιημένο στην τελευταία σελίδα· το <code>page=2</code> εμφανίζεται στο URL. Το φίλτρο Type προσφέρει τώρα το <code>qa-bulk</code> εκτός από το <code>contact</code>. Το Notification της μαζικής γραμμής γράφει <code>Not sent (notifications are off)</code> και το Form entries εμφανίζει μόνο το Name.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/forms/service.ts</code> (<code>DEFAULT_PAGE_SIZE = 25</code>, διακριτά <code>types</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-027" data-priority="P3">
+      <h3>Γνωστό κενό: ούτε διαγραφή ούτε εξαγωγή</h3>
+      <ol class="steps">
+        <li>Αναζητήστε στοιχείο ελέγχου Delete, Export ή CSV στη λίστα και στο πάνελ.</li>
+        <li>Εκτελέστε <code>curl -s -o /dev/null -w '%{http_code}\n' -X DELETE -b "cms_session=$S" "$BASE/api/cms/forms/&lt;id&gt;"</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Δεν υπάρχει κανένα· το αίτημα απαντά <code>405</code>. Ένα αίτημα διαγραφής δεδομένων από επισκέπτη μπορεί να διεκπεραιωθεί μόνο στη βάση δεδομένων. Σημειώστε Επιτυχία αν ισχύει αυτό (γνωστό κενό) και καταγράψτε το στη λίστα εκκρεμοτήτων GDPR.</p>
+      <p class="ref">Αναφ.: <code>src/app/api/cms/forms/[id]/route.ts</code> (μόνο GET και PATCH) · docs/dev-guides/07-forms-email-marketing.md §5</p>
+    </article>
+
+    <article class="tc" id="MKT-028" data-priority="P3">
+      <h3>Χρήστης μόνο προβολής: τα κουμπιά κατάστασης αποτυγχάνουν σιωπηλά</h3>
+      <ol class="steps">
+        <li>Σε άλλον browser συνδεθείτε ως <code>qa-mkt-view@example.com</code>. Ανοίξτε το Submissions και δείτε (View) μια γραμμή, με ανοιχτή την καρτέλα Network.</li>
+        <li>Πατήστε <strong>spam</strong>. Πληκτρολογήστε μια σημείωση και πατήστε <strong>Save notes</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η λίστα και το πάνελ ανοίγουν (δικαίωμα ανάγνωσης). Και οι δύο εγγραφές απαντούν <code>403</code> και τίποτα δεν αλλάζει στη βάση δεδομένων. Σύμφωνα με τον τρέχοντα κώδικα τα κουμπιά εμφανίζονται ακόμη και δεν εμφανίζεται κανένα μήνυμα· το <strong>Save notes</strong> μπορεί να μείνει στο <code>Saving…</code>. Καταγράψτε το ως σφάλμα (συγκρίνετε με το Newsletter, που εμφανίζει <code>Read-only</code>). Ο ίδιος ο πίνακας δικαιωμάτων είναι η AUTH-055.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SubmissionsTable.tsx</code> (<code>patch</code>, χωρίς χειρισμό σφαλμάτων) · <code>src/cms/core/routes/forms.ts</code> (<code>formsWrite</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-029" data-priority="P3">
+      <h3>Γνωστό κενό: δεν μπορούν να ρυθμιστούν άλλες φόρμες</h3>
+      <ol class="steps">
+        <li>Αναζητήστε στο πλευρικό μενού, στις συλλογές περιεχομένου και στις Ρυθμίσεις τρόπο δημιουργίας φόρμας.</li>
+        <li>Θυμηθείτε τη SET-041 (διακόπτης Forms) και τη CON-090 (το <code>[form]</code> δεν αποδίδει τίποτα).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Δεν υπάρχει εργαλείο δημιουργίας φορμών. Η μόνη δημόσια φόρμα είναι η φόρμα επικοινωνίας· μια δεύτερη απαιτεί κώδικα (νέο <code>kind</code> στο <code>/api/contact</code>), και το <code>kind</code> <code>quote</code> απορρίπτεται σήμερα (MKT-007). Σημειώστε Επιτυχία αν ισχύει αυτό.</p>
+      <p class="ref">Αναφ.: docs/dev-guides/07-forms-email-marketing.md §7 (“Recipe: add a new form”)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-newsletter">
+    <h2>Εγγραφή στο newsletter</h2>
+    <p class="intro">Η ζώνη εγγραφής βρίσκεται στην κορυφή του footer σε κάθε σελίδα εκτός από την αρχική, όπου την αντικαθιστά μια δική της ενότητα. Ζητά μόνο email. Το Newsletter πρέπει να είναι ενεργό (MKT-002). Χρησιμοποιήστε νέα διεύθυνση σε κάθε περίπτωση, για παράδειγμα <code>qa.news1@example.com</code>, <code>qa.news2@example.com</code>.</p>
+
+    <article class="tc" id="MKT-030" data-priority="P1">
+      <h3>Εγγραφή από το footer</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/en/about</code> και κυλήστε έως το footer. Εισαγάγετε <code>qa.news1@example.com</code> και πατήστε <strong>Subscribe</strong> (με ανοιχτή την καρτέλα Network).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η ζώνη εμφανίζει τον υπέρτιτλο <code>NEWSLETTER</code>, το <code>Stay in the loop</code>, το <code>Occasional news and offers. Unsubscribe whenever you like.</code>, ένα πεδίο <strong>Email</strong> (placeholder <code>name@example.com</code>) και το <strong>Subscribe</strong>. Κατά την αποστολή το κουμπί γράφει <code>Subscribing…</code>. Το <code>POST /api/newsletter</code> απαντά <code>200</code> <code>{"ok":true,"data":{"status":"subscribed"}}</code> και η φόρμα αντικαθίσταται από το <strong>You’re in.</strong> <code>Thanks for subscribing.</code></p>
+      <p class="ref">Αναφ.: <code>src/components/layout/NewsletterBand.tsx</code> · <code>src/lib/newsletter.ts</code> · <code>src/cms/modules/newsletter/routes.ts</code></p>
+    </article>
+
+    <article class="tc" id="MKT-031" data-priority="P2">
+      <h3>Η γραμμή του συνδρομητή και η εγγραφή συγκατάθεσής του</h3>
+      <ol class="steps">
+        <li>Εκτελέστε:
+<pre><code>SELECT email, locale, consent_text, consent_given_at, unsubscribed_at, source_page_slug,
+       double_opt_in_at, ua, ip_hash
+FROM newsletter_subscribers WHERE email = 'qa.news1@example.com';</code></pre></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Μία γραμμή: <code>locale</code> <code>en</code>, <code>consent_text</code> <code>Newsletter signup (footer)</code>, <code>consent_given_at</code> περίπου τώρα, <code>unsubscribed_at</code> NULL, <code>source_page_slug</code> <code>footer</code>, <code>double_opt_in_at</code> NULL, <code>ua</code> ο browser σας, <code>ip_hash</code> NULL.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/newsletter/subscribers.ts</code> (<code>subscribe</code>) · <code>src/cms/modules/newsletter/logic.ts</code> (<code>consentTextFor</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-032" data-priority="P2">
+      <h3>Η αρχική σελίδα έχει τη δική της ενότητα εγγραφής, και μόνο μία</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/</code> και κυλήστε ολόκληρη τη σελίδα.</li>
+        <li>Κάντε εκεί εγγραφή του <code>qa.news2@example.com</code>. Εκτελέστε το SQL της MKT-031 για αυτή τη διεύθυνση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Μία εγγραφή στη σελίδα: μια ενότητα <code>Μάθετε πρώτοι τα νέα μας</code> με <strong>Εγγραφή</strong>, και καμία ζώνη στο footer. Μετά την εγγραφή: <strong>Είστε μέσα.</strong> <code>Ευχαριστούμε για την εγγραφή.</code> SQL: <code>locale</code> <code>el</code>, <code>source_page_slug</code> <code>home</code>, <code>consent_text</code> <code>Newsletter signup (home)</code>.</p>
+      <p class="ref">Αναφ.: <code>src/components/site/HomeNewsletter.tsx</code> · <code>src/lib/site/newsletter-placement.ts</code></p>
+    </article>
+
+    <article class="tc" id="MKT-033" data-priority="P2">
+      <h3>Διπλή εγγραφή</h3>
+      <ol class="steps">
+        <li>Σημειώστε το <code>consent_given_at</code> του <code>qa.news1@example.com</code>.</li>
+        <li>Στο <code>/en/contact</code> κάντε εγγραφή του <code>  QA.News1@Example.COM </code> (κεφαλαία, κενά γύρω γύρω).</li>
+        <li>Στο <code>/about</code> κάντε ξανά εγγραφή του <code>qa.news1@example.com</code>.</li>
+        <li>Εκτελέστε <code>SELECT COUNT(*), MIN(consent_given_at) FROM newsletter_subscribers WHERE email = 'qa.news1@example.com';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η απόκριση είναι <code>{"ok":true,"data":{"status":"already-subscribed"}}</code>. Αγγλικά: <strong>You’re already on the list.</strong> <code>This address is already subscribed — nothing more to do.</code>· ελληνικά: <strong>Είστε ήδη στη λίστα.</strong> <code>Αυτή η διεύθυνση είναι ήδη εγγεγραμμένη.</code> Το πλήθος είναι 1 και η ημερομηνία συγκατάθεσης δεν αλλάζει (η διεύθυνση αποθηκεύεται χωρίς κενά και με πεζά).</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/newsletter/logic.ts</code> (<code>newsletterSubscribeBody</code>, <code>subscribeOutcome</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-034" data-priority="P2">
+      <h3>Μη έγκυρες διευθύνσεις</h3>
+      <ol class="steps">
+        <li>Στη ζώνη του footer δοκιμάστε το <code>qa@</code> και ένα κενό πεδίο.</li>
+        <li>Εκτελέστε <code>curl -s -X POST "$BASE/api/newsletter" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.70.0.10' -d '{"email":"not-an-email"}' -w '\n%{http_code}\n'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: εμφανίζεται το συννεφάκι του ίδιου του browser «εισαγάγετε διεύθυνση email» και δεν γίνεται κανένα αίτημα. Βήμα 2: <code>422</code> με <code>"error":"invalid_input"</code>, <code>"message":"Validation failed."</code> και μια καταχώριση <code>issues.fieldErrors.email</code>. Δεν αποθηκεύεται τίποτα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/newsletter/logic.ts</code> · <code>src/cms/core/errors.ts</code> (<code>invalid_input</code> → 422)</p>
+    </article>
+
+    <article class="tc" id="MKT-035" data-priority="P3">
+      <h3>Honeypot και όριο ρυθμού στην εγγραφή</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s -X POST "$BASE/api/newsletter" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.70.0.11' -d '{"email":"qa.bot@example.com","_hp":"x"}'</code> και έπειτα ελέγξτε τον πίνακα για το <code>qa.bot@example.com</code>.</li>
+        <li>Εκτελέστε:
+<pre><code>for i in 1 2 3 4 5 6; do
+  curl -s -o /dev/null -w '%{http_code} ' -X POST "$BASE/api/newsletter" -H 'Content-Type: application/json' \
+    -H 'X-Real-IP: 10.70.0.12' -d "{\"email\":\"qa.rate$i@example.com\"}"
+done; echo</code></pre></li>
+        <li>Διαγράψτε τις γραμμές του ορίου ρυθμού: <code>DELETE FROM newsletter_subscribers WHERE email LIKE 'qa.rate%';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>{"ok":true,"data":{"status":"subscribed"}}</code> αλλά καμία γραμμή. Βήμα 2: <code>200 200 200 200 200 429</code>. Στον browser το πεδίο honeypot βρίσκεται εκτός οθόνης (<code>left:-10000px</code>) και το Tab το παρακάμπτει.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/newsletter/routes.ts</code> (<code>SUBSCRIBE_RATE_LIMIT</code>, honeypot)</p>
+    </article>
+
+    <article class="tc" id="MKT-036" data-priority="P3">
+      <h3>Κατάσταση σφάλματος όταν το endpoint αρνείται</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/en/about</code> (με ορατή τη ζώνη). Στην καρτέλα του διαχειριστικού αποεπιλέξτε το <strong>Newsletter</strong> και αποθηκεύστε.</li>
+        <li>Πίσω στη σελίδα που είναι ήδη ανοιχτή, κάντε εγγραφή του <code>qa.news3@example.com</code>.</li>
+        <li>Επιλέξτε ξανά το Newsletter και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το αίτημα απαντά <code>404</code> και η ζώνη εμφανίζει <code>That did not go through. Please try again in a moment.</code> (<code>role="alert"</code>)· το πεδίο διατηρεί την τιμή του. Δεν γράφεται καμία γραμμή. Μετά από ανανέωση με ανενεργό το module η ζώνη εξαφανίζεται εντελώς (SET-039).</p>
+      <p class="ref">Αναφ.: <code>src/components/layout/NewsletterBand.tsx</code> (<code>errorBody</code>) · <code>src/app/api/newsletter/route.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-nladmin">
+    <h2>Οθόνη Newsletter</h2>
+    <p class="intro">Ανοίξτε το <strong>Newsletter</strong> στο πλευρικό μενού (<code>/admin/newsletter</code>). Ανοίγει στην καρτέλα Subscribed.</p>
+
+    <article class="tc" id="MKT-037" data-priority="P1">
+      <h3>Η λίστα συνδρομητών</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/admin/newsletter</code>. Περάστε τον δείκτη πάνω από την ημερομηνία του <code>qa.news1@example.com</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Επικεφαλίδα <strong>Newsletter</strong> με το <code>Addresses captured by the footer band and the article sidebar cards, with the consent recorded for each.</code> Καρτέλες <strong>Subscribed</strong>, <strong>Unsubscribed</strong>, <strong>All</strong>, καθεμία με πλήθος. Ένα πλαίσιο <strong>Subscribers</strong> με το σύνολο και στήλες Email, Status, Placement, Language, Subscribed, Actions. Οι διευθύνσεις QA εμφανίζουν πράσινο σήμα <code>Subscribed</code>, θέση <code>footer</code> ή <code>home</code>, γλώσσα <code>EN</code> ή <code>EL</code>, την ημερομηνία <code>YYYY-MM-DD</code> (tooltip: το κείμενο συγκατάθεσης, π.χ. <code>Newsletter signup (footer)</code>), και <strong>Unsubscribe</strong> μαζί με ένα εικονίδιο κάδου.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SubscribersTable.tsx</code> · <code>src/app/admin/(shell)/newsletter/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MKT-038" data-priority="P2">
+      <h3>Αναζήτηση κατά διεύθυνση ή θέση</h3>
+      <ol class="steps">
+        <li>Πληκτρολογήστε <code>home</code> στο <code>Search address or placement…</code> και πατήστε Enter.</li>
+        <li>Πληκτρολογήστε <code>news1</code> και πατήστε <strong>Search</strong>. Έπειτα αδειάστε το πλαίσιο και πατήστε Search.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το <code>home</code> εμφανίζει μόνο το <code>qa.news2@example.com</code>· το <code>news1</code> εμφανίζει μόνο το <code>qa.news1@example.com</code>· μια κενή αναζήτηση εμφανίζει όλους στην καρτέλα. Η πληκτρολόγηση από μόνη της δεν κάνει αναζήτηση (χρειάζεται Enter ή το κουμπί). Τα πλήθη των καρτελών περιγράφουν πάντα ολόκληρη τη λίστα, όχι την αναζήτηση.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/newsletter/subscribers.ts</code> (<code>listSubscribers</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-039" data-priority="P2">
+      <h3>Η διαγραφή από τη λίστα (unsubscribe) διατηρεί την εγγραφή</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>Unsubscribe</strong> στο <code>qa.news1@example.com</code>.</li>
+        <li>Ανοίξτε την καρτέλα <strong>Unsubscribed</strong> και περάστε τον δείκτη πάνω από το γκρι σήμα.</li>
+        <li>Εκτελέστε <code>SELECT unsubscribed_at, consent_given_at FROM newsletter_subscribers WHERE email = 'qa.news1@example.com';</code></li>
+        <li>Πατήστε <strong>Resubscribe</strong> και έπειτα ξανά Unsubscribe (αφήστε το διαγραμμένο από τη λίστα για την επόμενη περίπτωση).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η γραμμή φεύγει αμέσως από την καρτέλα Subscribed· πλήθος Subscribed −1, Unsubscribed +1. Στην καρτέλα Unsubscribed έχει γκρι σήμα <code>Unsubscribed</code> με tooltip <code>Unsubscribed YYYY-MM-DD</code>, και το κουμπί γράφει <strong>Resubscribe</strong>. SQL: το <code>unsubscribed_at</code> έχει τιμή, η ημερομηνία συγκατάθεσης δεν αλλάζει. Το Resubscribe αδειάζει το <code>unsubscribed_at</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/newsletter/subscribers.ts</code> (<code>setSubscribed</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-040" data-priority="P2">
+      <h3>Ένα άτομο που έχει διαγραφεί από τη λίστα κάνει ξανά εγγραφή στον ιστότοπο</h3>
+      <ol class="steps">
+        <li>Στο <code>/about</code> κάντε εγγραφή του <code>qa.news1@example.com</code>.</li>
+        <li>Εκτελέστε το SQL της MKT-031.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η κατάσταση της απόκρισης είναι <code>resubscribed</code> και η ζώνη εμφανίζει το συνηθισμένο <strong>Είστε μέσα.</strong> (όχι το «ήδη στη λίστα»). SQL: <code>unsubscribed_at</code> NULL, το <code>consent_given_at</code> ανανεώνεται στην τρέχουσα στιγμή, <code>locale</code> <code>el</code>, <code>source_page_slug</code> <code>footer</code>. Η διεύθυνση επιστρέφει στην καρτέλα Subscribed.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/newsletter/logic.ts</code> (<code>subscribeOutcome</code>, <code>isSubscribeSuccess</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-041" data-priority="P2">
+      <h3>Η διαγραφή σβήνει τον συνδρομητή</h3>
+      <ol class="steps">
+        <li>Πατήστε τον κάδο δίπλα στο <code>qa.news2@example.com</code> και έπειτα <strong>Cancel</strong>.</li>
+        <li>Πατήστε τον ξανά και επιβεβαιώστε.</li>
+        <li>Εκτελέστε <code>SELECT COUNT(*) FROM newsletter_subscribers WHERE email = 'qa.news2@example.com';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το προσβάσιμο όνομα του κάδου είναι <code>Delete qa.news2@example.com</code>. Ένα παράθυρο διαλόγου <strong>Delete qa.news2@example.com?</strong> λέει <code>The address and the consent record behind it are removed permanently. To stop emailing someone while keeping the record that they asked, unsubscribe them instead.</code> Το Cancel διατηρεί τη γραμμή· η επιβεβαίωση την αφαιρεί από τη λίστα και τα πλήθη· το πλήθος στο SQL είναι 0.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SubscribersTable.tsx</code> (<code>remove</code>) · <code>src/cms/modules/newsletter/routes.ts</code> (<code>subscriberDeleteRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-042" data-priority="P3">
+      <h3>Ο χρήστης μόνο προβολής βλέπει τη λίστα μόνο για ανάγνωση</h3>
+      <ol class="steps">
+        <li>Ως <code>qa-mkt-view@example.com</code> ανοίξτε το <strong>Newsletter</strong>.</li>
+        <li>Με τη συνεδρία αυτού του χρήστη στο <code>S</code>, εκτελέστε <code>curl -s -X PATCH -b "cms_session=$S" -H 'Content-Type: application/json' -d '{"subscribed":false}' "$BASE/api/cms/newsletter/&lt;id of qa.news1&gt;" -w '\n%{http_code}\n'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η λίστα ανοίγει· η στήλη Actions εμφανίζει <code>Read-only</code> αντί για κουμπιά. Το PATCH απαντά <code>403</code>· η γραμμή δεν αλλάζει.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SubscribersTable.tsx</code> (<code>canWrite</code>) · AUTH-055</p>
+    </article>
+
+    <article class="tc" id="MKT-043" data-priority="P3">
+      <h3>Σελιδοποίηση πέρα από 25 συνδρομητές</h3>
+      <ol class="steps">
+        <li>Εισαγάγετε 30 γραμμές:
+<pre><code>INSERT INTO newsletter_subscribers (email, locale, consent_text, consent_given_at, source_page_slug)
+SELECT CONCAT('qa.bulk', a.n * 10 + b.n, '@example.com'), 'el', 'Newsletter signup (qa)', NOW(), 'qa'
+FROM (SELECT 0 n UNION ALL SELECT 1 UNION ALL SELECT 2) a
+CROSS JOIN (SELECT 0 n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+            UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) b;</code></pre></li>
+        <li>Ανανεώστε την οθόνη Newsletter· χρησιμοποιήστε τα <strong>Next</strong> και <strong>Prev</strong>· αναζητήστε <code>qa</code>.</li>
+        <li>Αφαιρέστε τις: <code>DELETE FROM newsletter_subscribers WHERE email LIKE 'qa.bulk%';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>&lt;N&gt; total · page 1/2</code> με Prev/Next που λειτουργούν· 25 γραμμές στη σελίδα 1. Η αναζήτηση της θέσης <code>qa</code> βρίσκει τις 30 μαζικές γραμμές.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/newsletter/logic.ts</code> (<code>subscriberPage</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-044" data-priority="P3">
+      <h3>Γνωστά κενά: καμία εξαγωγή, και οι αλλαγές δεν καταγράφονται στο audit</h3>
+      <ol class="steps">
+        <li>Αναζητήστε στοιχείο ελέγχου Export ή CSV στην οθόνη Newsletter.</li>
+        <li>Μετά τη διαγραφή από τη λίστα και τη διαγραφή παραπάνω, εκτελέστε <code>SELECT COUNT(*) FROM audit_logs WHERE action LIKE '%newsletter%' OR action LIKE '%subscriber%';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Δεν υπάρχει εξαγωγή (η λίστα μπορεί να διαβαστεί μόνο στην οθόνη ή με SQL). Το πλήθος είναι 0: η διαγραφή από τη λίστα και η διαγραφή δεν αφήνουν καταχώριση audit, σε αντίθεση με τις υποβολές, τα cookies και τα scripts. Σημειώστε Επιτυχία αν ισχύουν και τα δύο (γνωστά κενά).</p>
+      <p class="ref">Αναφ.: docs/dev-guides/07-forms-email-marketing.md §9 (“Newsletter PATCH/DELETE are not audited”)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-nlgaps">
+    <h2>Γνωστά κενά του newsletter και αποκλεισμός email</h2>
+    <p class="intro">Το newsletter μόνο συλλέγει διευθύνσεις. Κάθε περίπτωση παρακάτω είναι Επιτυχία όταν το κενό υπάρχει ακόμη ακριβώς όπως περιγράφεται· αν η λειτουργία έχει υλοποιηθεί, σημειώστε Αποτυχία με σημείωση, ώστε να ενημερωθεί η λίστα ελέγχου.</p>
+
+    <article class="tc" id="MKT-045" data-priority="P3">
+      <h3>Καμία διπλή επιβεβαίωση (double opt-in) και κανένα email επιβεβαίωσης</h3>
+      <ol class="steps">
+        <li>Κάντε εγγραφή, στη ζώνη του footer, ενός γραμματοκιβωτίου που μπορείτε να διαβάσετε. Περιμένετε πέντε λεπτά.</li>
+        <li>Εκτελέστε <code>SELECT double_opt_in_at, unsubscribed_at FROM newsletter_subscribers WHERE email = '&lt;that address&gt;';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Δεν φτάνει κανένα email οποιουδήποτε είδους (ούτε σύνδεσμος επιβεβαίωσης, ούτε καλωσόρισμα). Η διεύθυνση είναι ενεργή αμέσως (<code>unsubscribed_at</code> NULL) και το <code>double_opt_in_at</code> μένει NULL.</p>
+      <p class="ref">Αναφ.: docs/dev-guides/07-forms-email-marketing.md §3.3 (“No double opt-in, no confirmation email, no provider sync”)</p>
+    </article>
+
+    <article class="tc" id="MKT-046" data-priority="P3">
+      <h3>Κανένας δημόσιος τρόπος διαγραφής από τη λίστα (unsubscribe) του newsletter</h3>
+      <ol class="steps">
+        <li>Διαβάστε το κείμενο της ζώνης (<code>Unsubscribe whenever you like.</code> / <code>Διαγραφή όποτε θέλετε.</code>) και αναζητήστε στον ιστότοπο σελίδα ή σύνδεσμο διαγραφής από τη λίστα.</li>
+        <li>Εκτελέστε <code>curl -s -o /dev/null -w '%{http_code}\n' -X DELETE "$BASE/api/newsletter" -H 'X-Real-IP: 10.70.0.13'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Δεν υπάρχει σελίδα ή σύνδεσμος διαγραφής από τη λίστα του newsletter· μόνο ένας διαχειριστής μπορεί να διαγράψει κάποιον από τη λίστα. Το αίτημα απαντά <code>405</code>. Καταγράψτε ότι η υπόσχεση της ζώνης δεν μπορεί να τηρηθεί από τον επισκέπτη μόνο του.</p>
+      <p class="ref">Αναφ.: <code>src/app/api/newsletter/route.ts</code> (μόνο POST) · <code>messages/en.json</code> (<code>footer.newsletter.description</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-047" data-priority="P3">
+      <h3>Κανένας συγχρονισμός με Mailchimp ή Brevo</h3>
+      <ol class="steps">
+        <li>Αναζητήστε στις Ρυθμίσεις σύνδεση με Mailchimp ή Brevo.</li>
+        <li>Εκτελέστε <code>SELECT COUNT(*) FROM newsletter_subscribers WHERE mailchimp_id IS NOT NULL OR mailchimp_status IS NOT NULL OR last_synced_at IS NOT NULL;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Δεν υπάρχει τέτοια ρύθμιση· το πλήθος είναι 0. Οι στήλες υπάρχουν για μελλοντικό συγχρονισμό από την πλευρά του διακομιστή.</p>
+      <p class="ref">Αναφ.: <code>src/lib/newsletter.ts</code> (σημείωση για το Brevo) · <code>src/cms/db/adapters/mysql/schema/forms.ts</code></p>
+    </article>
+
+    <article class="tc" id="MKT-048" data-priority="P3">
+      <h3>Ο υπογεγραμμένος σύνδεσμος διαγραφής από τη λίστα γεμίζει το email_suppressions, όχι το newsletter</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Το <code>qa.news1@example.com</code> είναι εγγεγραμμένο. Αν ο παρακάτω σύνδεσμος απαντά 404, ενεργοποιήστε το Commerce (η διαδρομή ανήκει στις υπενθυμίσεις καλαθιού του καταστήματος) και επαναλάβετε.</p>
+      <ol class="steps">
+        <li>Στον φάκελο του έργου δημιουργήστε τον υπογεγραμμένο σύνδεσμο:
+<pre><code>SECRET=$(grep '^ADMIN_SESSION_SECRET=' .env.local | cut -d= -f2-)
+E=qa.news1@example.com
+SIG=$(printf 'unsubscribe:v1:%s' "$E" | openssl dgst -sha256 -hmac "$SECRET" -binary | openssl base64 -A | tr '+/' '-_' | tr -d '=' | cut -c1-32)
+echo "$BASE/api/cms/commerce/unsubscribe?e=$E&amp;s=$SIG&amp;locale=en"</code></pre></li>
+        <li>Ανοίξτε το URL που εμφανίστηκε στον browser και πατήστε το κουμπί. Έπειτα ανοίξτε το ίδιο URL με αλλαγμένο τον τελευταίο χαρακτήρα του <code>s</code>.</li>
+        <li>Εκτελέστε <code>SELECT email, reason FROM email_suppressions WHERE email = 'qa.news1@example.com';</code> και <code>SELECT unsubscribed_at FROM newsletter_subscribers WHERE email = 'qa.news1@example.com';</code></li>
+      </ol>
+      <ul class="exp">
+        <li>Η σελίδα έχει τίτλο <strong>Unsubscribe from reminders</strong>, ρωτά <code>Stop sending cart reminders to qa.news1@example.com?</code> και έχει το <strong>Confirm unsubscribe</strong>. Μετά το κλικ: <code>Done. You won’t receive any more cart reminders.</code> και <code>Emails about your orders are not affected.</code></li>
+        <li>Ο αλλαγμένος σύνδεσμος απαντά <code>400</code> με <code>This link is not valid, or has been altered.</code></li>
+        <li>SQL: μία γραμμή αποκλεισμού με reason <code>unsubscribe</code>· η γραμμή του newsletter είναι ακόμη ενεργή (<code>unsubscribed_at</code> NULL). Οι δύο λίστες δεν συνδέονται (γνωστό κενό: ένας μελλοντικός μηχανισμός αποστολής newsletter πρέπει να ελέγχει και τις δύο).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/email/unsubscribe.ts</code> · <code>src/cms/modules/commerce/unsubscribe.ts</code> · <code>src/cms/core/email/suppression.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-banner">
+    <h2>Banner cookies και εγγραφή συγκατάθεσης</h2>
+    <p class="intro">Κάθε περίπτωση ξεκινά σε νέο ιδιωτικό παράθυρο, εκτός αν ορίζει διαφορετικά. Με τον κατάλογο του seed υπάρχουν δύο προαιρετικές κατηγορίες (Στατιστικά / Analytics, Μάρκετινγκ / Marketing) και μία υποχρεωτική (Απαραίτητα / Necessary).</p>
+
+    <article class="tc" id="MKT-049" data-priority="P1">
+      <h3>Το banner εμφανίζεται στην πρώτη επίσκεψη</h3>
+      <ol class="steps">
+        <li>Σε νέο ιδιωτικό παράθυρο ανοίξτε το <code>/</code> με ανοιχτή την καρτέλα Network. Έπειτα ανοίξτε το <code>/en</code> στο ίδιο παράθυρο.</li>
+      </ol>
+      <ul class="exp">
+        <li>Μια μπάρα στο κάτω μέρος (μια περιοχή με όνομα <code>Συγκατάθεση cookies</code>) γράφει <code>Cookies.</code> και ακολουθεί το <code>Χρησιμοποιούμε απαραίτητα cookies…</code>, με <strong>Αποδοχή όλων</strong>, <strong>Απόρριψη μη απαραίτητων</strong> και <strong>Προτιμήσεις</strong>. Στο <code>/en</code>: περιοχή <code>Cookie consent</code>, <strong>Accept all</strong>, <strong>Reject non-essential</strong>, <strong>Preferences</strong>.</li>
+        <li>Το <code>GET /api/cookies/consent</code> απαντά <code>200</code> με <code>policyVersion</code> (όπως <code>v1a2b3c</code>) και τις κατηγορίες <code>necessary</code> (<code>required: true</code>), <code>analytics</code>, <code>marketing</code>.</li>
+        <li>Το Local Storage δεν έχει κανένα από τα <code>site-cookie-consent</code>, <code>site-cookie-categories</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/layout/CookieBanner.tsx</code> · <code>src/app/api/cookies/consent/route.ts</code> (<code>GET</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-050" data-priority="P1">
+      <h3>Η αποδοχή όλων αποθηκεύεται στον browser και στον διακομιστή</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>Αποδοχή όλων</strong>. Κοιτάξτε το Local Storage και το αίτημα και την απόκριση του <code>POST /api/cookies/consent</code>.</li>
+        <li>Εκτελέστε <code>SELECT visitor_ref, decision, categories, policy_version, locale FROM cookie_consents ORDER BY id DESC LIMIT 1;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το banner εξαφανίζεται. Local Storage: <code>site-cookie-consent</code> <code>accepted</code>, <code>site-cookie-categories</code> <code>{"necessary":true,"analytics":true,"marketing":true}</code>, <code>site-visitor-ref</code> ένα UUID. Το POST απαντά <code>200</code> <code>{"ok":true,"data":{"categories":{…all true}}}</code>. SQL: το <code>visitor_ref</code> ισούται με το αποθηκευμένο UUID, <code>decision</code> <code>accepted</code>, οι ίδιες κατηγορίες, <code>policy_version</code> όπως στο GET, <code>locale</code> <code>el</code>. Δεν αποθηκεύεται IP ή email.</p>
+      <p class="ref">Αναφ.: <code>src/components/layout/CookieBanner.tsx</code> (<code>writeConsent</code>) · <code>src/cms/core/cookies/service.ts</code> (<code>recordConsent</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-051" data-priority="P2">
+      <h3>Απόρριψη των μη απαραίτητων</h3>
+      <ol class="steps">
+        <li>Σε νέο ιδιωτικό παράθυρο ανοίξτε το <code>/en</code> και πατήστε <strong>Reject non-essential</strong>.</li>
+        <li>Επαναλάβετε το SQL της MKT-050.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>site-cookie-consent</code> <code>rejected</code>, κατηγορίες <code>{"necessary":true,"analytics":false,"marketing":false}</code>. SQL: <code>decision</code> <code>rejected</code>, οι ίδιες κατηγορίες, <code>locale</code> <code>en</code>.</p>
+      <p class="ref">Αναφ.: <code>src/components/layout/CookieBanner.tsx</code> (<code>decideAll</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-052" data-priority="P2">
+      <h3>Επιλογή ανά κατηγορία</h3>
+      <ol class="steps">
+        <li>Σε νέο ιδιωτικό παράθυρο ανοίξτε το <code>/</code> και πατήστε <strong>Προτιμήσεις</strong>.</li>
+        <li>Επιλέξτε μόνο τα <strong>Στατιστικά</strong> και πατήστε <strong>Αποθήκευση επιλογών</strong>.</li>
+        <li>Ακυρώστε την επιλογή (βλ. το πλαίσιο παραπάνω), ανανεώστε, ανοίξτε τις Προτιμήσεις, επιλέξτε και τα δύο προαιρετικά πλαίσια και αποθηκεύστε. Επαναλάβετε χωρίς κανένα επιλεγμένο.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το πάνελ ανοίγει κάτω από τη μπάρα (το κουμπί έχει <code>aria-expanded="true"</code>). Το <code>Απαραίτητα — Πάντα ενεργά — απαραίτητα για τη λειτουργία του site</code> είναι κείμενο χωρίς πλαίσιο ελέγχου. Τα <strong>Στατιστικά</strong> και <strong>Μάρκετινγκ</strong> είναι μη επιλεγμένα πλαίσια ελέγχου, το καθένα με την περιγραφή του· οι υπηρεσίες, αν υπάρχουν, παρατίθενται ανά πάροχο. Υπάρχει επίσης ένας σύνδεσμος <strong>Διαβάστε την πολιτική</strong> προς το <code>/legal/cookies</code>.</li>
+        <li>Βήμα 2: <code>site-cookie-consent</code> <code>custom</code>, κατηγορίες <code>{"necessary":true,"analytics":true,"marketing":false}</code>, SQL <code>decision</code> <code>custom</code>.</li>
+        <li>Βήμα 3: η επιλογή και των δύο καταγράφεται ως <code>accepted</code>· η επιλογή κανενός ως <code>rejected</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/layout/CookieBanner.tsx</code> (<code>saveChoices</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-053" data-priority="P2">
+      <h3>Η επιλογή απομνημονεύεται</h3>
+      <ol class="steps">
+        <li>Μετά από οποιαδήποτε απόφαση, ανανεώστε και ανοίξτε τα <code>/about</code>, <code>/en/contact</code> και <code>/legal/cookies</code>, με ανοιχτή την καρτέλα Network.</li>
+        <li>Κλείστε την καρτέλα (όχι το παράθυρο) και ανοίξτε ξανά τον ιστότοπο στο ίδιο ιδιωτικό παράθυρο.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το banner δεν εμφανίζεται ξανά σε αυτό το παράθυρο, σε καμία από τις δύο γλώσσες, και δεν γίνεται άλλο <code>GET /api/cookies/consent</code> (οι επιλογές ανακτώνται μόνο όσο δεν έχει ληφθεί απόφαση). Ένα νέο ιδιωτικό παράθυρο ρωτά ξανά.</p>
+      <p class="ref">Αναφ.: <code>src/components/layout/CookieBanner.tsx</code> (<code>readConsentSnapshot</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-054" data-priority="P2">
+      <h3>Ο επισκέπτης μπορεί να αλλάξει την επιλογή του αργότερα</h3>
+      <ol class="steps">
+        <li>Αφού αποδεχτείτε τα πάντα, αναζητήστε σε κάθε σελίδα (και στο footer) τρόπο να αλλάξετε την επιλογή για τα cookies. Ακολουθήστε τον σύνδεσμο <strong>Cookies</strong> του footer.</li>
+        <li>Διαβάστε την εισαγωγή των <code>/legal/cookies</code> και <code>/en/legal/cookies</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ο επισκέπτης θα πρέπει να μπορεί να ανοίξει ξανά το banner ή τις προτιμήσεις του. Η εισαγωγή της σελίδας λέει <code>You can change your choice at any time from the cookie banner.</code> και το banner λέει ότι η επιλογή μπορεί να αλλάξει οποιαδήποτε στιγμή. Σύμφωνα με τον τρέχοντα κώδικα δεν υπάρχει στοιχείο ελέγχου που να το ανοίγει ξανά: ο σύνδεσμος του footer εμφανίζει μόνο τη δήλωση και το banner εμφανίζεται μόνο όσο δεν έχει ληφθεί απόφαση. Αν αυτό βλέπετε, σημειώστε Αποτυχία και καταγράψτε «κανένας τρόπος ανάκλησης ή αλλαγής της συγκατάθεσης για τα cookies» (απαίτηση του GDPR).</p>
+      <p class="ref">Αναφ.: <code>src/components/layout/CookieBanner.tsx</code> (<code>if (!undecided) return null</code>) · <code>src/app/[locale]/legal/cookies/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MKT-055" data-priority="P3">
+      <h3>Το endpoint συγκατάθεσης αποθηκεύει μόνο γνωστές κατηγορίες, ως λογικές τιμές</h3>
+      <ol class="steps">
+        <li>Εκτελέστε:
+<pre><code>curl -s -X POST "$BASE/api/cookies/consent" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.70.0.20' \
+  -d '{"visitorRef":"qa-visitor-0001","decision":"custom","categories":{"necessary":false,"marketing":true,"analytics":"yes","evil":true},"policyVersion":"vQA","locale":"en"}'</code></pre></li>
+        <li>Εκτελέστε <code>SELECT decision, categories, policy_version FROM cookie_consents WHERE visitor_ref = 'qa-visitor-0001';</code></li>
+        <li>Στείλτε το ίδιο σώμα με <code>"visitorRef":"short"</code>, έπειτα με <code>"decision":"maybe"</code> και έπειτα με <code>"categories":[]</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 1 απαντά <code>{"ok":true,"data":{"categories":{"necessary":true,"analytics":false,"marketing":true}}}</code>: η υποχρεωτική κατηγορία ενεργοποιείται αναγκαστικά, η συμβολοσειρά <code>"yes"</code> μετρά ως false και το <code>evil</code> απορρίπτεται. Το SQL δείχνει τα ίδια, με <code>policy_version</code> <code>vQA</code>. Βήμα 3: καθένα απαντά <code>400</code> <code>invalid_payload</code> και δεν αποθηκεύει τίποτα. (Όριο ρυθμού: AUTH-072.)</p>
+      <p class="ref">Αναφ.: <code>src/app/api/cookies/consent/route.ts</code> (<code>POST</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-056" data-priority="P3">
+      <h3>Αποκλεισμένη αποθήκευση στον browser</h3>
+      <ol class="steps">
+        <li>Στον Chrome ανοίξτε Settings → Privacy and security → Site settings → Additional content settings / On-device site data και αποκλείστε την αποθήκευση δεδομένων για το <code>localhost:3002</code> (ή τον host δοκιμών). Ανοίξτε τον ιστότοπο.</li>
+        <li>Πατήστε <strong>Αποδοχή όλων</strong>, έπειτα μεταβείτε σε άλλη σελίδα μέσω συνδέσμου του μενού και έπειτα ανανεώστε.</li>
+        <li>Αφαιρέστε τον αποκλεισμό.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η σελίδα λειτουργεί (καμία οθόνη σφάλματος). Το banner εξαφανίζεται μετά το κλικ και δεν επανεμφανίζεται όσο πλοηγείστε μέσω συνδέσμων· μετά από πλήρη ανανέωση ρωτά ξανά, επειδή δεν ήταν δυνατό να αποθηκευτεί τίποτα. Το POST της συγκατάθεσης στέλνεται κανονικά.</p>
+      <p class="ref">Αναφ.: <code>src/components/layout/CookieBanner.tsx</code> (<code>memoryConsent</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-057" data-priority="P3">
+      <h3>Μια απόφαση σε μία καρτέλα ισχύει και για την άλλη</h3>
+      <ol class="steps">
+        <li>Σε νέο ιδιωτικό παράθυρο ανοίξτε το <code>/about</code> σε δύο καρτέλες· και οι δύο εμφανίζουν το banner.</li>
+        <li>Πατήστε <strong>Αποδοχή όλων</strong> στην πρώτη καρτέλα και έπειτα μεταβείτε στη δεύτερη χωρίς ανανέωση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το banner στη δεύτερη καρτέλα έχει εξαφανιστεί χωρίς ανανέωση.</p>
+      <p class="ref">Αναφ.: <code>src/components/layout/CookieBanner.tsx</code> (<code>subscribeConsent</code>, συμβάν <code>storage</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-058" data-priority="P3">
+      <h3>Μια αλλαγμένη πολιτική cookies δεν ρωτά ξανά</h3>
+      <ol class="steps">
+        <li>Σε ιδιωτικό παράθυρο αποδεχτείτε τα πάντα. Σημειώστε το <code>policyVersion</code> από το <code>curl -s "$BASE/api/cookies/consent"</code>.</li>
+        <li>Στο διαχειριστικό προσθέστε μια υπηρεσία στο Marketing (όπως στη MKT-061), έπειτα επαναλάβετε το curl και ανανεώστε το ιδιωτικό παράθυρο.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το <code>policyVersion</code> αλλάζει μετά την προσθήκη της υπηρεσίας, αλλά ο επισκέπτης που έχει ήδη αποφασίσει δεν ερωτάται ξανά (το banner εμφανίζεται μόνο όσο δεν έχει ληφθεί απόφαση). Σημειώστε Επιτυχία αν ισχύει αυτό· πρόκειται για γνωστό κενό που αξίζει να αναφερθεί, αφού η νέα υπηρεσία δεν εμφανίστηκε ποτέ σε αυτόν τον επισκέπτη.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/cookies/declaration.ts</code> (<code>cookiePolicyVersion</code>) · docs/dev-guides/07-forms-email-marketing.md §9</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-cookieadmin">
+    <h2>Οθόνη Cookies, σαρωτής cookies και σελίδα δήλωσης</h2>
+    <p class="intro">Ανοίξτε το <strong>Cookies</strong> στο πλευρικό μενού (<code>/admin/cookies</code>). Απαιτεί το <strong>View settings &amp; cookies</strong>· οι αλλαγές απαιτούν το <strong>Edit settings &amp; cookies</strong> (AUTH-055). Κάθε αλλαγή φτάνει αμέσως στο banner και στο <code>/legal/cookies</code>. Εκτός αν μια περίπτωση ορίζει διαφορετικά, δεν έχει οριστεί GA4 Measurement ID (Ρυθμίσεις → Analytics).</p>
+
+    <article class="tc" id="MKT-059" data-priority="P2">
+      <h3>Η οθόνη Cookies</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/admin/cookies</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Επικεφαλίδα <strong>Cookies</strong>· ένα πάνελ <strong>Scan</strong> με <strong>Run scan</strong>· μια φόρμα με <code>Name (EL) *</code>, <code>Name (EN)</code>, <strong>Key</strong> (placeholder <code>key — optional (auto from name)</code>), ένα πλαίσιο <code>required</code> και <strong>Add category</strong>· έπειτα μία κάρτα ανά κατηγορία: <strong>Απαραίτητα</strong> <code>necessary</code> με ετικέτα <code>required</code> και την υπηρεσία <code>Session &amp; consent</code>· <strong>Στατιστικά</strong> <code>analytics</code> και <strong>Μάρκετινγκ</strong> <code>marketing</code> με <code>No services.</code> Κάθε κάρτα έχει <strong>Edit</strong>, <strong>Delete</strong> και μια φόρμα προσθήκης υπηρεσίας που τελειώνει με <strong>Add service</strong>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/CookiesManager.tsx</code> · <code>src/cms/core/cookies/defaults.ts</code></p>
+    </article>
+
+    <article class="tc" id="MKT-060" data-priority="P2">
+      <h3>Επεξεργασία της διατύπωσης μιας κατηγορίας</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>Edit</strong> στα Στατιστικά. Ορίστε Name (EN) <code>Analytics QA</code> και Description (EN) <code>QA description for analytics.</code> και πατήστε <strong>Save</strong>.</li>
+        <li>Σε νέο ιδιωτικό παράθυρο ανοίξτε το <code>/en</code> και πατήστε <strong>Preferences</strong>. Ανοίξτε το <code>/en/legal/cookies</code>.</li>
+        <li>Εκτελέστε <code>SELECT action, subject_type FROM audit_logs ORDER BY id DESC LIMIT 1;</code>. Στη συνέχεια επαναφέρετε την αρχική διατύπωση (Analytics / η περιγραφή του seed).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η κάρτα εμφανίζει το ελληνικό όνομα και την ελληνική περιγραφή (η κάρτα εμφανίζει πάντα τα EL). Το αγγλικό banner παραθέτει το <strong>Analytics QA</strong> με τη νέα περιγραφή· η σελίδα δήλωσης έχει επικεφαλίδα <strong>Analytics QA</strong> με αυτήν. Audit: <code>cookies.category.update</code>, <code>cookie_category</code>. Το κλειδί <code>analytics</code> δεν μπορεί να επεξεργαστεί.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/CookiesManager.tsx</code> (<code>CategoryEditor</code>) · <code>src/cms/core/routes/cookies.ts</code></p>
+    </article>
+
+    <article class="tc" id="MKT-061" data-priority="P2">
+      <h3>Προσθήκη υπηρεσίας σε κατηγορία</h3>
+      <ol class="steps">
+        <li>Στην κάρτα Μάρκετινγκ συμπληρώστε <code>Service (e.g. Google Analytics)</code> <code>QA Pixel</code>, <code>Provider (e.g. Google)</code> <code>QA Ads Ltd</code>, Purpose (EL) <code>Δοκιμαστική μέτρηση διαφημίσεων.</code>, Purpose (EN) <code>Test ad measurement.</code> και πατήστε <strong>Add service</strong>.</li>
+        <li>Σε νέο ιδιωτικό παράθυρο ανοίξτε το <code>/en</code> → <strong>Preferences</strong>· ανοίξτε τα <code>/legal/cookies</code> και <code>/en/legal/cookies</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η κάρτα παραθέτει το <code>QA Pixel · QA Ads Ltd</code> με τον ελληνικό σκοπό, και η φόρμα αδειάζει. Το banner εμφανίζει το <code>QA Ads Ltd</code> κάτω από το Marketing. Η δήλωση έχει πίνακα κάτω από το Μάρκετινγκ / Marketing με Service <code>QA Pixel</code>, Provider <code>QA Ads Ltd</code> και τον σκοπό στη γλώσσα της σελίδας. Ενέργεια audit <code>cookies.service.create</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/CookiesManager.tsx</code> (<code>AddServiceForm</code>) · <code>src/app/[locale]/legal/cookies/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MKT-062" data-priority="P2">
+      <h3>Απενεργοποίηση και έπειτα αφαίρεση υπηρεσίας</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>edit</strong> στο QA Pixel, αποεπιλέξτε το <code>enabled</code> και πατήστε <strong>Save</strong>. Ελέγξτε το banner (νέο ιδιωτικό παράθυρο) και το <code>/en/legal/cookies</code>.</li>
+        <li>Επιλέξτε ξανά το <code>enabled</code> και αποθηκεύστε. Αφήστε το για τη MKT-066· αφαιρείται στον καθαρισμό.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Όταν είναι απενεργοποιημένη, η υπηρεσία εμφανίζεται διαγραμμένη με γραμμή στο διαχειριστικό και λείπει τόσο από το banner όσο και από τη δήλωση. Όταν ενεργοποιηθεί ξανά, επανέρχεται και στα δύο.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/CookiesManager.tsx</code> (<code>ServiceRow</code>, <code>HELP.enabled</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-063" data-priority="P2">
+      <h3>Προσθήκη κατηγορίας</h3>
+      <ol class="steps">
+        <li>Συμπληρώστε Name (EL) <code>Functional</code>, Name (EN) <code>Functional QA</code>, αφήστε το Key κενό και πατήστε <strong>Add category</strong>.</li>
+        <li>Δοκιμάστε να προσθέσετε άλλη μία με Key <code>functional</code>. Έπειτα υποβάλετε τη φόρμα με κενό Name (EL), και μία φορά με Name (EL) <code>Λειτουργικά</code> και κενό Key.</li>
+        <li>Ελέγξτε τις Preferences του banner και τη λίστα <strong>Cookie consent</strong> της οθόνης Scripts (MKT-070).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Μια κάρτα <strong>Functional</strong> <code>functional</code> (κλειδί που προκύπτει από το όνομα) εμφανίζεται στο τέλος. Η διπλοεγγραφή απορρίπτεται με <code>Already exists.</code> με κόκκινο πάνω από τη φόρμα· το κενό όνομα εμφανίζει <code>Enter a name (EL).</code>· ένα όνομα μόνο με ελληνικούς χαρακτήρες χωρίς κλειδί εμφανίζει <code>Enter a key (letters/numbers).</code> (το κλειδί δημιουργείται μόνο από λατινικά γράμματα και ψηφία). Η νέα κατηγορία είναι μη επιλεγμένη επιλογή στο banner και <code>After consent: Functional QA</code> στη λίστα των Scripts. Audit <code>cookies.category.create</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/CookiesManager.tsx</code> (<code>addCategory</code>) · <code>src/cms/core/api/handler.ts</code> (διπλό κλειδί → 409)</p>
+    </article>
+
+    <article class="tc" id="MKT-064" data-priority="P2">
+      <h3>Εκτέλεση του σαρωτή cookies στον κατάλογο του seed</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>Run scan</strong>. Περάστε τον δείκτη πάνω από το «i» δίπλα στο Scan.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το κουμπί γράφει <code>Scanning…</code> και έπειτα <code>Scan again</code>. Η συμβουλή λέει ότι η σάρωση δεν επισκέπτεται τον ιστότοπο και δεν μπορεί να βρει trackers που έχουν επικολληθεί σε περιεχόμενο ή σε scripts.</li>
+        <li><strong>Used, not declared (4)</strong>: <code>Shop preferences</code> (κλειδιά <code>site-cart</code>, <code>site-compare</code>, <code>site-wishlist</code>, <code>site-recently-viewed</code>, το καθένα με σήμανση <code>storage</code>), <code>Popups</code> (<code>site-popup-seen</code> storage), <code>Customer sign-in</code> (<code>cms_customer</code>), <code>Admin session</code> με ετικέτα <code>staff only</code> (<code>cms_session</code>, <code>cms_mfa</code>). Καθένα έχει <strong>Declare under necessary</strong>.</li>
+        <li><strong>Declared and in use (1)</strong>: <code>Session &amp; consent</code> <code>necessary</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/CookieScanner.tsx</code> · <code>src/cms/core/cookies/registry.ts</code> (<code>alwaysPresent</code>) · <code>src/cms/core/cookies/scan.ts</code></p>
+    </article>
+
+    <article class="tc" id="MKT-065" data-priority="P2">
+      <h3>Δήλωση της καταχώρισης Popups στα απαραίτητα</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>Declare under necessary</strong> στο <code>Popups</code>.</li>
+        <li>Κοιτάξτε την κάρτα Απαραίτητα και έπειτα τα <code>/legal/cookies</code> και <code>/en/legal/cookies</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το κουμπί γράφει <code>Adding…</code>· η σάρωση ανανεώνεται: Used, not declared (3), και το <code>Popups</code> <code>necessary</code> βρίσκεται στο Declared and in use. Η κάρτα necessary παραθέτει το <code>Popups</code> με το <code>Θυμάται πότε είδατε κάθε αναδυόμενο μήνυμα…</code>. Ο πίνακας Απαραίτητα / Necessary της δήλωσης έχει γραμμή <code>Popups</code> με αυτόν τον σκοπό (αγγλικά: <code>Remembers when you last saw each popup…</code>) και πάροχο <code>—</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/CookieScanner.tsx</code> (<code>declare</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-066" data-priority="P3">
+      <h3>Δηλωμένο, αλλά δεν εντοπίστηκε</h3>
+      <ol class="steps">
+        <li>Με το QA Pixel παρόν (MKT-061), πατήστε <strong>Scan again</strong>. Απενεργοποιήστε το QA Pixel και σαρώστε ξανά.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Μια τρίτη λίστα <strong>Declared, not detected (1)</strong> με <code>The scanner does not know these. Either added by hand, or no longer used — worth checking.</code> εμφανίζει το <code>QA Pixel</code> <code>marketing</code>· όταν είναι απενεργοποιημένο, η γραμμή τελειώνει με <code>· disabled</code> (αν η απενεργοποιημένη υπηρεσία δεν εμφανίζεται καθόλου, σημειώστε το).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/cookies/scan.ts</code> (<code>compareToDeclaration</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-067" data-priority="P2">
+      <h3>Ένα GA4 ID προσθέτει αυτόματα το Google Analytics στη δήλωση</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/admin/settings?tab=Analytics</code>, ορίστε το <strong>GA4 Measurement ID</strong> σε <code>G-QA12345678</code> και πατήστε <strong>Save settings</strong>.</li>
+        <li>Πατήστε <strong>Scan again</strong> στην οθόνη Cookies. Ανοίξτε το <code>/en/legal/cookies</code> και τις Preferences του banner σε νέο ιδιωτικό παράθυρο.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το Declared and in use παραθέτει το <code>Google Analytics 4</code> <code>analytics · declared automatically</code> (κλειδιά <code>_ga</code>, <code>_ga_QA12345678</code>), παρότι δεν προστέθηκε γραμμή στην κάρτα Analytics. Ο πίνακας Analytics της δήλωσης εμφανίζει Service <code>Google Analytics 4</code>, Provider <code>Google</code>· το banner εμφανίζει το <code>Google</code> κάτω από το Analytics. Κρατήστε το ID για τη MKT-079 και έπειτα αδειάστε το.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/cookies/declaration.ts</code> (<code>withAnalyticsDeclaration</code>) · <code>src/cms/core/cookies/scan.ts</code> (<code>detectServices</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-068" data-priority="P2">
+      <h3>Η δημόσια σελίδα δήλωσης cookies</h3>
+      <ol class="steps">
+        <li>Αποσυνδεδεμένοι, ανοίξτε το <code>/legal/cookies</code> από τον σύνδεσμο <strong>Cookies</strong> του footer και έπειτα το <code>/en/legal/cookies</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τίτλοι <strong>Πολιτική cookies</strong> / <strong>Cookie policy</strong> με την εισαγωγή, και έπειτα <strong>Δήλωση cookies</strong> / <strong>Cookie declaration</strong>. Οι κατηγορίες με τη σειρά του διαχειριστικού· η απαραίτητη φέρει <code>Απαραίτητα</code> / <code>Required</code>. Κάθε κατηγορία με ενεργές υπηρεσίες έχει πίνακα Υπηρεσία / Πάροχος / Σκοπός (Service / Provider / Purpose). Οι απενεργοποιημένες υπηρεσίες και οι κενές περιγραφές παραλείπονται.</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/legal/cookies/page.tsx</code> · <code>messages/*.json</code> (<code>legalCookies</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-069" data-priority="P3">
+      <h3>Διαγραφή κατηγορίας μαζί με τις υπηρεσίες της</h3>
+      <ol class="steps">
+        <li>Προσθέστε μια υπηρεσία <code>QA temp</code> στο <strong>Functional</strong>. Πατήστε <strong>Delete</strong> στην κάρτα Functional· πρώτα ακυρώστε, έπειτα επιβεβαιώστε.</li>
+        <li>Εκτελέστε <code>SELECT COUNT(*) FROM cookie_services WHERE name = 'QA temp';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το παράθυρο διαλόγου <strong>Delete this category?</strong> λέει <code>Every service inside it is deleted too. This cannot be undone.</code> Η ακύρωση τη διατηρεί· η επιβεβαίωση αφαιρεί την κάρτα· το πλήθος είναι 0. (Κάντε το μετά τη MKT-077 αν εκτελείτε την ενότητα των scripts.)</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/CookiesManager.tsx</code> (<code>removeCategory</code>) · <code>cookie_services.category_id</code> ON DELETE CASCADE</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-scripts">
+    <h2>Scripts και συγκατάθεση</h2>
+    <p class="intro">Ανοίξτε το <strong>Scripts</strong> στο πλευρικό μενού (<code>/admin/scripts</code>)· απαιτεί το <strong>Manage scripts</strong>. Ένα script εκτελείται μόνο εκεί όπου έχει τοποθετηθεί το shortcode του <code>[script name="…"]</code>, ως αυτοτελής παράγραφος. Δημιουργήστε για αυτές τις περιπτώσεις μια δημοσιευμένη σελίδα <code>QA Scripts</code> (slug <code>qa-scripts</code>, EL και EN). Ο διακομιστής ανάπτυξης δεν στέλνει Content-Security-Policy· το build παραγωγής στέλνει (SET-030).</p>
+
+    <article class="tc" id="MKT-070" data-priority="P1">
+      <h3>Δημιουργία inline script που περιμένει συγκατάθεση για το Marketing</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>Add snippet</strong>. Name <code>QA marketing</code>. Αφήστε το <strong>Shortcode name</strong> όπως συμπληρώθηκε. Type <strong>Inline code</strong>. Στο <strong>JavaScript</strong>:
+<pre><code>console.log('QA snippet ran: qa-marketing'); document.documentElement.dataset.qaMarketing = 'ran';</code></pre></li>
+        <li>Ανοίξτε τη λίστα <strong>Cookie consent</strong>, επιλέξτε <code>After consent: Marketing</code>, αφήστε επιλεγμένο το <strong>Enabled</strong> και πατήστε <strong>Save snippet</strong>.</li>
+        <li>Πατήστε <strong>Copy shortcode</strong> και επικολλήστε το ως αυτοτελή παράγραφο στη σελίδα QA Scripts (EL και EN)· αποθηκεύστε και τις δύο.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το όνομα του shortcode συμπληρώνεται αυτόματα ως <code>qa-marketing</code>, με το <code>Place it with [script name="qa-marketing"]</code> από κάτω.</li>
+        <li>Η λίστα συγκατάθεσης προσφέρει <code>None — runs for every visitor</code>, <code>After consent: Analytics</code>, <code>After consent: Marketing</code> (και όποια κατηγορία προσθέσατε), ποτέ το Necessary.</li>
+        <li>Η νέα γραμμή εμφανίζει <code>QA marketing</code>, τα σήματα <code>Inline</code> και <code>Enabled</code>, και <code>After consent: Marketing</code>. Το κουμπί αντιγραφής γράφει για λίγο <code>Copied</code>.</li>
+        <li>Το <code>SELECT slug, kind, consent_category, enabled, lazy FROM script_snippets;</code> εμφανίζει <code>qa-marketing</code>, <code>inline</code>, <code>marketing</code>, <code>1</code>, <code>0</code>. Ενέργεια audit <code>scripts.create</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/ScriptsManager.tsx</code> · <code>src/app/admin/(shell)/scripts/page.tsx</code> (μόνο μη υποχρεωτικές κατηγορίες)</p>
+    </article>
+
+    <article class="tc" id="MKT-071" data-priority="P1">
+      <h3>Το script δεν εκτελείται ποτέ πριν από τη συγκατάθεση ή μετά από άρνηση</h3>
+      <ol class="steps">
+        <li>Σε νέο ιδιωτικό παράθυρο ανοίξτε το <code>/qa-scripts</code> με ανοιχτή την κονσόλα. Μην απαντήσετε στο banner. Στην κονσόλα εκτελέστε <code>document.documentElement.dataset.qaMarketing</code> και <code>document.getElementById('snippet-qa-marketing')</code>.</li>
+        <li>Πατήστε <strong>Απόρριψη μη απαραίτητων</strong>· εκτελέστε ξανά και τις δύο εντολές· ανανεώστε και εκτελέστε τις ξανά.</li>
+        <li>Ακυρώστε την επιλογή, ανανεώστε, επιλέξτε Preferences → μόνο <strong>Στατιστικά</strong> → αποθήκευση· εκτελέστε ξανά και τις δύο.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Σε κάθε βήμα: καμία γραμμή <code>QA snippet ran</code> στην κονσόλα, η πρώτη εντολή δίνει <code>undefined</code> και η δεύτερη <code>null</code>. Η σελίδα περιέχει όντως ένα κενό <code>&lt;div data-script-snippet="qa-marketing"&gt;</code> εκεί όπου βρίσκεται το shortcode.</p>
+      <p class="ref">Αναφ.: <code>src/components/shortcodes/SnippetRunner.tsx</code> · <code>src/components/layout/CookieBanner.tsx</code> (<code>useCategoryConsent</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-072" data-priority="P1">
+      <h3>Το script εκτελείται μόλις δοθεί συγκατάθεση για το Marketing</h3>
+      <ol class="steps">
+        <li>Ακυρώστε την επιλογή, ανανεώστε το <code>/qa-scripts</code>, επιλέξτε Preferences → μόνο <strong>Μάρκετινγκ</strong> → <strong>Αποθήκευση επιλογών</strong>. Μην ανανεώσετε. Ελέγξτε την κονσόλα και τις δύο εντολές της MKT-071.</li>
+        <li>Μεταβείτε στο <code>/about</code> και πίσω μέσω του μενού. Έπειτα κάντε το ίδιο σε νέο ιδιωτικό παράθυρο με <strong>Αποδοχή όλων</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Αμέσως μετά την αποθήκευση (χωρίς ανανέωση) η κονσόλα εμφανίζει <code>QA snippet ran: qa-marketing</code>, η τιμή του dataset είναι <code>ran</code> και υπάρχει το <code>script#snippet-qa-marketing</code>. Η επιστροφή μέσω του μενού δεν το εκτελεί δεύτερη φορά. Η αποδοχή όλων έχει το ίδιο αποτέλεσμα.</p>
+      <p class="ref">Αναφ.: <code>src/components/shortcodes/SnippetRunner.tsx</code> (<code>id="snippet-&lt;slug&gt;"</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-073" data-priority="P2">
+      <h3>Ένα script χωρίς κατηγορία συγκατάθεσης εκτελείται για όλους</h3>
+      <ol class="steps">
+        <li>Προσθέστε ένα script <code>QA always</code> με κώδικα <code>console.log('QA snippet ran: qa-always');</code> και Cookie consent <code>None — runs for every visitor</code>. Τοποθετήστε το shortcode του στη σελίδα QA Scripts.</li>
+        <li>Ανοίξτε τη σελίδα σε νέο ιδιωτικό παράθυρο χωρίς να απαντήσετε στο banner.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η γραμμή γράφει <code>Runs without consent</code>. Η κονσόλα εμφανίζει <code>QA snippet ran: qa-always</code> ενώ το banner είναι ακόμη ανοιχτό, και όχι το <code>qa-marketing</code>.</p>
+      <p class="ref">Αναφ.: <code>src/components/shortcodes/snippet-consent.ts</code> (<code>snippetMayRun</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-074" data-priority="P2">
+      <h3>Τι δεν επιτρέπεται να περιέχει ένα script</h3>
+      <ol class="steps">
+        <li>Δοκιμάστε να προσθέσετε scripts, ένα κάθε φορά, πατώντας <strong>Save snippet</strong>:
+          <ul>
+            <li>JavaScript <code>&lt;script&gt;console.log(1)&lt;/script&gt;</code></li>
+            <li>JavaScript <code>var s = '&lt;/script&gt;';</code></li>
+            <li>JavaScript κενό (μόνο κενά)</li>
+            <li>Shortcode name <code>QA Test</code></li>
+            <li>Shortcode name <code>qa-marketing</code> (χρησιμοποιείται ήδη)</li>
+            <li>External script (URL) με Script URL <code>http://example.com/qa.js</code> και έπειτα <code>https://user:pw@example.com/qa.js</code></li>
+          </ul></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Δεν αποθηκεύεται τίποτα· το πεδίο εμφανίζει, με τη σειρά: <code>Paste only the JavaScript — without the &lt;script&gt; and &lt;/script&gt; tags around it.</code>· <code>The code cannot contain "&lt;/script".</code>· <code>Paste the JavaScript to run.</code>· <code>Lowercase letters, numbers and dashes only.</code>· <code>Another snippet already uses this shortcode name.</code>· <code>Use a full https:// address, without a username or password.</code> και για τα δύο URL.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/scripts/schema.ts</code> (<code>snippetInputSchema</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-075" data-priority="P2">
+      <h3>Απενεργοποίηση, ενεργοποίηση και διαγραφή</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>Disable</strong> στο QA always. Ανανεώστε τη σελίδα QA Scripts (ιδιωτικό παράθυρο) και αναζητήστε στην κονσόλα και στη σελίδα το <code>data-script-snippet="qa-always"</code>.</li>
+        <li>Πατήστε <strong>Enable</strong> και ανανεώστε τη σελίδα.</li>
+        <li>Πατήστε <strong>Delete</strong> στο QA always και επιβεβαιώστε. Ανανεώστε τη σελίδα.</li>
+        <li>Εκτελέστε <code>SELECT action FROM audit_logs WHERE subject_type = 'script_snippet' ORDER BY id DESC LIMIT 3;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Απενεργοποιημένο: πορτοκαλί σήμα <code>Disabled</code>· η σελίδα δεν αποδίδει τίποτα για αυτό το shortcode (ούτε div ούτε καταγραφή). Ενεργοποιημένο: εκτελείται ξανά. Το παράθυρο διαγραφής γράφει <strong>Delete “QA always”?</strong> με <code>Every [script name="qa-always"] on the site will render nothing. This cannot be undone.</code>· στη συνέχεια η σελίδα δεν αποδίδει τίποτα και δεν εμφανίζει κείμενο shortcode. Audit: <code>scripts.delete</code>, <code>scripts.update</code>, <code>scripts.update</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/ScriptsManager.tsx</code> (<code>toggle</code>, <code>remove</code>) · <code>src/cms/core/scripts/service.ts</code> (<code>getEnabledSnippetBySlug</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-076" data-priority="P3">
+      <h3>Εξωτερικό script και το Content-Security-Policy</h3>
+      <ol class="steps">
+        <li>Προσθέστε το script <code>QA external</code>, <strong>External script (URL)</strong>, Script URL <code>https://example.com/qa-snippet.js</code>, συγκατάθεση None. Τοποθετήστε το στη σελίδα QA Scripts.</li>
+        <li>Στον διακομιστή ανάπτυξης ανοίξτε τη σελίδα (καρτέλα Network).</li>
+        <li>Στο build παραγωγής (SET-030) ανοίξτε τη σελίδα με ανοιχτή την κονσόλα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η φόρμα και η γραμμή εμφανίζουν την πορτοκαλί ειδοποίηση <code>Loads from example.com. The site's Content-Security-Policy must list this host under script-src (in next.config.ts and the server config), or browsers will block it.</code> Ανάπτυξη: γίνεται αίτημα στο <code>https://example.com/qa-snippet.js</code> (θα επιστρέψει 404· αυτό είναι εντάξει). Παραγωγή: κανένα αίτημα· η κονσόλα αναφέρει ότι η φόρτωση του script παραβιάζει την οδηγία <code>script-src</code>. Οι εξωτερικοί hosts απαιτούν αλλαγή στον κώδικα και στον διακομιστή, όχι ρύθμιση στο διαχειριστικό.</p>
+      <p class="ref">Αναφ.: <code>next.config.ts</code> (<code>PRODUCTION_CSP</code>) · <code>src/cms/admin/ScriptsManager.tsx</code> (<code>CspNotice</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-077" data-priority="P3">
+      <h3>Ένα script του οποίου η κατηγορία διαγράφηκε ακολουθεί τη συνολική επιλογή</h3>
+      <ol class="steps">
+        <li>Προσθέστε το script <code>QA functional</code> (<code>console.log('QA snippet ran: qa-functional');</code>) εξαρτημένο από το <code>After consent: Functional QA</code> (MKT-063) και τοποθετήστε το στη σελίδα QA Scripts.</li>
+        <li>Διαγράψτε την κατηγορία Functional (MKT-069).</li>
+        <li>Σε νέα ιδιωτικά παράθυρα ανοίξτε τη σελίδα και επιλέξτε διαδοχικά <strong>Αποδοχή όλων</strong> και <strong>Απόρριψη μη απαραίτητων</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η γραμμή εξακολουθεί να γράφει <code>After consent: functional</code> (το κλειδί· το όνομα έχει χαθεί). Η αποδοχή όλων το εκτελεί· η απόρριψη όχι. Το banner δεν πρόσφερε ποτέ αυτή την κατηγορία, οπότε οι επισκέπτες που αποδέχονται όλα εκτελούν ένα script για το οποίο δεν ερωτήθηκαν ποτέ. Σημειώστε Επιτυχία αν ισχύει αυτό και καταγράψτε το ως κίνδυνο (τεκμηριωμένη συμπεριφορά).</p>
+      <p class="ref">Αναφ.: <code>src/components/layout/CookieBanner.tsx</code> (συνολική εναλλακτική) · docs/dev-guides/07-forms-email-marketing.md §9</p>
+    </article>
+
+    <article class="tc" id="MKT-078" data-priority="P3">
+      <h3>Γνωστό κενό: καμία θέση σε head ή body για όλο τον ιστότοπο</h3>
+      <ol class="steps">
+        <li>Στη φόρμα του script αναζητήστε επιλογή θέσης (head, αρχή του body, τέλος του body, κάθε σελίδα).</li>
+        <li>Ανοίξτε το <code>/about</code> (χωρίς shortcode) αφού αποδεχτείτε τα πάντα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Δεν υπάρχει καμία: ένα script εκτελείται μόνο στις σελίδες όπου έχει τοποθετηθεί το shortcode του, και στο σημείο όπου έχει τοποθετηθεί. Το <code>/about</code> δεν καταγράφει κανένα script QA. Το μόνο script που προστίθεται σε κάθε σελίδα είναι το Google Analytics (MKT-079). Σημειώστε Επιτυχία αν ισχύει αυτό.</p>
+      <p class="ref">Αναφ.: docs/dev-guides/07-forms-email-marketing.md §3.6 (“Injection point”)</p>
+    </article>
+
+    <article class="tc" id="MKT-079" data-priority="P2">
+      <h3>Το Google Analytics φορτώνεται μόνο στην παραγωγή και μόνο με συγκατάθεση για τα Analytics</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Το GA4 Measurement ID <code>G-QA12345678</code> είναι αποθηκευμένο (MKT-067). Εκτελείται το build παραγωγής (SET-030).</p>
+      <ol class="steps">
+        <li>Νέο ιδιωτικό παράθυρο, καρτέλα Network με φίλτρο <code>googletagmanager</code>. Ανοίξτε το <code>/</code> και περιμένετε. Επιλέξτε απόρριψη· πλοηγηθείτε.</li>
+        <li>Νέο παράθυρο: Preferences → μόνο <strong>Μάρκετινγκ</strong>. Έπειτα νέο παράθυρο: Preferences → μόνο <strong>Στατιστικά</strong>.</li>
+        <li>Στον διακομιστή ανάπτυξης επαναλάβετε την επιλογή Στατιστικά.</li>
+        <li>Στη συνέχεια αδειάστε το Measurement ID.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κανένα αίτημα στο <code>www.googletagmanager.com</code> πριν από την επιλογή, μετά την απόρριψη ή μόνο με Μάρκετινγκ. Με συγκατάθεση για τα Στατιστικά, ζητείται αμέσως το <code>gtag/js?id=G-QA12345678</code> (χωρίς ανανέωση) και το <code>typeof window.gtag</code> είναι <code>function</code>. Ο διακομιστής ανάπτυξης δεν το φορτώνει ποτέ.</p>
+      <p class="ref">Αναφ.: <code>src/components/layout/AnalyticsLoader.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-popups">
+    <h2>Popups</h2>
+    <p class="intro">Τα popups είναι περιεχόμενο: <strong>Popups</strong> → <strong>+ New</strong> (ενότητες Content, Where, When, Design· CON-080). Ένα popup εμφανίζεται μόνο όταν είναι δημοσιευμένο, μόνο αφού ο επισκέπτης απαντήσει στο banner cookies, και το πολύ ένα ανά σελίδα. Κάθε γλώσσα είναι ξεχωριστή γραμμή: δημιουργήστε την έκδοση EN με την καρτέλα <strong>EN</strong> → <strong>Copy from EL</strong> → <strong>Create EN</strong>. Τα πεδία Where, When και Design είναι κοινά, οπότε το <strong>Save EL</strong> τα αντιγράφει στη γραμμή EN. Οι διαδρομές γράφονται χωρίς τη γλώσσα. Ο browser θυμάται τι έχει εμφανίσει στο <code>site-popup-seen</code> ως <code>{"&lt;popup id&gt;": &lt;time in ms&gt;}</code>· το id διαφέρει ανά γραμμή γλώσσας. Για να εμφανιστεί ξανά ένα popup, εκτελέστε <code>localStorage.removeItem('site-popup-seen')</code> και ανανεώστε. Απαντήστε στο banner cookies (με οποιονδήποτε τρόπο) πριν από κάθε έλεγχο.</p>
+
+    <article class="tc" id="MKT-080" data-priority="P1">
+      <h3>Δημιουργία και δημοσίευση popup και στις δύο γλώσσες</h3>
+      <ol class="steps">
+        <li>Popups → <strong>+ New</strong>. Content: <strong>Title</strong> EL <code>QA Προσφορά</code> και, στην υποκαρτέλα EN, <code>QA Offer</code>· <strong>Body</strong> <code>Δοκιμαστικό κείμενο.</code>· <strong>Button text</strong> EL <code>Δείτε</code>, EN <code>See it</code>· <strong>Button link</strong> <code>/about</code>. Slug <code>qa-popup-1</code>.</li>
+        <li>Where: <strong>Show on</strong> <code>Every page</code>, Position <code>Middle of the screen</code>. When: <strong>Appears</strong> <code>Immediately</code>, <strong>How often</strong> <code>Every visit</code>. Status — EL <code>published</code>. Πατήστε <strong>Create Popup</strong>.</li>
+        <li>Καρτέλα EN → <strong>Copy from EL</strong>, κατάσταση <code>published</code>, <strong>Create EN</strong>.</li>
+        <li>Εκτελέστε <code>SELECT id, locale, status FROM documents WHERE type = 'popup' AND slug = 'qa-popup-1';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και οι δύο αποθηκεύσεις επιτυγχάνουν. Δύο γραμμές, <code>el</code> και <code>en</code>, και οι δύο <code>published</code>, με διαφορετικά id (σημειώστε τα).</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/popups/collection.ts</code> · <code>src/cms/admin/DocumentForm.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MKT-081" data-priority="P1">
+      <h3>Το popup εμφανίζεται μετά το banner cookies</h3>
+      <ol class="steps">
+        <li>Σε νέο ιδιωτικό παράθυρο ανοίξτε το <code>/</code> με ανοιχτή την καρτέλα Network. Περιμένετε λίγα δευτερόλεπτα χωρίς να απαντήσετε στο banner.</li>
+        <li>Πατήστε <strong>Αποδοχή όλων</strong>.</li>
+        <li>Κοιτάξτε το Local Storage και το αίτημα <code>/api/cms/popups/track</code>.</li>
+        <li>Σε άλλο νέο παράθυρο επιλέξτε αντί γι' αυτό <strong>Απόρριψη μη απαραίτητων</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τίποτα δεν καλύπτει το banner όσο δεν έχει απαντηθεί. Αμέσως μετά την επιλογή ανοίγει ένα παράθυρο διαλόγου στη μέση μιας σκιασμένης σελίδας με <strong>QA Προσφορά</strong>, το κείμενο του σώματος και ένα κουμπί <strong>Δείτε</strong>· το κουμπί κλεισίματος (✕, με όνομα <code>Κλείσιμο</code>) έχει την εστίαση. Το <code>POST /api/cms/popups/track</code> <code>{"popupId":&lt;el id&gt;,"metric":"impression"}</code> απαντά <code>{"ok":true,"data":{"counted":true}}</code>· το <code>site-popup-seen</code> περιέχει το id της EL. Η απόρριψη των cookies δεν σταματά το popup (είναι περιεχόμενο, όχι παρακολούθηση).</p>
+      <p class="ref">Αναφ.: <code>src/components/popups/PopupRuntime.tsx</code> · <code>src/components/popups/PopupDialog.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MKT-082" data-priority="P2">
+      <h3>Η αγγλική σελίδα εμφανίζει την αγγλική γραμμή</h3>
+      <ol class="steps">
+        <li>Στο ίδιο παράθυρο ανοίξτε το <code>/en/about</code>.</li>
+        <li>Στο διαχειριστικό ορίστε την κατάσταση της γραμμής EN σε <code>draft</code> (Save EN), αδειάστε το <code>site-popup-seen</code> και ανανεώστε τα <code>/en/about</code> και <code>/about</code>. Δημοσιεύστε ξανά την EN.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <strong>QA Offer</strong> με <strong>See it</strong> και αγγλική ετικέτα κλεισίματος <code>Close</code>· το <code>site-popup-seen</code> περιέχει τώρα δύο id. Βήμα 2: τίποτα στο <code>/en/about</code> (ένα popup χωρίς δημοσιευμένη γραμμή EN δεν εμφανίζεται στα αγγλικά, ακόμη κι αν ο τίτλος EN είναι συμπληρωμένος)· η ελληνική σελίδα εξακολουθεί να το εμφανίζει. Σημειώστε αν αυτό ξαφνιάζει τους συντάκτες, αφού ο επεξεργαστής προσφέρει κείμενο EN μέσα στη γραμμή EL.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/popups/read.ts</code> (<code>listPublishedDocuments('popup', locale)</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-083" data-priority="P2">
+      <h3>Κλείσιμο του popup, πληκτρολόγιο και αναγνώστης οθόνης</h3>
+      <ol class="steps">
+        <li>Αλλάξτε το <strong>Appears</strong> σε <code>After a few seconds</code>, <strong>Seconds, or percent scrolled</strong> <code>5</code>, Save EL. Αδειάστε το <code>site-popup-seen</code>, ανανεώστε το <code>/about</code> και πατήστε Tab μέχρι να εστιαστεί ένας σύνδεσμος του μενού πριν ανοίξει το popup.</li>
+        <li>Όταν ανοίξει, πατήστε Tab επανειλημμένα και έπειτα Shift+Tab. Πατήστε Escape. Σημειώστε πού βρίσκεται η εστίαση.</li>
+        <li>Αδειάστε το κλειδί seen, ανανεώστε και πατήστε στη σκιασμένη περιοχή έξω από το παράθυρο διαλόγου. Ανανεώστε ξανά (αφού το αδειάσετε πρώτα) και πατήστε το κουμπί.</li>
+        <li>Επιθεωρήστε το στοιχείο του παραθύρου διαλόγου.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το Tab εναλλάσσεται μόνο μεταξύ του ✕ και του κουμπιού· δεν φτάνει ποτέ στη σελίδα από πίσω. Το Escape κλείνει το popup και η εστίαση επιστρέφει στον σύνδεσμο του μενού που είχατε εστιάσει.</li>
+        <li>Το κλικ στη σκιασμένη περιοχή το κλείνει. Κάθε κλείσιμο στέλνει <code>metric</code> <code>close</code>· το κουμπί στέλνει <code>click</code> και μεταβαίνει στο <code>/about</code>.</li>
+        <li>Το στοιχείο έχει <code>role="dialog"</code>, <code>aria-modal="true"</code> και <code>aria-label="QA Προσφορά"</code>. Το άνοιγμά του δεν μετακινεί το περιεχόμενο της σελίδας.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/popups/PopupDialog.tsx</code> (παγίδευση εστίασης, Escape, επαναφορά)</p>
+    </article>
+
+    <article class="tc" id="MKT-084" data-priority="P2">
+      <h3>Στόχευση σελίδας χωρίς τη γλώσσα</h3>
+      <ol class="steps">
+        <li>Ορίστε <strong>Show on</strong> <code>Only the pages I list</code>, <strong>Pages</strong> <code>/about</code>, <strong>Appears</strong> <code>Immediately</code>. Save EL· ανοίξτε την καρτέλα EN και επιβεβαιώστε τις ίδιες τιμές.</li>
+        <li>Αδειάζοντας το <code>site-popup-seen</code> πριν από το καθένα, ανοίξτε τα <code>/about</code>, <code>/en/about</code>, <code>/about?utm_source=qa#top</code>, <code>/</code>, <code>/contact</code>.</li>
+        <li>Αν το Commerce είναι ενεργό, δοκιμάστε επίσης <strong>Pages</strong> <code>/shop</code> στα <code>/shop</code> και <code>/en/shop</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το popup ανοίγει στα <code>/about</code>, <code>/en/about</code> και στη διεύθυνση με query και hash· όχι στα <code>/</code> ή <code>/contact</code>. Ομοίως το <code>/shop</code> ταιριάζει στα <code>/shop</code> και <code>/en/shop</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/popups/policy.ts</code> (<code>popupPagePath</code>, <code>matchesTarget</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-085" data-priority="P2">
+      <h3>Ενότητες και η λίστα Never on</h3>
+      <ol class="steps">
+        <li>Pages <code>/legal/*</code>: ελέγξτε τα <code>/legal/cookies</code>, <code>/en/legal/cookies</code> και <code>/about</code>.</li>
+        <li>Show on <code>Every page</code>, <strong>Never on</strong> <code>/contact</code>: ελέγξτε τα <code>/contact</code>, <code>/en/contact</code>, <code>/about</code>.</li>
+        <li>Show on <code>Only the pages I list</code> με Pages <code>/about</code> και Never on <code>/about</code>: ελέγξτε το <code>/about</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: και στις δύο σελίδες cookies, όχι στο /about. Βήμα 2: παντού εκτός από τις δύο σελίδες επικοινωνίας. Βήμα 3: πουθενά (υπερισχύει το Never on).</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/popups/policy.ts</code> (<code>pathMatches</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-086" data-priority="P3">
+      <h3>Ένας στόχος γραμμένος με τη γλώσσα δεν ταιριάζει πλέον</h3>
+      <ol class="steps">
+        <li>Ορίστε στο Pages μόνο το <code>/en/about</code>. Ελέγξτε τα <code>/en/about</code> και <code>/about</code>.</li>
+        <li>Ορίστε ξανά στο Pages το <code>/about</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το popup δεν εμφανίζεται σε καμία από τις δύο σελίδες: οι στόχοι με πρόθεμα από παλαιότερες ρυθμίσεις δεν ταιριάζουν σε τίποτα και πρέπει να ξαναγραφτούν χωρίς τη γλώσσα (όπως λέει ο οδηγός χρήσης). Σημειώστε Επιτυχία αν ισχύει αυτό.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/popups/policy.ts</code> · docs/user-guides/src/02-periexomeno.md (Popups, “Σημαντικό”)</p>
+    </article>
+
+    <article class="tc" id="MKT-087" data-priority="P2">
+      <h3>Πρόχειρο, ημερομηνία έναρξης και ημερομηνία λήξης</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Show on <code>Every page</code>, Appears <code>Immediately</code>, How often <code>Every visit</code>. Υπολογίστε τη σημερινή ημερομηνία σε UTC (<code>date -u +%F</code>).</p>
+      <ol class="steps">
+        <li>Ορίστε Status — EL <code>draft</code>, αποθηκεύστε και ανανεώστε το <code>/about</code>. Δημοσιεύστε ξανά.</li>
+        <li><strong>Start date</strong> αύριο (UTC): ανανεώστε. Αδειάστε το.</li>
+        <li><strong>End date</strong> χθες (UTC): ανανεώστε. Έπειτα End date σήμερα (UTC): ανανεώστε. Αδειάστε το.</li>
+        <li>Με Start date αύριο, δείτε τον πηγαίο κώδικα της σελίδας <code>/about</code> και αναζητήστε το <code>QA Προσφορά</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κανένα popup όσο είναι πρόχειρο, με μελλοντική ημερομηνία έναρξης ή με ημερομηνία λήξης χθες. Με ημερομηνία λήξης σήμερα εμφανίζεται. Βήμα 4: ο τίτλος και το κείμενο του popup που δεν έχει ξεκινήσει ακόμη βρίσκονται στον πηγαίο κώδικα της σελίδας, παρότι δεν εμφανίζεται (οι ημερομηνίες ελέγχονται στον browser)· καταγράψτε το αν μια καμπάνια που δεν έχει κυκλοφορήσει πρέπει να παραμείνει μυστική.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/popups/policy.ts</code> (<code>isPopupActive</code>, <code>endOfDay</code>) · <code>src/components/popups/PopupHost.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MKT-088" data-priority="P3">
+      <h3>Η ημερομηνία λήξης ισχύει μέχρι τα μεσάνυχτα UTC</h3>
+      <ol class="steps">
+        <li>Ορίστε End date <code>2030-06-15</code>. Ρυθμίστε το ρολόι του υπολογιστή δοκιμών (με απενεργοποιημένη την αυτόματη ώρα) στις 2030-06-15 23:58 UTC (02:58 στις 16 Ιουνίου σε θερινή ώρα Αθήνας). Αδειάστε το κλειδί seen και ανανεώστε το <code>/about</code>.</li>
+        <li>Ρυθμίστε το ρολόι στις 2030-06-16 00:02 UTC, αδειάστε και ανανεώστε.</li>
+        <li>Ορίστε Start date <code>2030-06-15</code>, End date κενό· ρυθμίστε το ρολόι στις 2030-06-14 23:58 UTC και έπειτα στις 2030-06-15 00:02 UTC, ανανεώνοντας κάθε φορά.</li>
+        <li>Επαναφέρετε την αυτόματη ώρα και αδειάστε και τις δύο ημερομηνίες.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: εμφανίζεται. Βήμα 2: δεν εμφανίζεται. Βήμα 3: δεν εμφανίζεται στις 23:58, εμφανίζεται στις 00:02. Η βοήθεια του επεξεργαστή για το End date λέει <code>YYYY-MM-DD, the last day it shows (until midnight UTC). Optional.</code></p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/popups/policy.ts</code> (<code>endOfDay</code>: <code>T23:59:59.999Z</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-089" data-priority="P2">
+      <h3>Το «Once every few days» απομνημονεύεται</h3>
+      <ol class="steps">
+        <li>How often <code>Once every few days</code>, <strong>Days between showings</strong> <code>2</code>. Αποθηκεύστε. Αδειάστε το κλειδί seen, ανανεώστε το <code>/about</code>, κλείστε το popup και ανανεώστε ξανά.</li>
+        <li>Προσομοιώστε ότι η τελευταία εμφάνιση έγινε πριν από τρεις ημέρες (χρησιμοποιήστε το id της EL) και έπειτα ανανεώστε:
+<pre><code>const m = JSON.parse(localStorage.getItem('site-popup-seen')); m['&lt;el id&gt;'] = Date.now() - 3 * 86400000; localStorage.setItem('site-popup-seen', JSON.stringify(m));</code></pre></li>
+        <li>Επαναλάβετε το βήμα 2 με μία ημέρα πριν.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: εμφανίζεται μία φορά, όχι στη δεύτερη φόρτωση. Βήμα 2: εμφανίζεται ξανά (και ο αποθηκευμένος χρόνος ενημερώνεται στην τρέχουσα στιγμή). Βήμα 3: δεν εμφανίζεται.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/popups/policy.ts</code> (<code>shouldShowAgain</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-090" data-priority="P3">
+      <h3>«Once only, ever», «Every visit» και ασυνήθιστες αποθηκευμένες τιμές</h3>
+      <ol class="steps">
+        <li>How often <code>Once only, ever</code>: εμφανίστε το μία φορά, έπειτα ορίστε τον αποθηκευμένο χρόνο του σε πριν από ένα έτος και ανανεώστε.</li>
+        <li>How often <code>Once every few days</code> με κενό το Days: ορίστε τον αποθηκευμένο χρόνο σε πριν από 6 ημέρες και ανανεώστε· έπειτα σε πριν από 8 ημέρες και ανανεώστε.</li>
+        <li>Ορίστε τον αποθηκευμένο χρόνο σε αύριο (<code>Date.now() + 86400000</code>) και ανανεώστε.</li>
+        <li>How often <code>Every visit</code>: ανανεώστε τρεις φορές.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: δεν εμφανίζεται ποτέ ξανά όσο υπάρχει το κλειδί. Βήμα 2: όχι στις 6 ημέρες, εμφανίζεται στις 8 (το κενό σημαίνει 7). Βήμα 3: εμφανίζεται (μια μελλοντική ημερομηνία μετρά ως «δεν έχει εμφανιστεί ποτέ»). Βήμα 4: εμφανίζεται σε κάθε φόρτωση.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/popups/policy.ts</code> (<code>toPopupRecord</code>, <code>shouldShowAgain</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-091" data-priority="P2">
+      <h3>Ενεργοποιήσεις με καθυστέρηση, κύλιση και έξοδο</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> How often <code>Every visit</code>· μια σελίδα αρκετά μεγάλη ώστε να κυλά (προσθέστε αρκετές παραγράφους στη σελίδα QA Scripts αν χρειάζεται). Αδειάστε το κλειδί seen πριν από κάθε έλεγχο.</p>
+      <ol class="steps">
+        <li>Appears <code>After a few seconds</code>, τιμή <code>3</code>: χρονομετρήστε το.</li>
+        <li>Appears <code>After scrolling down</code>, τιμή <code>50</code>: κυλήστε αργά.</li>
+        <li>Appears <code>When the pointer leaves the page (desktop)</code>: μετακινήστε το ποντίκι μέσα στη σελίδα και έπειτα γρήγορα έξω από το πάνω άκρο (προς τις καρτέλες).</li>
+        <li>Επαναλάβετε το βήμα 3 με την προσομοίωση κινητού των εργαλείων προγραμματιστή (αφή).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: ανοίγει περίπου 3 δευτερόλεπτα μετά την επιλογή/φόρτωση (μια κενή τιμή σημαίνει 5). Βήμα 2: ανοίγει όταν έχει κυλήσει περίπου η μισή σελίδα, όχι νωρίτερα. Βήμα 3: ανοίγει μόνο όταν ο δείκτης βγει από το πάνω μέρος. Βήμα 4: δεν ανοίγει ποτέ.</p>
+      <p class="ref">Αναφ.: <code>src/components/popups/PopupRuntime.tsx</code> (ενεργοποιήσεις)</p>
+    </article>
+
+    <article class="tc" id="MKT-092" data-priority="P2">
+      <h3>Μόνο ένα popup κάθε φορά, κατά προτεραιότητα</h3>
+      <ol class="steps">
+        <li>Ορίστε στο qa-popup-1 Appears <code>Immediately</code>, How often <code>Once only, ever</code>, Show on <code>Every page</code>, <strong>Priority</strong> <code>1</code>.</li>
+        <li>Δημιουργήστε το <code>qa-popup-2</code> (τίτλος <code>QA Δεύτερο</code>) με τις ίδιες ρυθμίσεις και Priority <code>10</code>, δημοσιευμένο στα EL.</li>
+        <li>Αδειάστε το κλειδί seen και ανανεώστε το <code>/about</code>· κλείστε το· ανανεώστε.</li>
+        <li>Ορίστε και τις δύο προτεραιότητες σε <code>5</code>, αδειάστε το κλειδί seen και ανανεώστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 3: ανοίγει πρώτα μόνο το <strong>QA Δεύτερο</strong> (ποτέ δύο παράθυρα διαλόγου)· στην επόμενη φόρτωση ανοίγει το qa-popup-1. Βήμα 4: σε ισοπαλία κερδίζει το νεότερο popup (qa-popup-2, μεγαλύτερο id).</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/popups/policy.ts</code> (<code>choosePopup</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-093" data-priority="P3">
+      <h3>Κανόνας κουμπιού και θέσεις σχεδίασης</h3>
+      <ol class="steps">
+        <li>Αδειάστε το <strong>Button link</strong> (κρατήστε το Button text), αποθηκεύστε και εμφανίστε το popup.</li>
+        <li>Στο Design επιλέξτε <code>Bottom banner</code>, έπειτα <code>Corner card</code> και έπειτα <code>Full-screen</code>, εμφανίζοντάς το κάθε φορά.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: κανένα κουμπί (χρειάζονται και το κείμενο και ο σύνδεσμος). Βήμα 2: το Bottom banner είναι μια φαρδιά μπάρα στο κάτω μέρος χωρίς σκιασμένο φόντο· το Corner card βρίσκεται κάτω δεξιά χωρίς σκίαση· το Full-screen είναι ένα μεγάλο παράθυρο διαλόγου στο κέντρο με σκιασμένο φόντο. Σε καμία περίπτωση δεν μετακινείται η σελίδα από πίσω.</p>
+      <p class="ref">Αναφ.: <code>src/components/popups/PopupDialog.tsx</code> · <code>src/cms/modules/popups/presets.ts</code></p>
+    </article>
+
+    <article class="tc" id="MKT-094" data-priority="P2">
+      <h3>Popups απενεργοποιημένα: τίποτα στον ιστότοπο</h3>
+      <ol class="steps">
+        <li>Αποεπιλέξτε το <strong>Popups</strong> στις Ρυθμίσεις → Modules και αποθηκεύστε. Αδειάστε το κλειδί seen και ανανεώστε το <code>/about</code>· δείτε τον πηγαίο κώδικα της σελίδας.</li>
+        <li>Εκτελέστε <code>curl -s -X POST "$BASE/api/cms/popups/track" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.70.0.30' -d '{"popupId":1,"metric":"impression"}' -w '\n%{http_code}\n'</code>.</li>
+        <li>Επιλέξτε ξανά το Popups και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κανένα popup και κανένα κείμενο popup στον πηγαίο κώδικα. Η κλήση track απαντά <code>{"ok":false,"error":"not_found"}</code> <code>404</code>. Με το module ξανά ενεργό τα popups επανέρχονται. (Πλευρικό μενού και API διαχειριστικού: SET-040, CON-081.)</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/layout.tsx</code> (<code>PopupHost</code> μόνο όταν είναι ενεργό) · <code>src/app/api/cms/popups/track/route.ts</code></p>
+    </article>
+
+    <article class="tc" id="MKT-095" data-priority="P3">
+      <h3>Γνωστό κενό: οι μετρητές των popups αποθηκεύονται αλλά δεν εμφανίζονται ποτέ</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>SELECT subject_id, metric, day, count FROM stat_counters WHERE scope = 'popup' ORDER BY day DESC, subject_id;</code></li>
+        <li>Αναζητήστε αυτούς τους αριθμούς οπουδήποτε στο διαχειριστικό (λίστα popups, επεξεργαστής, πίνακας ελέγχου).</li>
+        <li>Εκτελέστε <code>curl -s -X POST "$BASE/api/cms/popups/track" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.70.0.31' -d '{"popupId":999999,"metric":"click"}'</code> και επαναλάβετε το SQL.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Γραμμές για τη σημερινή ημερομηνία UTC με πλήθη <code>impression</code>, <code>close</code> και <code>click</code> ανά id popup, και χωρίς δεδομένα επισκεπτών. Το διαχειριστικό δεν εμφανίζει τίποτα από αυτά. Το επινοημένο id γίνεται δεκτό (<code>{"ok":true,"data":{"counted":true}}</code>) και αποκτά δική του γραμμή: ο μετρητής δεν ελέγχει ότι το popup υπάρχει. Σημειώστε Επιτυχία αν ισχύει αυτό· καταγράψτε και τα δύο ως γνωστά κενά.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/popups/read.ts</code> (<code>popupTrackRoute</code>) · <code>src/cms/core/stats/counters.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-reviews">
+    <h2>Ενσωμάτωση κριτικών Google (ημιτελής)</h2>
+    <p class="intro">Για αυτή την ενότητα ενεργοποιήστε το <strong>Google reviews &amp; testimonials</strong> στις Ρυθμίσεις → Modules. Η ενσωμάτωση έχει διαδρομές API αλλά καμία οθόνη στο διαχειριστικό. Κάθε περίπτωση είναι Επιτυχία όταν το κενό είναι ακριβώς όπως περιγράφεται.</p>
+
+    <article class="tc" id="MKT-096" data-priority="P3">
+      <h3>Καμία οθόνη διαχειριστικού και καμία καρτέλα Integrations</h3>
+      <ol class="steps">
+        <li>Αναζητήστε στο πλευρικό μενού και σε κάθε καρτέλα των Ρυθμίσεων κριτικές Google, κλειδί Places API ή κουμπί Connect Google.</li>
+        <li>Ανοίξτε το <code>/admin/settings?tab=Integrations&amp;connected=google</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Δεν υπάρχει τίποτα: ούτε οθόνη, ούτε πεδίο κλειδιού, ούτε κουμπί σύνδεσης (το <strong>Reviews</strong> στο πλευρικό μενού αφορά τις κριτικές προϊόντων του καταστήματος και εμφανίζεται μόνο με ενεργό το Commerce). Το URL ανοίγει την πρώτη καρτέλα των Ρυθμίσεων, χωρίς μήνυμα για σύνδεση.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SettingsForm.tsx</code> (άγνωστη καρτέλα → πρώτη καρτέλα) · docs/dev-guides/07-forms-email-marketing.md §9</p>
+    </article>
+
+    <article class="tc" id="MKT-097" data-priority="P3">
+      <h3>Έναρξη OAuth και callback, όσο προχωρούν</h3>
+      <ol class="steps">
+        <li>Χωρίς <code>GOOGLE_OAUTH_CLIENT_ID</code> στο <code>.env.local</code>: <code>curl -s -X POST -b "cms_session=$S" -H 'Content-Type: application/json' -d '{}' "$BASE/api/cms/integrations/google/oauth/start" -w '\n%{http_code}\n'</code>.</li>
+        <li>Ορίστε <code>GOOGLE_OAUTH_CLIENT_ID=qa-client-id</code>, επανεκκινήστε και επαναλάβετε.</li>
+        <li>Εκτελέστε <code>curl -s -b "cms_session=$S" "$BASE/api/cms/integrations/google/oauth/callback?code=x&amp;state=wrong" -w '\n%{http_code}\n'</code>.</li>
+        <li>Απενεργοποιήστε το module και επαναλάβετε το βήμα 2. Αφαιρέστε τη μεταβλητή και επανεκκινήστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>500</code> <code>{"ok":false,"error":"server_error","message":"Internal error."}</code>· το log γράφει <code>GOOGLE_OAUTH_CLIENT_ID is not set.</code> Βήμα 2: <code>200</code> με <code>data.url</code> που ξεκινά με <code>https://accounts.google.com/o/oauth2/v2/auth?client_id=qa-client-id</code> και περιέχει <code>redirect_uri=…%2Fapi%2Fcms%2Fintegrations%2Fgoogle%2Foauth%2Fcallback</code>, <code>scope=…business.manage</code>, <code>access_type=offline</code>, <code>prompt=consent</code> και ένα <code>state</code>. Βήμα 3: <code>400</code> <code>This connection attempt has expired. Start again from Settings.</code> Βήμα 4: <code>404</code> <code>not_found</code>. Μια πραγματική σύνδεση θα κατέληγε στην ανύπαρκτη καρτέλα Integrations (MKT-096).</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/reviews-external/routes.ts</code> (<code>googleOauthStartRoute</code>, <code>googleOauthCallbackRoute</code>) · <code>src/cms/modules/reviews-external/google.ts</code> (<code>gbpAuthorizeUrl</code>)</p>
+    </article>
+
+    <article class="tc" id="MKT-098" data-priority="P3">
+      <h3>Συγχρονισμός και το μπλοκ χωρίς καμία ρύθμιση</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s -X POST -b "cms_session=$S" -H 'Content-Type: application/json' -d '{}' "$BASE/api/cms/reviews-external/sync"</code>.</li>
+        <li>Τοποθετήστε το <code>[google-reviews]</code> ως αυτοτελή παράγραφο στη σελίδα QA Scripts, αποθηκεύστε και ανοίξτε τη σελίδα.</li>
+        <li>Αφαιρέστε το μπλοκ και απενεργοποιήστε ξανά το module.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>{"ok":true,"data":{"results":[]}}</code> (η ρύθμιση της ενσωμάτωσης είναι ανενεργή και δεν υπάρχει οθόνη για να ενεργοποιηθεί). Βήμα 2: το μπλοκ δεν εμφανίζει κριτικές ούτε σφάλμα· η υπόλοιπη σελίδα είναι άθικτη.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/reviews-external/sync.ts</code> (<code>syncAllReviewLocations</code>) · <code>src/components/shortcodes/GoogleReviews.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-cleanup">
+    <h2>Καθαρισμός</h2>
+
+    <article class="tc" id="MKT-099" data-priority="P3">
+      <h3>Αφαίρεση των δεδομένων QA και επαναφορά των ρυθμίσεων</h3>
+      <ol class="steps">
+        <li>Διαγράψτε τα popups <code>qa-popup-1</code> και <code>qa-popup-2</code>, τα scripts <code>QA marketing</code>, <code>QA external</code>, <code>QA functional</code>, τη σελίδα QA Scripts, τις υπηρεσίες QA Pixel και Popups που δηλώσατε (ή κρατήστε το Popups: είναι σωστό), την κατηγορία Functional αν υπάρχει ακόμη, και επαναφέρετε τη διατύπωση των Analytics.</li>
+        <li>Εκτελέστε:
+<pre><code>DELETE FROM newsletter_subscribers WHERE email LIKE 'qa.%@example.com';
+DELETE FROM email_suppressions WHERE email = 'qa.news1@example.com';
+DELETE FROM cookie_consents WHERE visitor_ref = 'qa-visitor-0001';</code></pre></li>
+        <li>Σημειώστε τις υποβολές QA ως <code>archived</code> (δεν μπορούν να διαγραφούν από το διαχειριστικό) ή διαγράψτε τις με SQL βάσει id. Επαναφέρετε τις τιμές αλληλογραφίας στο <code>.env.local</code>, αδειάστε το GA4 Measurement ID και το Inquiry notification emails, επαναφέρετε το όνομα στο Branding και επαναφέρετε τους διακόπτες των modules. Διαγράψτε τον χρήστη <code>qa-mkt-view@example.com</code> και τον ρόλο <code>QA mkt view</code> αν άλλες λίστες ελέγχου δεν τους προβλέπουν.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Δεν απομένουν popups, scripts, συνδρομητές ή υπηρεσίες QA· το banner, το <code>/legal/cookies</code> και η οθόνη Scripts εμφανίζουν μόνο τις πραγματικές καταχωρίσεις του ιστότοπου.</p>
+      <p class="ref">Αναφ.: αυτή η λίστα ελέγχου</p>
+    </article>
+  </section>
+
+</main>
+<footer class="page">Λίστα ελέγχου 07 από 12. Τα αποτελέσματα αποθηκεύονται μόνο σε αυτόν τον browser· χρησιμοποιήστε την εξαγωγή πριν καθαρίσετε τα δεδομένα του browser. Στη συνέχεια επαναφέρετε τις ρυθμίσεις αλληλογραφίας στο <code>.env.local</code>, το όνομα στο Branding, το GA4 Measurement ID, το Inquiry notification emails και τους διακόπτες των modules, και διαγράψτε τα popups, τα scripts, τους συνδρομητές, τις υπηρεσίες cookies και τον λογαριασμό μόνο προβολής του QA (MKT-099).</footer>
+</body>
+</html>

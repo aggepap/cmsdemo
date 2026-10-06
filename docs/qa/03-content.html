@@ -1,0 +1,1246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Content &amp; publishing</title>
+<link rel="stylesheet" href="qa.css">
+<script src="qa.js" defer></script>
+</head>
+<body>
+<nav class="crumbs"><a href="index.html">CMS manual QA</a></nav>
+<header class="page">
+  <h1>03 · Content: collections, documents &amp; publishing</h1>
+  <p class="scope">Creating, editing, publishing and deleting content in the admin: Pages, Brands, Testimonials and Popups, every field type the editor offers, slugs and automatic redirects, draft / published / scheduled / archived, translations, version history, edit conflicts and edit locks, draft preview, the unsaved-changes guard, the list screen, content permissions, shortcodes, markdown import, and how all of this shows on the public site (cache refresh, listing blocks, sitemap). SEO fields (checklist 06), forms and popups behaviour on the site (07), products (08) and experiences (09) are covered elsewhere. You need two browsers (or one normal and one private window), database client access and a terminal on the test machine.</p>
+</header>
+<main>
+
+  <section class="suite" id="suite-prep">
+    <h2>Before you start</h2>
+    <p class="intro">Checklist 01 must be done: migrations applied, the superadmin <code>qa-admin@example.com</code> exists, the seeded pages were published with <code>npm run db:seed-site -- --force --publish-samples</code>, and a second superadmin <code>qa2@example.com</code> (name <code>QA Second</code>) exists for the lock cases. Both EL and EN are ticked for <strong>Editing</strong> and <strong>Public</strong> in <strong>Settings</strong> → <strong>Languages</strong>. The URLs below use <code>http://localhost:3002</code>; on a hosted test environment use its address instead. The admin is at <code>/admin</code>. “Pages” in the sidebar opens <code>/admin/page</code>. Write down the id of each document you create: it is the number at the end of its edit URL (<code>/admin/page/&lt;id&gt;</code>).</p>
+
+    <article class="tc" id="CON-001" data-priority="P2">
+      <h3>Create a writer and a reader account</h3>
+      <ol class="steps">
+        <li>Signed in as <code>qa-admin@example.com</code>, open <strong>Roles</strong>. Under <strong>Add a role</strong> enter <strong>Role name</strong> <code>QA writer</code>, tick <strong>Access</strong>, <strong>View content</strong> and <strong>Edit content</strong> only (leave <strong>Publish content</strong> unticked), click <strong>Add role</strong>.</li>
+        <li>Add a second role <code>QA reader</code> with only <strong>Access</strong> and <strong>View content</strong>.</li>
+        <li>Open <strong>Users</strong>. Under <strong>Add a user</strong> create <code>qa-writer@example.com</code> with role <code>QA writer</code> and <code>qa-reader@example.com</code> with role <code>QA reader</code>, each with a strong password (for example <code>Qa-Writer-Pass-2026!</code>), clicking <strong>Add user</strong> each time.</li>
+        <li>Sign in as each new user in the private window (complete two-factor setup if asked, see checklist 05).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both roles and users are saved without error. Each new user lands on the dashboard and sees <strong>Pages</strong> and <strong>Brands</strong> under Content in the sidebar.</p>
+      <p class="ref">Ref: <code>src/cms/admin/RolesManager.tsx</code> · <code>src/cms/modules/auth/permission-labels.ts</code> · <code>src/cms/admin/UsersManager.tsx</code></p>
+    </article>
+
+    <article class="tc" id="CON-002" data-priority="P2">
+      <h3>Add one custom field of every type to Pages</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Signed in as <code>qa-admin@example.com</code>. The field cases later in this checklist use these fields; they are the only way the base site offers number, yes/no, date, colour, relation and repeater fields on a page.</p>
+      <ol class="steps">
+        <li>Open <code>/admin/settings?tab=Fields</code> and pick the <strong>Pages</strong> sub-tab.</li>
+        <li>Click <strong>Add field</strong> twelve times and fill in <strong>Key</strong>, <strong>Label — EL</strong> and <strong>Label — EN</strong> (use the same label in both) and <strong>Type</strong> as follows:
+          <code>qa_text</code> “QA text” <strong>Text</strong>;
+          <code>qa_long</code> “QA long” <strong>Long text</strong>;
+          <code>qa_rich</code> “QA rich” <strong>Rich text</strong>;
+          <code>qa_number</code> “QA number” <strong>Number</strong> with <strong>Min</strong> 1, <strong>Max</strong> 10 and <strong>Whole numbers only</strong> ticked;
+          <code>qa_choice</code> “QA choice” <strong>Select (one)</strong> with options <code>red</code> and <code>blue</code> (<strong>Add option</strong>);
+          <code>qa_multi</code> “QA multi” <strong>Select (many)</strong> with options <code>x</code>, <code>y</code>, <code>z</code>;
+          <code>qa_flag</code> “QA flag” <strong>Yes / no</strong>;
+          <code>qa_date</code> “QA date” <strong>Date</strong>;
+          <code>qa_colour</code> “QA colour” <strong>Colour</strong>;
+          <code>qa_image</code> “QA image” <strong>Image</strong>;
+          <code>qa_related</code> “QA related” <strong>Relation</strong> with <strong>Target collection</strong> <code>page</code>;
+          <code>qa_rows</code> “QA rows” <strong>Repeater</strong> with two sub-fields (<strong>Add sub-field</strong>): key <code>label</code> type Text, key <code>qty</code> type Number.</li>
+        <li>Click <strong>Save fields</strong>. Then open <strong>Pages</strong> → <strong>+ New</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>Fields saved.</code> appears in green and no amber problem list is shown. The New Page form has a <strong>Custom fields</strong> card containing all twelve controls in the order entered. (Required is tested separately and switched off again, because a required custom field would block publishing every existing page.)</p>
+      <p class="ref">Ref: <code>src/cms/admin/CustomFieldsManager.tsx</code> · <code>src/cms/admin/fields/DefinitionEditors.tsx</code> · <code>src/cms/core/fields/definitions.ts</code> (<code>compileOne</code>) · <code>src/app/admin/(shell)/settings/page.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-pages">
+    <h2>Pages: create, publish, edit, delete</h2>
+    <p class="intro">Signed in as <code>qa-admin@example.com</code> unless a case says otherwise. Pages are public at <code>/{slug}</code> in Greek and <code>/en/{slug}</code> in English. A page that is not public redirects to <code>/page-not-found</code> (Greek heading <strong>Η σελίδα δεν βρέθηκε</strong>) or <code>/en/page-not-found</code> (<strong>Page not found</strong>).</p>
+
+    <article class="tc" id="CON-003" data-priority="P1">
+      <h3>Create a draft page</h3>
+      <ol class="steps">
+        <li>Open <strong>Pages</strong> and click <strong>+ New</strong>.</li>
+        <li>Type <code>QA Page One</code> in <strong>Title</strong>, <code>qa-page-one</code> in <strong>Slug</strong>, <code>QA required</code> in <strong>QA text</strong>. Leave <strong>Status — EL</strong> on <code>draft</code>.</li>
+        <li>Click <strong>Create Page</strong>.</li>
+        <li>Run the SQL below.</li>
+      </ol>
+<pre><code>SELECT id, slug, locale, status, canonical_path, published_at,
+       JSON_UNQUOTE(JSON_EXTRACT(data, '$.title')) AS title
+FROM documents WHERE type = 'page' AND slug = 'qa-page-one';</code></pre>
+      <ul class="exp">
+        <li>The New screen heading reads <strong>New Page</strong>. After the click you are on <code>/admin/page/&lt;id&gt;</code> with heading <strong>QA Page One</strong> and <code>/qa-page-one</code> beneath it; the status badge reads <code>draft</code>; <strong>Version history</strong> lists <code>v1 (current)</code>.</li>
+        <li>SQL: one row, locale <code>el</code>, status <code>draft</code>, canonical_path <code>/qa-page-one</code>, published_at NULL, title <code>QA Page One</code>.</li>
+        <li>Opening <code>/qa-page-one</code> in a signed-out window lands on the not-found page.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/[collection]/new/page.tsx</code> · <code>src/cms/admin/DocumentForm.tsx</code> · <code>src/cms/core/documents/service.ts</code> (<code>createDocument</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-004" data-priority="P1">
+      <h3>Publish the page and see it on the site</h3>
+      <ol class="steps">
+        <li>On the QA Page One editor set <strong>Status — EL</strong> to <code>published</code> and click <strong>Save EL</strong>.</li>
+        <li>In a signed-out window open <code>/qa-page-one</code>.</li>
+        <li>Repeat the SQL from the previous case.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> A green <code>EL saved.</code> message appears; the badge reads <code>published</code> and the EL language tab dot turns green. The public page shows <strong>QA Page One</strong> as its heading. SQL: status <code>published</code>, published_at set to about now.</p>
+      <p class="ref">Ref: <code>src/app/[locale]/[slug]/page.tsx</code> · <code>src/cms/core/documents/service.ts</code> (<code>publishedAt</code> rule)</p>
+    </article>
+
+    <article class="tc" id="CON-005" data-priority="P1">
+      <h3>Editing a published page updates the site at once</h3>
+      <ol class="steps">
+        <li>Keep <code>/qa-page-one</code> open in the signed-out window.</li>
+        <li>In the admin change the title to <code>QA Page One edited</code>, click <strong>Save EL</strong>.</li>
+        <li>Reload the public page (a normal reload, no cache bypass).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The public heading reads <strong>QA Page One edited</strong> on the first reload. The browser tab title changes too. No restart or waiting is needed (the save purges the cached copy).</p>
+      <p class="ref">Ref: <code>src/cms/core/read/revalidate.ts</code> · <code>src/cms/core/routes/collections.ts</code> (<code>revalidateDocument</code>) · docs/dev-guides/03-content-model.md §3.7</p>
+    </article>
+
+    <article class="tc" id="CON-006" data-priority="P2">
+      <h3>Hero image: choose, show, clear</h3>
+      <ol class="steps">
+        <li>On QA Page One click <strong>Choose image…</strong> under <strong>Hero image</strong>.</li>
+        <li>In the <strong>Media library</strong> dialog click <strong>Upload</strong>, pick a JPG or PNG, then click its tile.</li>
+        <li>Click <strong>Save EL</strong> and reload <code>/qa-page-one</code>.</li>
+        <li>Back in the editor click <strong>Clear</strong>, save, reload the public page.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> After picking, the field shows a thumbnail, the file's id and <strong>Change</strong> / <strong>Clear</strong> buttons. The public page shows the image below the title. After Clear and save there is no error (no “Invalid UUID”) and the public page has no image.</p>
+      <p class="ref">Ref: <code>src/cms/admin/fields/MediaPicker.tsx</code> · <code>src/cms/config/zod.ts</code> (<code>image</code> case)</p>
+    </article>
+
+    <article class="tc" id="CON-007" data-priority="P2">
+      <h3>Title is required only when going live</h3>
+      <ol class="steps">
+        <li>Click <strong>+ New</strong>. Leave <strong>Title</strong> empty, slug <code>qa-no-title</code>, <strong>QA text</strong> <code>x</code>, status <code>published</code>, click <strong>Create Page</strong>.</li>
+        <li>Change status to <code>draft</code> and click <strong>Create Page</strong> again.</li>
+        <li>Open <strong>Pages</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: red banner <code>Validation failed.</code> and <code>Title is required</code> under the Title box. Nothing is created.</li>
+        <li>Step 2: the draft is created. The editor heading reads <strong>Untitled</strong>; the list shows the row by its slug <code>qa-no-title</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/config/zod.ts</code> (<code>applyModifiers</code>) · <code>src/cms/core/documents/service.ts</code> (<code>humanizeIssue</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-008" data-priority="P1">
+      <h3>Delete a page from the list</h3>
+      <ol class="steps">
+        <li>In <strong>Pages</strong> click <strong>Delete</strong> on the <code>qa-no-title</code> row, then <strong>Cancel</strong> in the dialog.</li>
+        <li>Click <strong>Delete</strong> again and confirm.</li>
+        <li>Run: <code>SELECT COUNT(*) FROM documents WHERE slug = 'qa-no-title';</code> and <code>SELECT COUNT(*) FROM document_versions WHERE document_id = &lt;its id&gt;;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The dialog is titled <strong>Delete this document?</strong> with <code>This cannot be undone.</code> Cancel keeps the row. After confirming, the button reads <code>Deleting…</code> briefly and the row disappears; the total below the table drops by one. Both counts are 0.</p>
+      <p class="ref">Ref: <code>src/cms/admin/DocumentList.tsx</code> (<code>remove</code>) · <code>src/cms/core/routes/collections.ts</code> (<code>collectionDeleteRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-009" data-priority="P2">
+      <h3>Deleting a translated page removes every language</h3>
+      <ol class="steps">
+        <li>Create a page <code>QA Delete Both</code>, slug <code>qa-delete-both</code>, QA text <code>x</code>, save; switch to the <strong>EN</strong> tab, click <strong>Copy from EL</strong>, click <strong>Create EN</strong>.</li>
+        <li>In <strong>Pages</strong> click <strong>Delete</strong> on its row and confirm.</li>
+        <li>Run: <code>SELECT COUNT(*) FROM documents WHERE slug = 'qa-delete-both';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The dialog says <code>All 2 language versions will be deleted. This cannot be undone.</code> The row disappears and the count is 0.</p>
+      <p class="ref">Ref: <code>src/cms/admin/DocumentList.tsx</code></p>
+    </article>
+
+    <article class="tc" id="CON-010" data-priority="P3">
+      <h3>A slug already used in the same language is refused</h3>
+      <ol class="steps">
+        <li>Create a new page with title <code>Dup</code>, slug <code>about</code> (already used by the seeded About page), status draft, click <strong>Create Page</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Red banner <code>Already exists.</code> and no new row. (Record if the message does not say which field is duplicated; the API deliberately stays generic.)</p>
+      <p class="ref">Ref: <code>src/cms/core/api/handler.ts</code> (duplicate-key mapping) · <code>uniq_documents_type_slug_locale</code></p>
+    </article>
+
+    <article class="tc" id="CON-011" data-priority="P3">
+      <h3>Bad edit URLs show “Page not found”; the plural alias redirects</h3>
+      <ol class="steps">
+        <li>Open <code>/admin/page/abc</code>, <code>/admin/page/99999999</code> and <code>/admin/brand/&lt;id of QA Page One&gt;</code>.</li>
+        <li>Open <code>/admin/pages</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The three URLs in step 1 show the admin “Page not found” screen, never an error with SQL in it. <code>/admin/pages</code> redirects to <code>/admin/page</code>.</p>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/[collection]/[id]/page.tsx</code> · <code>src/lib/cms/collection-route.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-slug">
+    <h2>Slugs &amp; automatic redirects</h2>
+    <p class="intro">A new or changed slug is normalised when saved: lower case, hyphens, Greek transliterated, at most 96 characters. Changing the slug of a live document writes a 301 from the old address (listed under <strong>SEO</strong> → Redirects). Use <code>curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' &lt;url&gt;</code> to see status and target.</p>
+
+    <article class="tc" id="CON-012" data-priority="P1">
+      <h3>“My Post” is saved as my-post</h3>
+      <ol class="steps">
+        <li>Create a page titled <code>My Post</code> with slug <code>My Post</code>, QA text <code>x</code>, status draft, click <strong>Create Page</strong>.</li>
+        <li>Look at the <strong>Slug</strong> box and the line under the heading.</li>
+        <li>Change the slug to <code>My  Post  Again</code> and click <strong>Save EL</strong>; look at the Slug box without reloading.</li>
+        <li>Run: <code>SELECT slug, canonical_path FROM documents WHERE type = 'page' AND slug LIKE 'my-post%';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> After step 1 the Slug box and heading line show <code>my-post</code>. After step 3 the box immediately shows <code>my-post-again</code> (not what was typed). SQL: slug <code>my-post-again</code>, canonical_path <code>/my-post-again</code>.</p>
+      <p class="ref">Ref: <code>src/cms/core/documents/slug-input.ts</code> · <code>src/cms/core/slug.ts</code> · <code>src/cms/admin/document-save.ts</code> (<code>slugAfterSave</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-013" data-priority="P2">
+      <h3>A Greek slug is transliterated</h3>
+      <ol class="steps">
+        <li>Create a page titled <code>Νέα Άρθρα</code> with slug <code>Νέα Άρθρα</code>, QA text <code>x</code>, status published, click <strong>Create Page</strong>.</li>
+        <li>Open <code>/nea-arthra</code> signed out.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The Slug box shows <code>nea-arthra</code>; the public page renders with heading <strong>Νέα Άρθρα</strong>; the address bar shows plain ASCII (no percent-encoded Greek).</p>
+      <p class="ref">Ref: <code>src/cms/core/slug.ts</code> (<code>GREEK_TO_LATIN</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-014" data-priority="P3">
+      <h3>Accents, digraphs, symbols and spaces</h3>
+      <ol class="steps">
+        <li>Create a draft page with slug <code>  Καλοκαίρι 2026 — Ουζερί!  </code> (leading and trailing spaces included).</li>
+        <li>Create another draft page whose slug is 120 letters <code>a</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The first is saved as <code>kalokairi-2026-ouzeri</code>; the second as exactly 96 <code>a</code> characters.</p>
+      <p class="ref">Ref: <code>src/cms/core/slug.ts</code> (<code>SLUG_MAX_LENGTH</code>, <code>GREEK_DIGRAPHS</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-015" data-priority="P3">
+      <h3>An empty or symbol-only slug is refused</h3>
+      <ol class="steps">
+        <li>On a new page clear the Slug box and click <strong>Create Page</strong>.</li>
+        <li>Type <code>!!!</code> as slug and click <strong>Create Page</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: the browser's own “fill out this field” bubble appears on Slug; nothing is sent.</li>
+        <li>Step 2: red banner <code>That address has no letters or numbers left once it is made URL-safe. Type a slug with some.</code> Nothing is created.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/documents/slug-input.ts</code> (<code>SLUG_UNUSABLE</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-016" data-priority="P1">
+      <h3>Renaming a published page redirects the old address</h3>
+      <ol class="steps">
+        <li>Open QA Page One (published). Change the slug to <code>qa-page-renamed</code>, click <strong>Save EL</strong>.</li>
+        <li>Run the curl line from the intro for <code>http://localhost:3002/qa-page-one</code> and <code>http://localhost:3002/qa-page-renamed</code>.</li>
+        <li>Run the SQL below and open <strong>SEO</strong> → Redirects in the admin.</li>
+      </ol>
+<pre><code>SELECT source, target, status_code, kind, active, reason, notes
+FROM seo_redirects WHERE reason = 'slug_change' ORDER BY id;
+SELECT slug, canonical_path FROM documents WHERE id = &lt;QA Page One id&gt;;</code></pre>
+      <ul class="exp">
+        <li>curl: <code>/qa-page-one</code> answers <code>301</code> to <code>…/qa-page-renamed</code>; <code>/qa-page-renamed</code> answers <code>200</code>.</li>
+        <li>SQL: a row <code>/qa-page-one</code> → <code>/qa-page-renamed</code>, 301, <code>literal</code>, active 1, reason <code>slug_change</code>, notes <code>Auto: the page’s address changed — old links are sent to the new one</code>. The document's canonical_path is <code>/qa-page-renamed</code>.</li>
+        <li>The redirect is listed on the SEO screen with that note.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/seo/slug-change-redirect.ts</code> · <code>src/cms/core/documents/service.ts</code> (<code>nextCanonicalPath</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-017" data-priority="P3">
+      <h3>A second rename is still one hop</h3>
+      <ol class="steps">
+        <li>Rename the same page from <code>qa-page-renamed</code> to <code>qa-page-final</code>, save.</li>
+        <li>curl <code>/qa-page-one</code> and <code>/qa-page-renamed</code>; repeat the redirects SQL.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both old addresses answer <code>301</code> straight to <code>/qa-page-final</code> (no chain through <code>/qa-page-renamed</code>). SQL shows both sources with target <code>/qa-page-final</code>.</p>
+      <p class="ref">Ref: <code>src/cms/core/seo/slug-change-redirect.ts</code> (<code>retarget</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-018" data-priority="P2">
+      <h3>A new page can take over an old address</h3>
+      <ol class="steps">
+        <li>Create a new page titled <code>QA Reuse</code> with slug <code>qa-page-one</code>, QA text <code>x</code>, status <code>published</code>, click <strong>Create Page</strong>.</li>
+        <li>curl <code>/qa-page-one</code>; open it in the browser; repeat the redirects SQL.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The save succeeds (the old canonical path is free). <code>/qa-page-one</code> answers <code>200</code> and shows <strong>QA Reuse</strong>, not a redirect. The <code>slug_change</code> row with source <code>/qa-page-one</code> is gone; the one for <code>/qa-page-renamed</code> remains.</p>
+      <p class="ref">Ref: <code>src/cms/core/seo/slug-change-redirect.ts</code> (<code>remove</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-019" data-priority="P2">
+      <h3>Renaming moves every language</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> The seeded <strong>About</strong> page is published in EL and EN.</p>
+      <ol class="steps">
+        <li>Open About, change the slug to <code>about-us</code>, click <strong>Save EL</strong>.</li>
+        <li>curl <code>/about</code>, <code>/en/about</code>, <code>/about-us</code>, <code>/en/about-us</code>.</li>
+        <li>Run: <code>SELECT locale, slug, canonical_path FROM documents WHERE type = 'page' AND slug IN ('about','about-us');</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>EL saved.</code> with no amber warning. <code>/about</code> → 301 to <code>/about-us</code>; <code>/en/about</code> → 301 to <code>/en/about-us</code>; both new URLs answer 200. SQL: both rows have slug <code>about-us</code>, canonical paths <code>/about-us</code> and <code>/en/about-us</code>.</p>
+      <p class="ref">Ref: <code>src/cms/admin/DocumentForm.tsx</code> (sibling propagation in <code>submit</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-020" data-priority="P3">
+      <h3>Renaming back restores the original address</h3>
+      <ol class="steps">
+        <li>Rename About from <code>about-us</code> back to <code>about</code>, save.</li>
+        <li>curl <code>/about</code> and <code>/about-us</code>; repeat the redirects SQL.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>/about</code> answers 200 (the old rule no longer hides it); <code>/about-us</code> → 301 to <code>/about</code>. Same for the <code>/en/</code> addresses. No redirect loop.</p>
+      <p class="ref">Ref: <code>src/cms/core/seo/slug-change-redirect.ts</code> · <code>src/cms/core/seo/match.ts</code> (<code>redirectWouldLoop</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-021" data-priority="P3">
+      <h3>Renaming a draft writes no redirect</h3>
+      <ol class="steps">
+        <li>Open the draft <code>my-post-again</code>, change its slug to <code>my-post-draft</code>, save.</li>
+        <li>Run: <code>SELECT COUNT(*) FROM seo_redirects WHERE source = '/my-post-again';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Count 0: nobody could reach the old address, so nothing is redirected.</p>
+      <p class="ref">Ref: <code>src/cms/core/seo/slug-change-redirect.ts</code> (<code>applySlugChangeRedirect</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-022" data-priority="P3">
+      <h3>Deleting a renamed page removes its automatic redirects</h3>
+      <ol class="steps">
+        <li>Delete the page now at <code>qa-page-final</code> from the list.</li>
+        <li>Run: <code>SELECT COUNT(*) FROM seo_redirects WHERE target = '/qa-page-final';</code> and curl <code>/qa-page-renamed</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Count 0. <code>/qa-page-renamed</code> no longer redirects; it ends on the not-found page.</p>
+      <p class="ref">Ref: <code>seo_redirects.document_id</code> (ON DELETE CASCADE) · <code>src/cms/db/adapters/mysql/schema/seo.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-status">
+    <h2>Statuses &amp; scheduled publishing</h2>
+    <p class="intro">Each language has its own status: <code>draft</code>, <code>published</code>, <code>scheduled</code> or <code>archived</code>. The “i” next to the Status field explains them. Scheduling needs <code>CMS_CRON_SECRET</code> set in the environment for the scheduler cases. Note your computer's time zone (Greece is UTC+3 in summer time, UTC+2 in winter).</p>
+
+    <article class="tc" id="CON-023" data-priority="P2">
+      <h3>Archived pages leave the site and come back</h3>
+      <ol class="steps">
+        <li>Open <code>nea-arthra</code> (published), set status <code>archived</code>, save. Open <code>/nea-arthra</code> signed out and look at the Pages list.</li>
+        <li>Set it back to <code>published</code>, save, reload the public page.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Archived: the public URL lands on the not-found page; the list chip <code>EL</code> is dashed and crossed out; the language tab shows a hollow ring. Published again: the page is back on the first reload.</p>
+      <p class="ref">Ref: <code>src/cms/core/read/visibility.ts</code> · <code>src/cms/admin/DocumentList.tsx</code> (<code>STATUS_COLORS</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-024" data-priority="P1">
+      <h3>Schedule a page with “Publish at”</h3>
+      <ol class="steps">
+        <li>Create a page titled <code>QA Scheduled</code>, slug <code>qa-scheduled</code>, QA text <code>x</code>.</li>
+        <li>Set status <code>scheduled</code>. In the <strong>Publishing</strong> section, set <strong>Publish at</strong> to today, 5 minutes from now (local time). Click <strong>Create Page</strong>.</li>
+        <li>Open <code>/qa-scheduled</code> signed out; open the Pages list.</li>
+      </ol>
+      <ul class="exp">
+        <li>Choosing <code>scheduled</code> opens the Publishing section and shows <strong>Publish at</strong> (required), whose help text ends with your zone in brackets, e.g. <code>(Europe/Athens)</code>.</li>
+        <li>After saving, the badge reads <code>scheduled</code> and the tab dot is amber; the list chip is amber.</li>
+        <li>The public URL lands on the not-found page until the time has passed.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/DocumentForm.tsx</code> (Publishing section) · <code>src/cms/admin/local-datetime.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-025" data-priority="P2">
+      <h3>“Publish at” is stored in UTC and shown in local time</h3>
+      <ol class="steps">
+        <li>Note the exact local time you entered for QA Scheduled.</li>
+        <li>Run the SQL below.</li>
+        <li>Reload the editor and read the Publish at box.</li>
+      </ol>
+<pre><code>SET time_zone = '+00:00';
+SELECT status, scheduled_for FROM documents WHERE slug = 'qa-scheduled';</code></pre>
+      <p class="exp"><span class="exp-label">Expected:</span> scheduled_for equals the local time you typed minus your UTC offset (for Athens in summer, 3 hours earlier). After reload the box shows exactly the local time you typed, not a shifted one. If the SQL value is off by the offset, note the time zone of the app server (<code>date</code> on the server) in the result.</p>
+      <p class="ref">Ref: <code>src/cms/admin/local-datetime.ts</code> (<code>isoToLocalInput</code>, <code>localInputToIso</code>) · <code>src/app/admin/(shell)/[collection]/[id]/page.tsx</code> (<code>toWireDateTime</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-026" data-priority="P1">
+      <h3>The scheduler publishes a due document</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> QA Scheduled's time has passed. Do <strong>not</strong> open the Pages list or its editor after that time (opening them also publishes it, see the next case).</p>
+      <ol class="steps">
+        <li>Run <code>curl -s -X POST -H "x-cron-secret: &lt;your CMS_CRON_SECRET&gt;" http://localhost:3002/api/cms/cron/content-publish-scheduled</code>.</li>
+        <li>Open <code>/qa-scheduled</code> signed out.</li>
+        <li>Run the SQL below.</li>
+      </ol>
+<pre><code>SET time_zone = '+00:00';
+SELECT status, published_at, scheduled_for FROM documents WHERE slug = 'qa-scheduled';
+SELECT actor_label, action, created_at FROM audit_logs
+WHERE action = 'document.publish_scheduled' ORDER BY id DESC LIMIT 1;</code></pre>
+      <ul class="exp">
+        <li>curl prints <code>{"ok":true,"data":{"status":"ran","result":{"published":1,"failed":0}}}</code>.</li>
+        <li>The public page shows <strong>QA Scheduled</strong>.</li>
+        <li>SQL: status <code>published</code>, published_at equal to scheduled_for; an audit row with actor_label <code>scheduler</code>.</li>
+        <li>Running the curl again prints <code>"published":0</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/api/cms/cron/[job]/route.ts</code> · <code>src/cms/core/documents/publish-scheduled.ts</code> · docs/dev-guides/10-settings-cron-operations.md</p>
+    </article>
+
+    <article class="tc" id="CON-027" data-priority="P2">
+      <h3>Opening the admin list also publishes a due document</h3>
+      <ol class="steps">
+        <li>Schedule another page <code>qa-scheduled-2</code> for 2 minutes ahead. Wait until the time has passed; do not run the cron.</li>
+        <li>Open the Pages list.</li>
+        <li>Open <code>/qa-scheduled-2</code> signed out.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The list shows the row's EL chip green (published), not amber; the public page renders. SQL status is <code>published</code>.</p>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/[collection]/page.tsx</code> (<code>promoteDueScheduled</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-028" data-priority="P2">
+      <h3>“Scheduled” without a date is refused</h3>
+      <ol class="steps">
+        <li>On a new page (slug <code>qa-sched-nodate</code>, QA text <code>x</code>) set status <code>scheduled</code>, leave Publish at empty, click <strong>Create Page</strong>.</li>
+        <li>Save it as draft instead. Then set it to <code>scheduled</code> with no date and click <strong>Save EL</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>As soon as <code>scheduled</code> is chosen, <code>Pick a date and time, or change the status.</code> shows under Publish at.</li>
+        <li>Step 1: nothing is created; red banner <code>Validation failed.</code></li>
+        <li>Step 2: red banner <code>A scheduled document needs a publish date — pick one, or set the status back to draft.</code>; the stored status stays <code>draft</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/routes/collections.ts</code> (<code>SCHEDULE_WITHOUT_DATE</code>, <code>createBodyChecked</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-029" data-priority="P3">
+      <h3>A scheduled time in the past goes live at once</h3>
+      <ol class="steps">
+        <li>On <code>qa-sched-nodate</code> set <code>scheduled</code> with Publish at one hour ago, save.</li>
+        <li>Open <code>/qa-sched-nodate</code> signed out (before opening the list).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The save succeeds and the public page renders immediately (a scheduled document whose time has passed is public). The next visit to the list shows it as published.</p>
+      <p class="ref">Ref: <code>src/cms/core/read/visibility.ts</code> (<code>isDocumentVisible</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-030" data-priority="P3">
+      <h3>Another time zone shows the same instant differently</h3>
+      <ol class="steps">
+        <li>Open QA Scheduled's editor in Chrome. Open DevTools → ⋮ → More tools → <strong>Sensors</strong>, set <strong>Location</strong> to a preset in another zone (e.g. <em>Mountain View</em>, America/Los_Angeles) and reload.</li>
+        <li>Choose <code>scheduled</code> temporarily (do not save) to see Publish at, then read the box and its help text.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The help text names the new zone and the box shows the same instant converted to that zone (10 hours earlier than Athens in summer). Reset Sensors afterwards.</p>
+      <p class="ref">Ref: <code>src/cms/admin/local-datetime.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-031" data-priority="P3">
+      <h3>The scheduler refuses a wrong secret</h3>
+      <ol class="steps">
+        <li>Run the cron curl with <code>x-cron-secret: wrong</code> and add <code>-w '\n%{http_code}\n'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Status <code>401</code>; nothing is published.</p>
+      <p class="ref">Ref: <code>src/cms/core/cron/service.ts</code> (<code>cronRoute</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-fields">
+    <h2>Field types &amp; validation</h2>
+    <p class="intro">Uses the custom fields added in “Add one custom field of every type to Pages”. They appear in the <strong>Custom fields</strong> card and are stored under <code>data.custom</code>. Work on a new draft page <code>QA Fields</code> (slug <code>qa-fields</code>). To see the stored values run <code>SELECT JSON_EXTRACT(data, '$.custom') FROM documents WHERE slug = 'qa-fields' AND locale = 'el';</code>. Text, long text and select (with fixed options) also appear on Brands, Testimonials and Popups; rich text in the next suites.</p>
+
+    <article class="tc" id="CON-032" data-priority="P2">
+      <h3>Text and long text</h3>
+      <ol class="steps">
+        <li>Type <code>Hello &amp; welcome</code> in <strong>QA text</strong> and two lines in <strong>QA long</strong>. Click <strong>Create Page</strong>.</li>
+        <li>Reload the editor and run the SQL from the intro.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Values survive the reload exactly, including the ampersand and the line break (stored as <code>\n</code> in <code>qa_long</code>).</p>
+      <p class="ref">Ref: <code>src/cms/admin/fields/FieldInput.tsx</code> (<code>LeafControl</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-033" data-priority="P2">
+      <h3>A required field blocks publishing, not saving</h3>
+      <ol class="steps">
+        <li>In Settings → Fields → Pages tick <strong>Required</strong> on QA text and click <strong>Save fields</strong>. Reload QA Fields.</li>
+        <li>Clear <strong>QA text</strong>, click <strong>Save EL</strong> (draft).</li>
+        <li>Set status <code>published</code>, click <strong>Save EL</strong>.</li>
+        <li>Fill QA text again and save as published.</li>
+        <li>Untick <strong>Required</strong> on QA text again and click <strong>Save fields</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> After step 1 QA text is marked required. Step 2 saves (<code>EL saved.</code>). Step 3: red <code>Validation failed.</code> and a message ending <code>is required</code> under QA text, and the Custom fields card is open. Record whether the message names the field “QA text” or its key <code>qa_text</code>. Step 4 publishes.</p>
+      <p class="ref">Ref: <code>src/cms/config/zod.ts</code> (<code>applyModifiers</code>) · <code>src/cms/core/fields/definitions.ts</code> (labels are per-language maps)</p>
+    </article>
+
+    <article class="tc" id="CON-034" data-priority="P2">
+      <h3>Number: bounds and whole numbers</h3>
+      <ol class="steps">
+        <li>Type <code>11</code> in <strong>QA number</strong> and click <strong>Save EL</strong>.</li>
+        <li>Type <code>2.5</code> and save.</li>
+        <li>Type <code>7</code> and save; run the SQL.</li>
+        <li>Clear the box and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Steps 1 and 2: the browser's own validation bubble (value must be ≤ 10 / enter a valid value) and no save. Step 3 saves; SQL shows <code>"qa_number": 7</code> as a number, not <code>"7"</code>. Step 4 saves and the key is gone from <code>custom</code>.</p>
+      <p class="ref">Ref: <code>src/cms/admin/fields/FieldInput.tsx</code> (<code>number</code>) · <code>src/cms/config/zod.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-035" data-priority="P2">
+      <h3>Select one and select many</h3>
+      <ol class="steps">
+        <li>In <strong>QA choice</strong> pick <code>blue</code>. In <strong>QA multi</strong> click the <strong>Search options…</strong> box, pick <code>x</code>, then type <code>z</code> and pick it.</li>
+        <li>Save and run the SQL.</li>
+        <li>Set QA choice back to <strong>— select —</strong>, remove chip <code>x</code> with its × (<strong>Remove</strong>), save, run the SQL.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Chosen values show as chips; a chosen value disappears from the dropdown list. First SQL: <code>"qa_choice": "blue"</code>, <code>"qa_multi": ["x", "z"]</code>. Second SQL: no <code>qa_choice</code> key, <code>"qa_multi": ["z"]</code>.</p>
+      <p class="ref">Ref: <code>src/cms/admin/fields/FieldInput.tsx</code> (<code>MultiSelect</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-036" data-priority="P2">
+      <h3>Yes / no</h3>
+      <ol class="steps">
+        <li>Look at <strong>QA flag</strong>, tick it, save, run the SQL. Untick, save, run the SQL.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Unticked it reads <code>Enable</code>; ticked it reads <code>Enabled</code>. SQL shows <code>true</code> then <code>false</code> (JSON booleans).</p>
+      <p class="ref">Ref: <code>src/cms/admin/fields/FieldInput.tsx</code> (<code>boolean</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-037" data-priority="P2">
+      <h3>Date</h3>
+      <ol class="steps">
+        <li>Pick 1 October 2026 in <strong>QA date</strong>, save, run the SQL.</li>
+        <li>Clear the date with the picker's clear button, save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> SQL shows <code>"qa_date": "2026-10-01"</code> (a plain date, no time or zone). After clearing, the key is gone and there is no “invalid date” error. (The only date-and-time input on the base site is “Publish at”, covered above.)</p>
+      <p class="ref">Ref: <code>src/cms/admin/fields/FieldInput.tsx</code> (<code>DateControl</code>) · <code>src/cms/admin/local-datetime.ts</code> (<code>dateFieldFromInput</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-038" data-priority="P2">
+      <h3>Colour: swatch, hex box, bad value</h3>
+      <ol class="steps">
+        <li>Type <code>red</code> in the <strong>QA colour</strong> text box, save.</li>
+        <li>Type <code>#1a2b3c</code>, save. Then use the <strong>Pick colour</strong> swatch to choose any colour and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>Validation failed.</code> and <code>expected a #rrggbb hex colour</code> under QA colour. Step 2: the swatch follows the typed value; both saves succeed and SQL shows a 7-character <code>#rrggbb</code> value.</p>
+      <p class="ref">Ref: <code>src/cms/admin/fields/FieldInput.tsx</code> (<code>ColorControl</code>) · <code>src/cms/config/zod.ts</code> (<code>color</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-039" data-priority="P2">
+      <h3>Image field and the media library</h3>
+      <ol class="steps">
+        <li>Click <strong>Choose image…</strong> under <strong>QA image</strong>. In <strong>Media library</strong> upload the same file as before, then pick a tile.</li>
+        <li>Save, run the SQL, then click <strong>Clear</strong> and save again.</li>
+        <li>Open the picker and press Escape.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Re-uploading an existing file shows a grey notice that it is a duplicate rather than a second copy. Tiles show the file name and <code>Alt: …</code> or <em>No alt text</em>. SQL holds a 36-character id under <code>qa_image</code>; after Clear the key is gone. Escape closes the dialog and returns focus to the button.</p>
+      <p class="ref">Ref: <code>src/cms/admin/fields/MediaPicker.tsx</code> · <code>src/cms/admin/media-upload-notice.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-040" data-priority="P2">
+      <h3>Relation picker</h3>
+      <ol class="steps">
+        <li>Click the <strong>Search page…</strong> box under <strong>QA related</strong>, type <code>about</code>, pick <strong>About</strong>. Type <code>nea</code> and pick <strong>Νέα Άρθρα</strong>.</li>
+        <li>Save, run the SQL and <code>SELECT id, slug FROM documents WHERE slug IN ('about','nea-arthra') AND locale='el';</code></li>
+        <li>Remove the About chip with its × and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Picked documents show as chips and drop out of the suggestions. SQL shows <code>"qa_related": [&lt;about id&gt;, &lt;nea-arthra id&gt;]</code> in the order picked; after removing, only the second id remains.</p>
+      <p class="ref">Ref: <code>src/cms/admin/fields/RelationPicker.tsx</code></p>
+    </article>
+
+    <article class="tc" id="CON-041" data-priority="P2">
+      <h3>Repeater rows: add, reorder, duplicate, remove</h3>
+      <ol class="steps">
+        <li>Click <strong>Add qa rows</strong> three times; fill <code>label</code>/<code>qty</code> as <code>A</code>/1, <code>B</code>/2, <code>C</code>/3.</li>
+        <li>On row C click <strong>Move to top</strong>; on row B click <strong>Duplicate</strong>; on row A click <strong>Remove</strong> and confirm.</li>
+        <li>Save, reload, run the SQL.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Collapsed rows are summarised by their label text; the card header shows the row count. Remove asks <strong>Remove "A"?</strong> with <code>This entry is removed from the list. This cannot be undone.</code> After reload the order is C, B, B; SQL <code>qa_rows</code> is <code>[{"label":"C","qty":3},{"label":"B","qty":2},{"label":"B","qty":2}]</code>.</p>
+      <p class="ref">Ref: <code>src/cms/admin/fields/FieldInput.tsx</code> (repeater block)</p>
+    </article>
+
+    <article class="tc" id="CON-042" data-priority="P3">
+      <h3>Custom field values are shared across languages</h3>
+      <ol class="steps">
+        <li>On QA Fields switch to <strong>EN</strong>, click <strong>Copy from EL</strong>, type title <code>QA Fields EN</code>, click <strong>Create EN</strong>.</li>
+        <li>Back on EL change <strong>QA text</strong> to <code>shared-check</code>, click <strong>Save EL</strong>. Switch to EN.</li>
+        <li>Run: <code>SELECT locale, JSON_EXTRACT(data, '$.custom.qa_text') FROM documents WHERE slug = 'qa-fields';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The EN tab shows <code>shared-check</code> without being saved separately, and both rows return <code>"shared-check"</code>. The EN title is still <code>QA Fields EN</code>.</p>
+      <p class="ref">Ref: <code>src/cms/core/fields/definitions.ts</code> (<code>compileCustomFields</code>, <code>shared: true</code>) · <code>src/cms/admin/DocumentForm.tsx</code></p>
+    </article>
+
+    <article class="tc" id="CON-043" data-priority="P3">
+      <h3>Saving one language never saves another language's unsaved text</h3>
+      <ol class="steps">
+        <li>On QA Fields switch to EN, change the title to <code>EN unsaved</code> and do not save.</li>
+        <li>Switch to EL, change the title slightly, click <strong>Save EL</strong>.</li>
+        <li>Run: <code>SELECT JSON_UNQUOTE(JSON_EXTRACT(data, '$.title')) FROM documents WHERE slug = 'qa-fields' AND locale = 'en';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The EN row still has <code>QA Fields EN</code>; the EN tab still shows its amber unsaved dot. Fail if the SQL shows <code>EN unsaved</code>: the shared-field copy to other languages sent that tab's unsaved content.</p>
+      <p class="ref">Ref: <code>src/cms/admin/DocumentForm.tsx</code> (<code>body.data = { ...states[l].data, ...sharedData }</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-044" data-priority="P3">
+      <h3>Removing a field definition does not break older documents</h3>
+      <ol class="steps">
+        <li>In Settings → Fields → Pages, remove <strong>QA colour</strong> (<strong>Remove field</strong>, confirm <strong>Remove this field?</strong>), click <strong>Save fields</strong>.</li>
+        <li>Open QA Fields (which holds a colour), change the title, <strong>Save EL</strong>; run the custom SQL.</li>
+        <li>Add QA colour back afterwards if later cases need it.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The save succeeds (no “unrecognized key” error) and <code>qa_colour</code> is no longer in the stored JSON.</p>
+      <p class="ref">Ref: <code>src/cms/core/fields/definitions.ts</code> (<code>strict: false</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-i18n">
+    <h2>Translations</h2>
+    <p class="intro">A document is one row per language sharing a translation group. The editor shows one tab per language: a dot for its status (green published, amber scheduled, grey draft, hollow ring archived), “+” when there is no version yet, and a second amber dot for unsaved changes. The slug is shared by all languages.</p>
+
+    <article class="tc" id="CON-045" data-priority="P1">
+      <h3>Add and publish an English version</h3>
+      <ol class="steps">
+        <li>Create and publish a page <code>QA Translate</code>, slug <code>qa-translate</code>, QA text <code>x</code>.</li>
+        <li>Click the <strong>EN</strong> tab.</li>
+        <li>Click <strong>Copy from EL</strong>, change the title to <code>QA Translate EN</code>, set status <code>published</code>, click <strong>Create EN</strong>.</li>
+        <li>Open <code>/en/qa-translate</code> and <code>/qa-translate</code> signed out.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 2: the EN tab has a “+”, the URL gains <code>?locale=en</code>, and an amber note reads <code>No EN version yet — fill it in and save to create it.</code> with a <strong>Copy from EL</strong> button; the save button reads <strong>Create EN</strong>.</li>
+        <li>Step 3: the form fills with the EL content; after saving, <code>EN saved.</code> appears and the EN dot turns green.</li>
+        <li>The English URL shows <strong>QA Translate EN</strong>; the Greek URL still shows <strong>QA Translate</strong>. SQL: two rows, same slug and same <code>translation_group_id</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/DocumentForm.tsx</code> (<code>copyFromDefault</code>) · docs/dev-guides/03-content-model.md §3.5</p>
+    </article>
+
+    <article class="tc" id="CON-046" data-priority="P2">
+      <h3>Each language has its own status</h3>
+      <ol class="steps">
+        <li>On QA Translate's EN tab set status <code>draft</code>, click <strong>Save EN</strong>.</li>
+        <li>Open <code>/en/qa-translate</code> and <code>/qa-translate</code> signed out; look at the list row.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The English URL lands on <code>/en/page-not-found</code> (<strong>Page not found</strong>); the Greek one still renders. The list row shows a green <code>EL</code> chip and a grey <code>EN</code> chip. The status field is labelled <strong>Status — EN</strong> on the EN tab.</p>
+      <p class="ref">Ref: <code>src/cms/admin/DocumentList.tsx</code> · <code>src/lib/i18n/page-not-found.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-047" data-priority="P2">
+      <h3>Tabs keep their own unsaved work, and the tab is in the URL</h3>
+      <ol class="steps">
+        <li>On QA Translate change the EL title (do not save), switch to EN, change the EN title (do not save).</li>
+        <li>Switch back and forth, then click <strong>Save EN</strong> while on EN.</li>
+        <li>Switch to EL. Then reload the page while on the EN tab (accept the leave prompt if EL is still unsaved).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Each tab keeps its own typed text; both tabs show the amber unsaved dot. After Save EN only the EN dot clears and EL still shows <strong>Unsaved</strong> beside the buttons. Switching tabs clears the green saved message. After reload the EN tab is still selected (<code>?locale=en</code>).</p>
+      <p class="ref">Ref: <code>src/cms/admin/DocumentForm.tsx</code> (<code>switchLocale</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-048" data-priority="P3">
+      <h3>No false “changed elsewhere” warning after saving another language</h3>
+      <ol class="steps">
+        <li>On QA Translate change the EL title and do not save.</li>
+        <li>Switch to EN, change the EN title, click <strong>Save EN</strong>. Wait two seconds.</li>
+        <li>Switch to EL and click <strong>Save EL</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 2 shows <code>EN saved.</code> and nothing else. Step 3 saves. Fail (and note the text) if an amber warning starting <code>This document changed elsewhere — a restored version, or another editor.</code> appears after step 2, since nobody else changed the document.</p>
+      <p class="ref">Ref: <code>src/cms/admin/DocumentForm.tsx</code> (<code>serverStamp</code> adoption)</p>
+    </article>
+
+    <article class="tc" id="CON-049" data-priority="P2">
+      <h3>A required translated field needs only the main language</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> <strong>Google reviews &amp; testimonials</strong> ticked in Settings → Modules and saved, so <strong>Testimonials</strong> is in the sidebar.</p>
+      <ol class="steps">
+        <li>Testimonials → <strong>+ New</strong>. <strong>Who said it</strong> <code>QA Customer</code>, slug <code>qa-customer</code>. In <strong>What they said</strong> click the <strong>EN</strong> sub-tab and type <code>Great service</code>; leave the EL sub-tab empty. Status <code>published</code>, click <strong>Create Testimonial</strong>.</li>
+        <li>Click the EL sub-tab, type <code>Εξαιρετική εξυπηρέτηση</code>, clear the EN text, click <strong>Create Testimonial</strong>.</li>
+        <li>Run: <code>SELECT status, JSON_EXTRACT(data, '$.quote') FROM documents WHERE type = 'testimonial' AND slug = 'qa-customer';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>Validation failed.</code> with <code>What they said is required (el)</code> under the field. Step 2 publishes although English is empty. SQL: status <code>published</code>, quote holds the Greek text and no (or an empty) <code>en</code> value.</p>
+      <p class="ref">Ref: <code>src/cms/config/zod.ts</code> (<code>z.partialRecord</code>, default-locale refine) · <code>src/cms/core/content/testimonial.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-050" data-priority="P3">
+      <h3>Adding a language does not break saving existing documents</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> A test build where a developer added a third locale (e.g. <code>de</code>) to <code>locales</code> in <code>src/site.config.ts</code>, deployed on the same database. Otherwise mark N/A.</p>
+      <ol class="steps">
+        <li>Open the <code>qa-customer</code> testimonial and QA Translate. Change one word and save each (EL tab).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both save with <code>EL saved.</code>; no error about the new language missing from <strong>What they said</strong>. A DE tab is offered once DE is ticked for Editing.</p>
+      <p class="ref">Ref: docs/dev-guides/03-content-model.md §9 (“Localized maps are partial”)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-versions">
+    <h2>Version history</h2>
+    <p class="intro">Every save of a language writes a version. The <strong>Version history</strong> panel in the right column lists them newest first, with times in UTC; each language tab has its own history. Use a new page <code>QA History</code> (slug <code>qa-history</code>, QA text <code>x</code>). Versions can be read with:</p>
+<pre><code>SELECT version, JSON_UNQUOTE(JSON_EXTRACT(snapshot, '$.data.title')) AS title,
+       JSON_UNQUOTE(JSON_EXTRACT(snapshot, '$.status')) AS status, created_at
+FROM document_versions WHERE document_id = &lt;id&gt; ORDER BY version;</code></pre>
+
+    <article class="tc" id="CON-051" data-priority="P1">
+      <h3>Each save adds a version</h3>
+      <ol class="steps">
+        <li>Create QA History as draft with title <code>History A</code>.</li>
+        <li>Change the title to <code>History B</code>, set <code>published</code>, save. Change it to <code>History C</code>, save.</li>
+        <li>Look at Version history without reloading; run the SQL from the intro.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The panel shows <code>v3 (current)</code>, <code>v2</code>, <code>v1</code>, each with a <code>YYYY-MM-DD HH:MM UTC</code> time; only v2 and v1 have a <strong>Restore</strong> button. The list updates after each save without a reload. SQL: A/draft, B/published, C/published.</p>
+      <p class="ref">Ref: <code>src/cms/admin/VersionHistory.tsx</code> · <code>src/cms/core/documents/snapshot.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-052" data-priority="P2">
+      <h3>Restore an older version</h3>
+      <ol class="steps">
+        <li>Click <strong>Restore</strong> on v2.</li>
+        <li>Confirm with <strong>Restore</strong>.</li>
+        <li>Open <code>/qa-history</code> signed out; run the SQL.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The dialog is titled <strong>Restore version 2?</strong> with <code>Its content, SEO, status and dates replace what is there now. The current version stays in the list, so you can undo this.</code> The page reloads showing <code>History B</code>; the panel now starts with <code>v4 (current)</code>. The public page shows History B. SQL: v4 = B/published.</p>
+      <p class="ref">Ref: <code>src/cms/core/routes/collections.ts</code> (<code>collectionRestoreRoute</code>) · <code>src/cms/core/documents/service.ts</code> (<code>restoreVersion</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-053" data-priority="P2">
+      <h3>Restoring a draft version takes the page off the site</h3>
+      <ol class="steps">
+        <li>Restore v1 (History A, draft) and confirm.</li>
+        <li>Open <code>/qa-history</code> signed out.</li>
+        <li>Click Save EL once right after the reload, without changing anything.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> After reload the title is <code>History A</code> and the badge <code>draft</code>; the public URL lands on the not-found page. The extra save does not bring back History B (the form shows the restored copy, not a stale one).</p>
+      <p class="ref">Ref: <code>src/cms/admin/VersionHistory.tsx</code> (full reload after restore)</p>
+    </article>
+
+    <article class="tc" id="CON-054" data-priority="P3">
+      <h3>Each language has its own history</h3>
+      <ol class="steps">
+        <li>On QA History create an EN version (Copy from EL, <strong>Create EN</strong>), save it once more.</li>
+        <li>Switch between EL and EN and read Version history.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The EN tab lists only <code>v2 (current)</code> and <code>v1</code>; EL keeps its own longer list.</p>
+      <p class="ref">Ref: <code>src/cms/admin/DocumentForm.tsx</code> (<code>VersionHistory key={active.rowId}</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-055" data-priority="P3">
+      <h3>A writer cannot restore a published version</h3>
+      <ol class="steps">
+        <li>Sign in as <code>qa-writer@example.com</code>, open QA History (EL, now draft) and click <strong>Restore</strong> on v2 (published), confirm.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Red text in the history panel: <code>Your role cannot publish. Save it as a draft and ask someone with publishing rights to take it live.</code> Nothing changes and no new version is written.</p>
+      <p class="ref">Ref: <code>src/cms/core/documents/publish-rights.ts</code> · <code>src/cms/core/routes/collections.ts</code> (<code>versionRestoreState</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-056" data-priority="P3">
+      <h3>Restoring a version from before a slug change</h3>
+      <ol class="steps">
+        <li>Publish QA History (EL and EN). Rename it to <code>qa-history-2</code> and save.</li>
+        <li>On EL restore the version saved just before the rename.</li>
+        <li>curl <code>/qa-history</code> and <code>/qa-history-2</code>; run <code>SELECT locale, slug FROM documents WHERE translation_group_id = (SELECT translation_group_id FROM documents WHERE id = &lt;EL id&gt;);</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> EL is back at <code>/qa-history</code> (200) and <code>/qa-history-2</code> redirects to it. Record the EN slug: the restore only touches the EL row, so EN is expected to stay at <code>qa-history-2</code>. Note whether the editor makes that divergence visible.</p>
+      <p class="ref">Ref: <code>src/cms/core/documents/service.ts</code> (<code>restoreVersion</code>, <code>canonicalPath</code> from snapshot)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-locks">
+    <h2>Edit conflicts &amp; edit locks</h2>
+    <p class="intro">Locks need the relay running as set up in checklist 01 (“Realtime edit-lock relay”): <code>CMS_LOCK_INTERNAL_SECRET</code> set and <code>npm run locks</code> running (on a hosted environment, the relay behind <code>/_ws/locks</code>). Browser A is <code>qa-admin@example.com</code> (name <code>QA Admin</code>); browser B is <code>qa2@example.com</code> (name <code>QA Second</code>). Use QA Translate (EL and EN exist).</p>
+
+    <article class="tc" id="CON-057" data-priority="P2">
+      <h3>Same person, two tabs: the older copy cannot overwrite</h3>
+      <ol class="steps">
+        <li>In browser A open QA Translate in two tabs (tab 1 and tab 2).</li>
+        <li>In tab 1 change the EL title to <code>Tab one</code>, click <strong>Save EL</strong>.</li>
+        <li>In tab 2 (not reloaded) change the EL title to <code>Tab two</code>, click <strong>Save EL</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>The tabs show the quiet amber note <code>You have this open in another tab. Whichever tab you save last wins.</code></li>
+        <li>Tab 2's save is refused with the red banner <code>This document changed in another tab or by another editor while you were working. Reload to see the current version — saving now would overwrite their changes.</code> The stored title stays <code>Tab one</code>.</li>
+        <li>Record that the note's “whichever tab you save last wins” contradicts the refusal.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/documents/service.ts</code> (<code>VERSION_CONFLICT_MESSAGE</code>) · <code>src/cms/admin/locks/EditLockBanner.tsx</code></p>
+    </article>
+
+    <article class="tc" id="CON-058" data-priority="P2">
+      <h3>A second editor sees the lock and a read-only form</h3>
+      <ol class="steps">
+        <li>Browser A opens QA Translate.</li>
+        <li>Browser B opens the same page; tries to type in the title and click Save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Browser B shows an amber box <code>QA Admin is editing this — started just now.</code> and <code>The fields are locked so you cannot overwrite their work. Taking over will lock them out instead.</code> with a <strong>Take over editing</strong> button. B's fields and the Save button are disabled. Browser A shows no banner.</p>
+      <p class="ref">Ref: <code>src/cms/admin/locks/EditLockBanner.tsx</code> · <code>src/cms/admin/locks/use-edit-lock.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-059" data-priority="P2">
+      <h3>Take over editing</h3>
+      <ol class="steps">
+        <li>In browser A type something in the title but do not save.</li>
+        <li>In browser B click <strong>Take over editing</strong>, then <strong>Take over</strong> in the dialog.</li>
+        <li>Look at browser A. Run: <code>SELECT user_id, action, created_at FROM audit_logs WHERE action = 'lock.takeover' ORDER BY id DESC LIMIT 1;</code></li>
+      </ol>
+      <ul class="exp">
+        <li>The dialog is titled <strong>Take over from QA Admin?</strong> and warns that their unsaved text can no longer be saved.</li>
+        <li>B's form becomes editable; B can save.</li>
+        <li>Within a few seconds A shows <code>QA Second is editing this — started just now.</code>, A's fields and Save are disabled, and A sees <strong>Copy my unsaved changes</strong>.</li>
+        <li>SQL: one new <code>lock.takeover</code> row for QA Second.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/locks/policy.ts</code> (<code>takeover</code>) · <code>src/cms/core/locks/service.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-060" data-priority="P3">
+      <h3>Copy unsaved changes after losing the lock</h3>
+      <ol class="steps">
+        <li>In browser A (locked out, with unsaved text) click <strong>Copy my unsaved changes</strong>.</li>
+        <li>Paste into a text editor.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The button changes to <code>Copied</code>. The pasted text is JSON with an <code>"el"</code> and an <code>"en"</code> entry, and contains the unsaved title typed in A.</p>
+      <p class="ref">Ref: <code>src/cms/admin/DocumentForm.tsx</code> (<code>onCopyUnsaved</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-061" data-priority="P3">
+      <h3>One lock covers every language</h3>
+      <ol class="steps">
+        <li>Browser A opens QA Translate on EL (<code>?locale=el</code>). Browser B opens the same document's EN tab (<code>?locale=en</code>, or open the EN row id).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> B sees the lock banner naming QA Admin, although it is on a different language.</p>
+      <p class="ref">Ref: <code>src/cms/core/locks/keys.ts</code> (<code>documentLockKey</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-062" data-priority="P3">
+      <h3>The server refuses a delete while someone else holds the lock</h3>
+      <ol class="steps">
+        <li>Browser B holds the lock on QA Translate (editor open).</li>
+        <li>Browser A opens the Pages list and clicks <strong>Delete</strong> on QA Translate, confirms.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Red text above the table: <code>QA Second is editing this right now, and saving would overwrite their work. Open the editor and use "Take over" if you need it.</code> Both rows still exist.</p>
+      <p class="ref">Ref: <code>src/cms/core/locks/service.ts</code> (<code>assertNotLockedByOther</code>) · <code>src/cms/core/routes/collections.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-063" data-priority="P3">
+      <h3>A read-only user does not take the lock</h3>
+      <ol class="steps">
+        <li>Close all editors. Browser B signs in as <code>qa-reader@example.com</code> and opens QA Translate.</li>
+        <li>Browser A opens the same page. Run: <code>SELECT user_name FROM editing_locks WHERE resource_type = 'document';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Browser A has no lock banner and can save; the SQL lists only QA Admin.</p>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/[collection]/[id]/page.tsx</code> (<code>canWrite</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-064" data-priority="P3">
+      <h3>A conflict on the other language is a warning, not a failure</h3>
+      <ol class="steps">
+        <li>Browser A: open QA Translate in tab 1 on EL (one person may edit in two tabs).</li>
+        <li>Tab 2: open the same document, EN tab, change the EN title, click <strong>Save EN</strong>.</li>
+        <li>Tab 1 (not reloaded): change the slug to <code>qa-translate-2</code>, click <strong>Save EL</strong>.</li>
+        <li>Reload tab 1, set the slug back to <code>qa-translate</code>, click <strong>Save EL</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 3: tab 1 shows the amber message <code>EL was saved. EN changed in another tab or by another editor, so the shared fields were NOT copied there — copying them would have overwritten that work. Reload to pick up their version, then save again.</code> EL is at <code>qa-translate-2</code> while EN keeps <code>qa-translate</code> and tab 2's title. Step 4: saves without a warning and both languages are back at <code>qa-translate</code>.</p>
+      <p class="ref">Ref: <code>src/cms/admin/DocumentForm.tsx</code> (sibling propagation <code>catch</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-editor">
+    <h2>Preview &amp; unsaved changes</h2>
+
+    <article class="tc" id="CON-065" data-priority="P2">
+      <h3>Preview a draft</h3>
+      <ol class="steps">
+        <li>Open the draft page <code>my-post-draft</code>. Click <strong>Preview draft (EL) ↗</strong> at the top right.</li>
+        <li>In the new tab look at the page and the admin bar; then click the bar's exit link.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> A new tab opens <code>/my-post-draft</code> via <code>/api/cms/preview?redirect=…</code> and shows the draft content. The admin bar shows <strong>Προεπισκόπηση</strong> and <strong>Έξοδος</strong> (or <strong>Preview</strong> / <strong>Exit preview</strong> for an English-language admin user). Exit reloads the same address, which now lands on the not-found page.</p>
+      <p class="ref">Ref: <code>src/app/api/cms/preview/route.ts</code> · <code>src/lib/cms/resolve-doc.ts</code> · <code>src/components/admin-bar/AdminBar.tsx</code></p>
+    </article>
+
+    <article class="tc" id="CON-066" data-priority="P3">
+      <h3>Preview follows the language tab, and is absent where there is no page</h3>
+      <ol class="steps">
+        <li>On QA Translate switch to the EN tab and read the preview button; click it.</li>
+        <li>Open a brand's editor and a new unsaved page (<strong>+ New</strong>).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> On EN the button reads <strong>Preview draft (EN) ↗</strong> and opens the <code>/en/…</code> address. Brands and unsaved pages show no preview button.</p>
+      <p class="ref">Ref: <code>src/cms/core/documents/preview-target.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-067" data-priority="P3">
+      <h3>Preview needs sign-in and stays on this site</h3>
+      <ol class="steps">
+        <li>In a signed-out private window open <code>/api/cms/preview?redirect=/my-post-draft</code>.</li>
+        <li>Signed in, open <code>/api/cms/preview?redirect=//evil.example</code>, then exit preview.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1 answers 401 (a JSON error) and never shows the draft. Step 2 lands on this site's home page, never on evil.example.</p>
+      <p class="ref">Ref: <code>src/app/api/cms/preview/route.ts</code> · <code>src/cms/core/paths.ts</code> (<code>safeRedirectPath</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-068" data-priority="P2">
+      <h3>Unsaved-changes guard</h3>
+      <ol class="steps">
+        <li>Open QA Translate, change the title. Click <strong>Pages</strong> in the sidebar; choose Cancel in the browser dialog.</li>
+        <li>Reload the browser tab; cancel the browser's leave dialog.</li>
+        <li>Click the form's <strong>Cancel</strong> button; choose Discard.</li>
+        <li>Open the page again, change nothing, click Cancel.</li>
+      </ol>
+      <ul class="exp">
+        <li>After the change <strong>Unsaved</strong> shows next to the buttons.</li>
+        <li>Step 1: the browser asks <code>You have unsaved changes. Leave without saving?</code>; cancelling keeps you on the editor with the text intact.</li>
+        <li>Step 2: the browser's own “leave site?” dialog appears.</li>
+        <li>Step 3: an in-page dialog <strong>Discard unsaved changes?</strong> with <code>Everything you have changed since the last save will be lost.</code> and a <strong>Discard</strong> button; Discard returns to the list and the change is not stored.</li>
+        <li>Step 4: goes straight to the list with no dialog.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/use-unsaved-changes.ts</code> · <code>src/cms/admin/DocumentForm.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-list">
+    <h2>List screen: search, filter, paging</h2>
+    <p class="intro">The list shows one row per document with a chip per language, 25 rows per page. Search, status and page are kept in the address bar as <code>?q=</code>, <code>&amp;status=</code>, <code>&amp;page=</code>.</p>
+
+    <article class="tc" id="CON-069" data-priority="P2">
+      <h3>Create 210 published pages for the list and sitemap cases</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Test database only. Remove them with the clean-up case at the end.</p>
+      <ol class="steps">
+        <li>Run the SQL below.</li>
+        <li>In the admin open any page and click Save EL once (the cached page lists are refreshed only by a write through the CMS).</li>
+        <li>Open the Pages list.</li>
+      </ol>
+<pre><code>INSERT INTO documents (type, slug, locale, status, published_at, translation_group_id, canonical_path, data)
+SELECT 'page', CONCAT('qa-bulk-', n.i), 'el', 'published', NOW() - INTERVAL n.i MINUTE,
+       UUID(), CONCAT('/qa-bulk-', n.i), JSON_OBJECT('title', CONCAT('QA bulk ', n.i))
+FROM (SELECT a.d + 10 * b.d + 100 * c.d + 1 AS i
+      FROM (SELECT 0 d UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+            UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) a
+      CROSS JOIN (SELECT 0 d UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+            UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) b
+      CROSS JOIN (SELECT 0 d UNION ALL SELECT 1 UNION ALL SELECT 2) c) n
+WHERE n.i &lt;= 210;</code></pre>
+      <p class="exp"><span class="exp-label">Expected:</span> 210 rows inserted. The list total below the table rises by 210 and shows <code>Page 1 of N</code> with N ≥ 9. <code>/qa-bulk-7</code> renders <strong>QA bulk 7</strong>.</p>
+      <p class="ref">Ref: <code>src/cms/db/adapters/mysql/schema/documents.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-070" data-priority="P1">
+      <h3>Search, status filter and page survive a reload</h3>
+      <ol class="steps">
+        <li>Type <code>qa-bulk-1</code> in <strong>Search slug or title…</strong>.</li>
+        <li>Click <strong>Next</strong>.</li>
+        <li>Reload the browser tab. Then copy the address into a new tab.</li>
+        <li>Choose <code>draft</code> in <strong>Filter by status</strong>.</li>
+        <li>Press the browser Back button once.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: after a short pause the list shows <code>111 total</code> and <code>Page 1 of 5</code>; the address becomes <code>/admin/page?q=qa-bulk-1</code>.</li>
+        <li>Step 2: <code>Page 2 of 5</code>; address <code>?q=qa-bulk-1&amp;page=2</code>.</li>
+        <li>Step 3: both the reloaded and the new tab show the same search text, page 2 and the same rows.</li>
+        <li>Step 4: <code>No documents match.</code>, page resets to 1, address <code>?q=qa-bulk-1&amp;status=draft</code>.</li>
+        <li>Step 5: Back leaves the list (filter changes add no history entries).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/DocumentList.tsx</code> · <code>src/cms/admin/document-list-query.ts</code> · <code>src/app/admin/(shell)/[collection]/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="CON-071" data-priority="P2">
+      <h3>Search matches titles; status filter matches any language</h3>
+      <ol class="steps">
+        <li>Clear the filters. Search <code>Άρθρα</code> (a word only in the title, not in the slug); then <code>QA Translate EN</code>.</li>
+        <li>Clear search; choose status <code>draft</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The box says “Search slug or title…”, so <code>Άρθρα</code> should find the <code>nea-arthra</code> page and <code>QA Translate EN</code> should find QA Translate. Fail and note it if either returns <code>No documents match.</code> <code>draft</code> lists QA Translate (EN is draft, EL published) with both chips shown, plus the other drafts; the “i” next to the filter says <code>Shows documents where at least one language has this status. All their languages stay listed.</code></p>
+      <p class="ref">Ref: <code>src/cms/core/documents/service.ts</code> (<code>listDocumentGroups</code>: the title is searched only when the collection declares <code>titlePath</code>, which Pages does not) · <code>src/site.config.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-072" data-priority="P3">
+      <h3>A mangled list address still opens</h3>
+      <ol class="steps">
+        <li>Open <code>/admin/page?page=abc&amp;status=bogus</code> and <code>/admin/page?page=999</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The first shows page 1 with <strong>All statuses</strong>. The second shows no error (an empty page or the last page); Prev and Next remain usable.</p>
+      <p class="ref">Ref: <code>src/cms/admin/document-list-query.ts</code> (<code>parseDocumentListQuery</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-perms">
+    <h2>Content permissions</h2>
+    <p class="intro">Uses the accounts from “Create a writer and a reader account”. <strong>Edit content</strong> lets a user write; <strong>Publish content</strong> is needed to put a document live, take it down, or delete it while any language is published or scheduled.</p>
+
+    <article class="tc" id="CON-073" data-priority="P2">
+      <h3>A writer can draft but not publish</h3>
+      <ol class="steps">
+        <li>Sign in as <code>qa-writer@example.com</code>. Pages → <strong>+ New</strong>. Open the Status dropdown.</li>
+        <li>Create a page <code>QA Writer Draft</code> (slug <code>qa-writer-draft</code>, QA text <code>x</code>) as draft.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>published</code> and <code>scheduled</code> are greyed out; under the dropdown: <code>Your role can write and edit, but not publish. Someone with publishing rights takes it live.</code> The <strong>Published date</strong> box is disabled. The draft is created.</p>
+      <p class="ref">Ref: <code>src/cms/admin/status-options.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-074" data-priority="P2">
+      <h3>A writer can fix text on a live page but not take it down</h3>
+      <ol class="steps">
+        <li>As the writer open QA Translate (EL published). Open the Status dropdown.</li>
+        <li>Change a word in the EL title, click <strong>Save EL</strong>; reload <code>/qa-translate</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>draft</code>, <code>scheduled</code> and <code>archived</code> are greyed out; the hint reads <code>Your role can write and edit, but not publish. This document is live, so only someone with publishing rights can archive it or turn it back into a draft. Your edits still save.</code> The save succeeds, the page stays published and the public page shows the new title.</p>
+      <p class="ref">Ref: <code>src/cms/admin/DocumentForm.tsx</code> (<code>withholdPublishing</code>) · <code>src/cms/core/documents/publish-rights.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-075" data-priority="P2">
+      <h3>Delete is offered only to those allowed to delete</h3>
+      <ol class="steps">
+        <li>As superadmin, look at the Pages list: which rows have <strong>Delete</strong>.</li>
+        <li>As the writer, look at the same list.</li>
+        <li>As the reader, look at the same list.</li>
+      </ol>
+      <ul class="exp">
+        <li>Superadmin: every row has Delete.</li>
+        <li>Writer: Delete only on rows whose languages are all draft or archived (e.g. <code>qa-writer-draft</code>, <code>my-post-draft</code>); none on QA Translate (EL published) or any fully published page.</li>
+        <li>Reader: no Delete on any row.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/document-list-query.ts</code> (<code>canDeleteDocumentGroup</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-076" data-priority="P3">
+      <h3>A writer can delete a draft</h3>
+      <ol class="steps">
+        <li>As the writer delete <code>qa-writer-draft</code> from the list.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The row is removed without error.</p>
+      <p class="ref">Ref: <code>src/cms/core/routes/collections.ts</code> (<code>collectionDeleteRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-077" data-priority="P3">
+      <h3>A reader cannot create or save</h3>
+      <ol class="steps">
+        <li>As the reader click <strong>+ New</strong> on the Pages list.</li>
+        <li>Open QA Translate, change the title, click <strong>Save EL</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1 lands on <strong>403 — Forbidden</strong> (<code>You don’t have permission to view this page.</code>). Step 2 is refused (red banner, currently the bare word <code>forbidden</code>); nothing is stored. Record whether the + New button and an enabled Save should be shown to a reader at all.</p>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/[collection]/page.tsx</code> (+ New always rendered) · <code>src/cms/modules/auth/guards.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-collections">
+    <h2>Brands, Testimonials, Popups &amp; switched-off collections</h2>
+
+    <article class="tc" id="CON-078" data-priority="P2">
+      <h3>Brands: create, publish, edit, delete</h3>
+      <ol class="steps">
+        <li>Open <strong>Brands</strong> → <strong>+ New</strong>. Set status <code>published</code> with <strong>Brand name</strong> empty, slug <code>qa-brand-1</code>, click <strong>Create Brand</strong>.</li>
+        <li>Enter Brand name <code>QA Brand 1</code>, pick a <strong>Logo</strong>, <strong>Website</strong> <code>https://example.com</code>, save.</li>
+        <li>Rename it to <code>QA Brand 1b</code>, save; then delete it from the list.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>Brand name is required</code>. The form has only Brand name, Logo, Website, the Document and Publishing sections: no SEO panel and no preview button. Each step then succeeds and the list reflects it.</p>
+      <p class="ref">Ref: <code>src/cms/core/content/brand.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-079" data-priority="P2">
+      <h3>Testimonials: fields and stars</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Google reviews &amp; testimonials module on.</p>
+      <ol class="steps">
+        <li>Open the <code>qa-customer</code> testimonial. Set <strong>Role or company</strong> <code>Owner, Blue Café</code>, <strong>Stars</strong> <code>5</code>, pick a <strong>Photo</strong>, save.</li>
+        <li>Run: <code>SELECT JSON_EXTRACT(data, '$.rating'), JSON_EXTRACT(data, '$.role') FROM documents WHERE slug = 'qa-customer' AND type = 'testimonial';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The save succeeds; SQL shows <code>"5"</code> and <code>"Owner, Blue Café"</code>. <strong>What they said</strong> has EL/EN sub-tabs that start on the document's language tab. Note if the Stars dropdown shows a blank option besides <strong>— select —</strong>.</p>
+      <p class="ref">Ref: <code>src/cms/core/content/testimonial.ts</code> · <code>src/cms/admin/fields/FieldInput.tsx</code> (<code>LocalizedField</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-080" data-priority="P3">
+      <h3>Popups: sections and a basic save</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> <strong>Popups</strong> ticked in Settings → Modules. Popup behaviour on the site is checklist 07.</p>
+      <ol class="steps">
+        <li>Popups → <strong>+ New</strong>. Look at the cards.</li>
+        <li>Fill <strong>Title</strong> (EL) <code>QA Popup</code>, slug <code>qa-popup</code>, open <strong>Design</strong> and type <code>blue</code> in <strong>Background colour</strong>; save as draft. Fix it to <code>#0000ff</code> and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Cards <strong>Content</strong>, <strong>Where</strong>, <strong>When</strong> open and <strong>Design</strong> collapsed. The first save fails with <code>expected a #rrggbb hex colour</code> and the Design card opens by itself to show it; the second succeeds.</p>
+      <p class="ref">Ref: <code>src/cms/modules/popups/collection.ts</code> · <code>src/cms/admin/DocumentForm.tsx</code> (<code>sectionHasMessage</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-081" data-priority="P2">
+      <h3>Collections of a switched-off module are unreachable</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Untick <strong>Google reviews &amp; testimonials</strong> and <strong>Popups</strong> (and leave Commerce and Booking off), save settings.</p>
+      <ol class="steps">
+        <li>Look at the sidebar.</li>
+        <li>In the signed-in browser open <code>/api/cms/testimonial</code>, <code>/api/cms/popup</code>, <code>/api/cms/category</code>.</li>
+        <li>Open <code>/admin/testimonial</code> and <code>/admin/popup/new</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> No <strong>Testimonials</strong> or <strong>Popups</strong> in the sidebar. Each API answers 404 with <code>Unknown collection "…"</code>. The admin URLs should show “Page not found”; if a list or form renders instead, mark Fail (same gap as SET-036 in checklist 01).</p>
+      <p class="ref">Ref: <code>src/cms/core/routes/collections.ts</code> (<code>assertCollection</code>) · <code>src/app/admin/(shell)/[collection]/page.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-richtext">
+    <h2>Rich text &amp; shortcodes</h2>
+    <p class="intro">Work in the <strong>Content</strong> box of a published page <code>QA Rich</code> (slug <code>qa-rich</code>, QA text <code>x</code>) and check <code>/qa-rich</code> signed out after each save; use the browser's “Inspect” to read the HTML. A shortcode only works as a paragraph of its own. <strong>+ Block</strong> in the toolbar inserts one.</p>
+
+    <article class="tc" id="CON-082" data-priority="P1">
+      <h3>Toolbar formatting shows on the site</h3>
+      <ol class="steps">
+        <li>Type a paragraph; make one word bold with <strong>B</strong> and one italic with <strong>i</strong>.</li>
+        <li>Add a line formatted <strong>H2</strong>, a line <strong>H3</strong>, a <strong>• List</strong> with two items, a <strong>1. List</strong> with two items, and a <strong>❝</strong> quote.</li>
+        <li>Select a word, click <strong>Link</strong>, enter <code>https://example.com</code>. Link another word to <code>/about</code>.</li>
+        <li>Save and open <code>/qa-rich</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Each toolbar button shows as pressed while the cursor is in formatted text. The public page shows the same formatting: <code>&lt;strong&gt;</code>, <code>&lt;em&gt;</code>, <code>&lt;h2&gt;</code>, <code>&lt;h3&gt;</code>, <code>&lt;ul&gt;</code>, <code>&lt;ol&gt;</code>, <code>&lt;blockquote&gt;</code>. The example.com link opens in a new tab (<code>target="_blank"</code>, <code>rel="noopener noreferrer"</code>); the <code>/about</code> link opens in the same tab.</p>
+      <p class="ref">Ref: <code>src/cms/admin/fields/RichTextEditor.tsx</code> (<code>RICH_TEXT_TOOLS</code>) · <code>src/components/cms/RichText.tsx</code></p>
+    </article>
+
+    <article class="tc" id="CON-083" data-priority="P3">
+      <h3>A javascript: link is neutralised</h3>
+      <ol class="steps">
+        <li>Select a word, click <strong>Link</strong>, enter <code>javascript:alert(1)</code>. Save and open the public page; click the word.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Either the editor refuses the link, or the public link's <code>href</code> is <code>#</code>. No alert ever appears.</p>
+      <p class="ref">Ref: <code>src/components/ui/Button.tsx</code> (<code>safeHref</code>) · <code>src/components/cms/RichText.tsx</code></p>
+    </article>
+
+    <article class="tc" id="CON-084" data-priority="P2">
+      <h3>The + Block list and switched-off modules</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Google reviews &amp; testimonials and Popups off.</p>
+      <ol class="steps">
+        <li>Click <strong>+ Block</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> A panel <strong>Insert a block</strong> lists Google reviews, Testimonials, Form, Popup (inline), Brands, Countdown and Script snippet, each with a one-line description. Google reviews and Testimonials are greyed out with <code>Switch on the “Google reviews &amp; testimonials” module in Settings → Modules to use this.</code>; Popup (inline) with the same sentence naming <code>Popups</code>. <strong>Cancel</strong> closes the panel.</p>
+      <p class="ref">Ref: <code>src/cms/admin/fields/InsertShortcodeDialog.tsx</code> · <code>src/cms/core/shortcodes/all.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-085" data-priority="P2">
+      <h3>Insert and render a countdown</h3>
+      <ol class="steps">
+        <li>+ Block → <strong>Countdown</strong>. Enter <strong>To</strong> <code>2030-01-01T12:00</code>, <strong>Label</strong> <code>QA countdown</code>, leave <strong>Expired</strong> empty.</li>
+        <li>Read the grey text preview, click <strong>Insert</strong>, save, open the public page.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The preview reads exactly <code>[countdown to="2030-01-01T12:00" label="QA countdown"]</code> and is inserted as its own paragraph. The public page shows <code>QA countdown</code> above a clock that counts down each second; the shortcode text itself is not visible.</p>
+      <p class="ref">Ref: <code>src/cms/core/shortcodes/parse.ts</code> (<code>serializeShortcode</code>) · <code>src/components/shortcodes/Countdown.tsx</code></p>
+    </article>
+
+    <article class="tc" id="CON-086" data-priority="P2">
+      <h3>Brands block shows published brand logos</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Four published Greek brands <code>Brand 1</code>–<code>Brand 4</code>, two with a logo and one with Website <code>https://example.com</code>.</p>
+      <ol class="steps">
+        <li>+ Block → <strong>Brands</strong>, keep defaults, <strong>Insert</strong>, save; open the public page and <code>/en/qa-rich</code> (after creating an EN version by Copy from EL).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Inserted text is <code>[brands layout="row" limit="12"]</code>. Four brands show in a row: logos where set (alt text = brand name), the name as text otherwise; the one with a website links to it in a new tab. The English page shows the same Greek brand entries (the block reads Greek brand rows only; record if that is unexpected).</p>
+      <p class="ref">Ref: <code>src/components/shortcodes/Brands.tsx</code></p>
+    </article>
+
+    <article class="tc" id="CON-087" data-priority="P2">
+      <h3>A listing block returns the requested number even with unpublished newer items</h3>
+      <ol class="steps">
+        <li>Create and publish <code>Brand 5</code> and <code>Brand 6</code> (so they are the newest), then set both to <code>archived</code> and create <code>Brand 7</code> as draft.</li>
+        <li>Change the page's shortcode to <code>[brands limit="3"]</code>, save, open the public page.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Exactly three brands show, all from Brand 1–4 (the three most recently published). Brands 5, 6 and 7 never show, and there are not fewer than three.</p>
+      <p class="ref">Ref: <code>src/cms/core/read/documents.ts</code> (<code>listPublishedDocuments</code>, <code>visibleWhere</code> before the limit)</p>
+    </article>
+
+    <article class="tc" id="CON-088" data-priority="P3">
+      <h3>Shortcodes inside prose and escaped shortcodes stay text</h3>
+      <ol class="steps">
+        <li>Add paragraphs <code>See [brands] here</code> and <code>[[brands]]</code>. Save, open the public page.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The first shows literally as <code>See [brands] here</code>; the second shows as <code>[brands]</code>. Neither renders logos.</p>
+      <p class="ref">Ref: <code>src/components/cms/RichText.tsx</code> (<code>unescapeShortcode</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-089" data-priority="P3">
+      <h3>Invalid, unknown and switched-off shortcodes render nothing</h3>
+      <ol class="steps">
+        <li>Add separate paragraphs <code>[countdown to="soon"]</code>, <code>[nosuch]</code> and <code>[testimonials]</code> (module off). Save, open the public page.</li>
+        <li>Switch Google reviews &amp; testimonials on, reload the public page.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: none of the three shows anything (no raw text, no error, rest of the page intact). Step 2: the testimonials block now shows the published <code>qa-customer</code> quote.</p>
+      <p class="ref">Ref: <code>src/components/cms/Shortcode.tsx</code> · <code>src/cms/core/shortcodes/registry.ts</code> (<code>resolveShortcode</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-090" data-priority="P3">
+      <h3>Known gap: [form] and [popup] render nothing</h3>
+      <ol class="steps">
+        <li>With Popups on, insert <strong>Form</strong> (id <code>contact</code>) and <strong>Popup (inline)</strong> (id <code>qa-popup</code>) through + Block. Save, open the public page.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both are offered in the editor but nothing appears on the public page (they have no site component yet). Pass if nothing renders and the page is otherwise intact; report if either now renders something, so this checklist can be updated.</p>
+      <p class="ref">Ref: <code>src/shortcodes/index.tsx</code> (<code>SHORTCODE_COMPONENTS</code>) · docs/dev-guides/03-content-model.md §9</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-import">
+    <h2>Markdown import</h2>
+
+    <article class="tc" id="CON-091" data-priority="P2">
+      <h3>Import is not offered: no collection has a markdown body</h3>
+      <ol class="steps">
+        <li>Open the Pages and Brands lists and a page editor; look for an <strong>Import .md</strong> button.</li>
+        <li>Signed in, open <code>/api/cms/page/import</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> No Import .md button anywhere (import needs exactly one markdown body field, which no base collection has; no markdown body editor is shown either). The URL answers 400 with <code>"page" has no markdown body, so there is nothing to import a .md file into.</code></p>
+      <p class="ref">Ref: <code>src/cms/core/routes/import.ts</code> · <code>src/cms/core/import/</code> (<code>mdxBodyField</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-092" data-priority="P3">
+      <h3>The ?import=1 link on a collection without a markdown body</h3>
+      <ol class="steps">
+        <li>Open <code>/admin/page/new?import=1</code>.</li>
+        <li>If an <strong>Import a .md file</strong> panel opens, choose any small <code>.md</code> file in it.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Ideally no import panel opens. If it does, choosing a file shows the 400 message from the previous case and the form stays empty; record that the panel is reachable by URL.</p>
+      <p class="ref">Ref: <code>src/cms/admin/DocumentForm.tsx</code> (<code>importOpen</code> not tied to <code>canImport</code>) · <code>src/cms/admin/ImportMarkdownDialog.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-public">
+    <h2>Public site: cache refresh &amp; sitemap</h2>
+
+    <article class="tc" id="CON-093" data-priority="P2">
+      <h3>Unpublishing and deleting take effect immediately</h3>
+      <ol class="steps">
+        <li>Open <code>/qa-rich</code> signed out. In the admin set it to <code>draft</code>, save; reload the public page.</li>
+        <li>Publish it again, reload. Then delete it from the list, reload.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Draft: the first reload lands on the not-found page. Published: back on the first reload. Deleted: not-found on the first reload.</p>
+      <p class="ref">Ref: <code>src/cms/core/read/revalidate.ts</code> · <code>src/cms/core/cache.ts</code></p>
+    </article>
+
+    <article class="tc" id="CON-094" data-priority="P2">
+      <h3>The home page reads the “home” page</h3>
+      <ol class="steps">
+        <li>Edit the seeded <strong>Home</strong> page (slug <code>home</code>, published): change the title and body text, save.</li>
+        <li>Open <code>/</code> and <code>/en</code> signed out. Then set Home's EL version to draft and reload <code>/</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The Greek home hero shows the new title and body on the first reload; English is unchanged. With EL as draft, the Greek hero falls back to the site name (and tagline, if set). Re-publish Home afterwards.</p>
+      <p class="ref">Ref: <code>src/components/site/HomeSections.tsx</code> (<code>HomeHero</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-095" data-priority="P3">
+      <h3>A brand change reaches pages that show brands</h3>
+      <ol class="steps">
+        <li>Add a paragraph <code>[brands]</code> to the page QA Reuse (<code>/qa-page-one</code>), save, and keep <code>/qa-page-one</code> open signed out.</li>
+        <li>Rename <code>Brand 4</code> to <code>Brand 4 renamed</code> and clear its logo (if any); save.</li>
+        <li>Reload the public page.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The block shows <code>Brand 4 renamed</code> as text on the first reload.</p>
+      <p class="ref">Ref: <code>src/cms/core/read/tags.ts</code> (<code>cms:type:{type}</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-096" data-priority="P1">
+      <h3>The sitemap lists every published page, beyond 200</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> The 210 bulk pages exist.</p>
+      <ol class="steps">
+        <li>Run <code>curl -s http://localhost:3002/sitemap.xml | grep -o '&lt;loc&gt;[^&lt;]*/qa-bulk-[0-9]*&lt;/loc&gt;' | grep -vc '/en/'</code>.</li>
+        <li>Run the same with <code>grep -c '/en/'</code> at the end.</li>
+        <li>Open <code>/sitemap.xml</code> in the browser and search for <code>qa-bulk-210</code>, <code>nea-arthra</code>, <code>my-post-draft</code>, <code>/home</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1 prints <code>210</code>. <code>qa-bulk-210</code> and <code>nea-arthra</code> are listed with a <code>lastmod</code>; the draft <code>my-post-draft</code> and <code>/home</code> are not. Record the step 2 count: the bulk pages have no English version, so a non-zero count means the sitemap lists English addresses that answer not-found.</p>
+      <p class="ref">Ref: <code>src/app/sitemap.ts</code> (<code>listAllPublishedDocuments</code>, <code>PAGE_SLUGS_NOT_LISTED</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-097" data-priority="P3">
+      <h3>Clean up the bulk pages</h3>
+      <ol class="steps">
+        <li>Run <code>DELETE FROM documents WHERE type = 'page' AND slug LIKE 'qa-bulk-%';</code></li>
+        <li>Save any page in the admin once; reload the Pages list and the sitemap.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> 210 rows deleted; the list total drops by 210; the sitemap has no <code>qa-bulk-</code> entries.</p>
+      <p class="ref">Ref: <code>src/cms/core/read/revalidate.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-editorial">
+    <h2>Generated editorial collections (sites with a blog, FAQ or case studies)</h2>
+    <p class="intro">Articles, Answers, Case studies, their categories and Authors are not in the CMS base; the new-site skill adds them to generated sites. On the base, mark these cases N/A. On a generated site, <code>Articles</code> appears in the sidebar and the blog is at <code>/blog</code>.</p>
+
+    <article class="tc" id="CON-098" data-priority="P3">
+      <h3>Blog listing: 12 per page, drafts hidden, search</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> 13 or more published articles and 2 drafts in EL.</p>
+      <ol class="steps">
+        <li>Open <code>/blog</code>, then <code>/blog?page=2</code> and <code>/blog?page=99</code>.</li>
+        <li>Search for a word from one title with the listing's search box.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Page 1 shows 12 articles, page 2 the rest; <code>page=99</code> shows the last page. No draft appears. Search matches regardless of accents and case.</p>
+      <p class="ref">Ref: <code>.claude/skills/new-site/templates/content/index-page.tsx.tpl</code> · <code>src/lib/site/content-query.ts</code> (<code>CONTENT_PAGE_SIZE</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-099" data-priority="P3">
+      <h3>Home “latest” block shows three items even with newer unpublished ones</h3>
+      <ol class="steps">
+        <li>Publish two new articles, then set them back to draft (they keep their publish date). Open <code>/</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The latest-content block still shows three published articles; neither draft appears.</p>
+      <p class="ref">Ref: <code>src/components/site/HomeSections.tsx</code> (<code>LatestContent</code>)</p>
+    </article>
+
+    <article class="tc" id="CON-100" data-priority="P3">
+      <h3>Author profile page</h3>
+      <ol class="steps">
+        <li>Create and publish an author, pick it on a published article, open the article and follow the author link.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The author page is at <code>/authors/&lt;slug&gt;</code>, lists that author's published articles only, and is included in <code>/sitemap.xml</code>. An unpublished author's address lands on the not-found page.</p>
+      <p class="ref">Ref: <code>src/lib/site/authors.ts</code> · <code>.claude/skills/new-site/templates/content/author-page.tsx.tpl</code> · <code>src/app/sitemap.ts</code></p>
+    </article>
+  </section>
+
+</main>
+<footer class="page">Checklist 03 of 12. Results are saved in this browser only; use Export before clearing browser data. Afterwards restore module switches, re-publish Home and About, remove the custom fields on Pages if other checklists expect none, and delete the QA pages, brands and testimonial.</footer>
+</body>
+</html>

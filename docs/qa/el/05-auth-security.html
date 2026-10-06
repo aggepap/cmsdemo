@@ -1,0 +1,1299 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Σύνδεση, χρήστες, ρόλοι &amp; ασφάλεια</title>
+<link rel="stylesheet" href="../qa.css">
+<script src="../qa.js" defer></script>
+</head>
+<body>
+<nav class="crumbs"><a href="index.html">Χειροκίνητος έλεγχος CMS</a></nav>
+<header class="page">
+  <h1>05 · Σύνδεση, χρήστες, ρόλοι &amp; ασφάλεια</h1>
+  <p class="scope">Η σύνδεση στο διαχειριστικό και οι περιορισμοί της, το cookie της συνεδρίας και η λήξη του, ο έλεγχος ταυτότητας δύο παραγόντων (εφαρμογή ελέγχου ταυτότητας, κωδικοί ανάκτησης, η ρύθμιση “Require two-factor authentication” και το PIN ανάκτησης), οι οθόνες Users και Roles με τον κανόνα ότι κανείς δεν μπορεί να εκχωρήσει ή να αλλάξει περισσότερα από όσα κατέχει, το δικαίωμα Access σε οθόνες και API, τα κλειδιά API του Product Manager και τα υπογεγραμμένα αιτήματα, το αρχείο ελέγχου (audit log), ο έλεγχος αιτημάτων από άλλη προέλευση (cross-origin), τα δημόσια όρια αιτημάτων, η κρυπτογράφηση των αποθηκευμένων μυστικών κλειδιών (secrets), τα seeds των ρόλων και τα γνωστά κενά. Η διάταξη της σελίδας σύνδεσης, η ανακατεύθυνση <code>next</code>, η αυτόματη αποσύνδεση λόγω αδράνειας, η σελίδα 403 και το πλευρικό μενού ανά ρόλο βρίσκονται στις λίστες ελέγχου 01 και 04 και αναφέρονται με το ID τους. Οι λογαριασμοί πελατών του καταστήματος βρίσκονται στη λίστα ελέγχου 08. Χρειάζεστε δύο browsers (ή ένα κανονικό και ένα ιδιωτικό παράθυρο), ένα κινητό με εφαρμογή ελέγχου ταυτότητας (Google Authenticator, Microsoft Authenticator, 1Password ή παρόμοια), τερματικό με <code>curl</code>, <code>openssl</code> και <code>sha256sum</code>, πρόσβαση στη βάση δεδομένων μέσω client, και δικαίωμα να επεξεργαστείτε το <code>.env.local</code> και να επανεκκινήσετε τον διακομιστή.</p>
+</header>
+<main>
+
+  <section class="suite" id="suite-prep">
+    <h2>Πριν ξεκινήσετε</h2>
+    <p class="intro">Η λίστα ελέγχου 01 πρέπει να έχει ολοκληρωθεί (migrations, seeds, superadmin <code>qa-admin@example.com</code>), καθώς και η ADM-001 της λίστας ελέγχου 04 (ρόλοι <code>QA limited</code> και <code>QA no access</code>· χρήστες <code>qa-editor@example.com</code>, <code>qa-limited@example.com</code>, <code>qa-noaccess@example.com</code>, <code>qa-en@example.com</code>). Τα URL χρησιμοποιούν το <code>http://localhost:3002</code> (<code>npm run dev</code>)· σε φιλοξενούμενο περιβάλλον δοκιμών χρησιμοποιήστε τη διεύθυνσή του. Το «Συνδεδεμένοι ως X» σημαίνει σύνδεση στο <code>/admin/login</code> με αυτόν τον λογαριασμό. Το API δεν χρησιμοποιεί κεφαλίδα <code>Authorization</code>: οι κλήσεις από τον browser στέλνουν το cookie <code>cms_session</code>, και τα κλειδιά του Product Manager υπογράφουν κάθε αίτημα με κεφαλίδες <code>X-PM-*</code>.</p>
+    <div class="callout">
+      <p><strong>Χρήση του curl με συνεδρία.</strong> Συνδεθείτε, ανοίξτε τα εργαλεία προγραμματιστή → Application (Chrome) ή Storage (Firefox) → Cookies → τον ιστότοπο, και αντιγράψτε την <em>τιμή</em> του <code>cms_session</code>. Στο τερματικό εκτελέστε <code>BASE=http://localhost:3002</code> και <code>S='&lt;pasted value&gt;'</code>, έπειτα προσθέστε το <code>-b "cms_session=$S"</code> σε μια εντολή curl. Το curl δεν στέλνει κεφαλίδα <code>Origin</code>, οπότε ο έλεγχος προέλευσης (cross-origin) το αφήνει να περάσει· αυτό είναι σκόπιμο (βλ. AUTH-078).</p>
+      <p><strong>Σύνδεση με curl.</strong> Το API σύνδεσης απαιτεί token reCAPTCHA όταν έχουν οριστεί και τα δύο κλειδιά <code>RECAPTCHA_*</code>. Για τις περιπτώσεις σύνδεσης με curl, αδειάστε τα <code>RECAPTCHA_SITE_KEY=</code> και <code>RECAPTCHA_SECRET_KEY=</code> στο <code>.env.local</code> και κάντε επανεκκίνηση· η σελίδα σύνδεσης τότε δεν εμφανίζει πλαίσιο captcha. Επαναφέρετε τα κλειδιά στο τέλος. Τα όρια αιτημάτων τηρούνται στη μνήμη του διακομιστή ανά τιμή της κεφαλίδας <code>X-Real-IP</code>· η επανεκκίνηση του <code>npm run dev</code> τα μηδενίζει. Σε περιβάλλον ανάπτυξης το curl μπορεί να ορίσει το ίδιο το <code>X-Real-IP</code>· πίσω από το nginx ο proxy το αντικαθιστά.</p>
+    </div>
+
+    <article class="tc" id="AUTH-001" data-priority="P2">
+      <h3>Δημιουργία των ρόλων και των λογαριασμών που χρησιμοποιεί αυτή η λίστα ελέγχου</h3>
+      <ol class="steps">
+        <li>Συνδεδεμένοι ως <code>qa-admin@example.com</code>, ανοίξτε το <strong>Roles</strong> και αναπτύξτε το <strong>Add a role</strong>. Δημιουργήστε τον <code>QA user manager</code>: κρατήστε το <strong>Access</strong>, επιλέξτε τα <strong>View content</strong>, <strong>Manage users</strong> και <strong>Manage roles</strong> και πατήστε <strong>Add role</strong>.</li>
+        <li>Δημιουργήστε τον <code>QA viewer</code> με <strong>Access</strong> και <strong>View content</strong>.</li>
+        <li>Δημιουργήστε τον <code>QA users only</code> με <strong>Access</strong> και <strong>Manage users</strong>.</li>
+        <li>Ανοίξτε το <strong>Users</strong>. Στο <strong>Add a user</strong> δημιουργήστε, ο καθένας με κωδικό πρόσβασης <code>Qa-Auth-Pass-2026!</code>: τον <code>qa-usermgr@example.com</code> (όνομα <code>QA User Manager</code>, ρόλος <code>QA user manager</code>), τον <code>qa-viewer@example.com</code> (<code>QA Viewer</code>, <code>QA viewer</code>), τον <code>qa-usersonly@example.com</code> (<code>QA Users Only</code>, <code>QA users only</code>), τον <code>qa-admin2@example.com</code> (<code>QA Admin Two</code>, <code>superadmin</code>).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε ρόλος εμφανίζεται στον πίνακα Roles με το πλήθος των δικαιωμάτων του (2, 4 ή 2)· κάθε χρήστης εμφανίζεται στον πίνακα Users με αυτόν τον ρόλο και Status <code>active</code>. Δεν εμφανίζεται κανένα σφάλμα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/RolesManager.tsx</code> · <code>src/cms/admin/UsersManager.tsx</code> · docs/user-guides/src/06-rythmiseis-xristes.md</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-login">
+    <h2>Σύνδεση στο διαχειριστικό</h2>
+    <p class="intro">Η εμφάνιση της σελίδας σύνδεσης είναι η ADM-003· τα μηνύματα captcha, λανθασμένου κωδικού πρόσβασης και άγνωστου email στην οθόνη είναι η SET-027· η ανακατεύθυνση <code>next</code> είναι οι SET-028, SET-029, ADM-004 και ADM-005· ένας διακομιστής παραγωγής χωρίς <code>X-Real-IP</code> είναι η SET-031. Τα παρακάτω όρια προέρχονται από το <code>src/cms/core/routes/auth.ts</code>: 10 προσπάθειες κωδικού πρόσβασης ανά 10 λεπτά ανά διεύθυνση IP, και 10 αποτυχίες ανά 15 λεπτά ανά διεύθυνση email, που μετρώνται από το αρχείο ελέγχου (audit log) μετά την τελευταία επιτυχή σύνδεση.</p>
+
+    <article class="tc" id="AUTH-002" data-priority="P1">
+      <h3>Μια επιτυχής σύνδεση καταγράφεται</h3>
+      <ol class="steps">
+        <li>Αποσυνδεθείτε και έπειτα συνδεθείτε ως <code>qa-viewer@example.com</code> σε ιδιωτικό παράθυρο.</li>
+        <li>Στο κανονικό παράθυρο, ως <code>qa-admin@example.com</code>, ανοίξτε το <strong>Users</strong> και διαβάστε το κελί <strong>Last login</strong> του QA Viewer.</li>
+        <li>Ανοίξτε το <strong>Audit log</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Ο QA Viewer μεταφέρεται στον πίνακα ελέγχου. Το Last login εμφανίζει τη σημερινή ημερομηνία (UTC, <code>YYYY-MM-DD</code>).</li>
+        <li>Οι νεότερες εγγραφές του αρχείου ελέγχου περιλαμβάνουν το <em>Signed in</em> με Actor <code>QA Viewer</code> και Subject <code>Email address #qa-viewer@example.com</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/auth.ts</code> (<code>loginRoute</code>) · <code>src/cms/modules/auth/login.ts</code> (<code>issueSession</code>) · <code>src/cms/core/audit-labels.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-003" data-priority="P2">
+      <h3>Λανθασμένος κωδικός πρόσβασης, άγνωστο email, απενεργοποιημένος λογαριασμός: μία απάντηση</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Τα κλειδιά captcha έχουν αδειάσει (βλ. τη σημείωση παραπάνω). Ο <code>qa-limited@example.com</code> είναι απενεργοποιημένος στην οθόνη Users (πατήστε την κατάστασή του <code>active</code> και επιβεβαιώστε).</p>
+      <ol class="steps">
+        <li>Εκτελέστε κάθε εντολή και σημειώστε τη γραμμή κατάστασης και το σώμα της απάντησης:
+<pre><code>curl -s -i -X POST "$BASE/api/cms/auth/login" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.5.0.1' \
+  -d '{"email":"qa-viewer@example.com","password":"Wrong-Pass-2026!"}'
+curl -s -i -X POST "$BASE/api/cms/auth/login" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.5.0.2' \
+  -d '{"email":"nobody-here@example.com","password":"Wrong-Pass-2026!"}'
+curl -s -i -X POST "$BASE/api/cms/auth/login" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.5.0.3' \
+  -d '{"email":"qa-limited@example.com","password":"Qa-Admin-Ui-Pass-2026!"}'</code></pre></li>
+        <li>Επαναλάβετε τις δύο πρώτες με <code>-o /dev/null -w '%{time_total}\n'</code> αντί για <code>-i</code>, τρεις φορές την καθεμία.</li>
+        <li>Ενεργοποιήστε ξανά τον <code>qa-limited@example.com</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Και οι τρεις απαντούν <code>HTTP/1.1 401</code> με το ίδιο ακριβώς σώμα <code>{"ok":false,"error":"unauthorized","message":"Invalid email or password."}</code>, ακόμη και ο απενεργοποιημένος λογαριασμός με τον σωστό κωδικό του.</li>
+        <li>Οι χρόνοι απόκρισης για τη γνωστή και την άγνωστη διεύθυνση είναι παρόμοιοι (και οι δύο εκτελούν μία σύγκριση bcrypt· μια σταθερή διαφορά μεγαλύτερη από περίπου 100 ms είναι Αποτυχία).</li>
+        <li>Το αρχείο ελέγχου εμφανίζει τρεις εγγραφές <em>Failed sign-in attempt</em>· το άνοιγμα του <strong>Details</strong> εμφανίζει <code>"reason": "invalid_credentials"</code>, <code>"invalid_credentials"</code> και <code>"disabled"</code>. Η στήλη Actor γράφει <code>system</code>, επειδή κανείς δεν ήταν συνδεδεμένος.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/auth/login.ts</code> (<code>verifyCredentials</code>, <code>DUMMY_HASH</code>) · <code>src/cms/core/routes/auth.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-004" data-priority="P2">
+      <h3>Η διεύθυνση email δεν κάνει διάκριση πεζών-κεφαλαίων κατά τη σύνδεση</h3>
+      <ol class="steps">
+        <li>Αποσυνδεθείτε. Στη σελίδα σύνδεσης πληκτρολογήστε <code>QA-Viewer@Example.COM</code> και τον σωστό κωδικό πρόσβασης, επιλέξτε το πλαίσιο και πατήστε <strong>Sign in</strong>.</li>
+        <li>Ανοίξτε το <strong>Audit log</strong> ως superadmin.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η σύνδεση επιτυγχάνει. Το Subject της εγγραφής <em>Signed in</em> είναι <code>Email address #qa-viewer@example.com</code> με πεζά.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/auth/login.ts</code> (<code>trim().toLowerCase()</code>) · <code>src/cms/core/routes/auth.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-005" data-priority="P2">
+      <h3>Δέκα προσπάθειες ανά διεύθυνση IP, έπειτα 429</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Τα κλειδιά captcha έχουν αδειάσει· ο διακομιστής μόλις επανεκκινήθηκε.</p>
+      <ol class="steps">
+        <li>Εκτελέστε:
+<pre><code>for i in $(seq 1 11); do
+  curl -s -o /dev/null -D - -X POST "$BASE/api/cms/auth/login" -H 'Content-Type: application/json' \
+    -H 'X-Real-IP: 10.6.0.1' -d "{\"email\":\"probe$i@example.com\",\"password\":\"x\"}" | grep -iE '^HTTP|^retry-after'
+done</code></pre></li>
+        <li>Εκτελέστε άλλη μία φορά με <code>-H 'X-Real-IP: 10.6.0.2'</code> και τον σωστό κωδικό πρόσβασης του <code>qa-viewer@example.com</code>.</li>
+        <li>Στον browser (χωρίς <code>X-Real-IP</code>, άρα στον κοινό κάδο του περιβάλλοντος ανάπτυξης) πληκτρολογήστε λανθασμένο κωδικό πρόσβασης 11 φορές.</li>
+      </ol>
+      <ul class="exp">
+        <li>Τα αιτήματα 1–10 απαντούν <code>401</code>· το αίτημα 11 απαντά <code>429</code> με κεφαλίδα <code>Retry-After</code> περίπου 600 δευτερολέπτων ή λιγότερο, σώμα <code>{"ok":false,"error":"rate_limited","message":"Too many requests."}</code>.</li>
+        <li>Το αίτημα από την άλλη διεύθυνση συνδέεται (<code>200</code>): το όριο ισχύει ανά διεύθυνση.</li>
+        <li>Στον browser η ενδέκατη προσπάθεια εμφανίζει <code>Too many attempts. Please wait and try again.</code></li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/auth.ts</code> (<code>rateLimit: cms-login 10 / 10 min</code>) · <code>src/cms/core/rate-limit.ts</code> · <code>src/cms/admin/login-error.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-006" data-priority="P2">
+      <h3>Δέκα αποτυχίες για έναν λογαριασμό τον κλειδώνουν για 15 λεπτά, από οποιαδήποτε διεύθυνση</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Τα κλειδιά captcha έχουν αδειάσει.</p>
+      <ol class="steps">
+        <li>Στείλτε δέκα λανθασμένους κωδικούς πρόσβασης για έναν λογαριασμό, τον καθένα από διαφορετική διεύθυνση:
+<pre><code>for i in $(seq 1 10); do
+  curl -s -o /dev/null -w '%{http_code}\n' -X POST "$BASE/api/cms/auth/login" -H 'Content-Type: application/json' \
+    -H "X-Real-IP: 10.7.0.$i" -d '{"email":"qa-viewer@example.com","password":"Wrong-Pass-2026!"}'
+done</code></pre></li>
+        <li>Στείλτε τον <em>σωστό</em> κωδικό πρόσβασης από νέα διεύθυνση, με <code>-i</code>:
+<pre><code>curl -s -i -X POST "$BASE/api/cms/auth/login" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.7.1.1' \
+  -d '{"email":"qa-viewer@example.com","password":"Qa-Auth-Pass-2026!"}'</code></pre></li>
+        <li>Δοκιμάστε τον ίδιο λογαριασμό στον browser με τον σωστό κωδικό πρόσβασης.</li>
+        <li>Συνδεθείτε ως <code>qa-admin@example.com</code> (διαφορετικός λογαριασμός) και ανοίξτε το <strong>Audit log</strong>.</li>
+        <li>Για να ξεκλειδώσετε τον λογαριασμό χωρίς να περιμένετε 15 λεπτά, εκτελέστε:
+<pre><code>DELETE FROM audit_logs WHERE action = 'auth.login.fail' AND subject_id = 'qa-viewer@example.com';</code></pre></li>
+      </ol>
+      <ul class="exp">
+        <li>Το βήμα 1 τυπώνει δέκα φορές <code>401</code>. Το βήμα 2 απαντά <code>429</code>, κεφαλίδα <code>Retry-After: 900</code>, σώμα <code>{"ok":false,"error":"rate_limited","message":"Too many attempts. Try again later."}</code>.</li>
+        <li>Το βήμα 3 εμφανίζει <code>Too many attempts. Please wait and try again.</code> Οι άλλοι λογαριασμοί δεν επηρεάζονται (το βήμα 4 λειτουργεί).</li>
+        <li>Το αρχείο ελέγχου έχει εγγραφές <em>Sign-in blocked (too many attempts)</em> για τον <code>qa-viewer@example.com</code>, των οποίων το Details εμφανίζει <code>"failures": 10</code>.</li>
+        <li>Μετά το βήμα 5 ο σωστός κωδικός πρόσβασης συνδέει ξανά.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/auth.ts</code> (<code>ACCOUNT_LOCKOUT_MAX_FAILURES = 10</code>, <code>ACCOUNT_LOCKOUT_WINDOW_MS</code>) · <code>src/cms/core/audit.ts</code> (<code>recentLoginFailures</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-007" data-priority="P3">
+      <h3>Μια επιτυχής σύνδεση μηδενίζει τον μετρητή αποτυχιών του λογαριασμού</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Τα κλειδιά captcha έχουν αδειάσει· καμία πρόσφατη αποτυχία για τον <code>qa-viewer@example.com</code>.</p>
+      <ol class="steps">
+        <li>Στείλτε εννέα λανθασμένους κωδικούς πρόσβασης από εννέα διευθύνσεις (τον βρόχο της AUTH-006 με <code>seq 1 9</code> και <code>10.8.0.$i</code>).</li>
+        <li>Συνδεθείτε σωστά μία φορά (από οποιαδήποτε νέα διεύθυνση).</li>
+        <li>Στείλτε άλλους εννέα λανθασμένους κωδικούς πρόσβασης από <code>10.8.1.$i</code>, έπειτα τον σωστό κωδικό από <code>10.8.2.1</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 2 και το τελευταίο αίτημα του βήματος 3 απαντούν και τα δύο <code>200</code>. Δεκαοκτώ αποτυχίες μέσα σε 15 λεπτά δεν κλείδωσαν τον λογαριασμό, επειδή η ενδιάμεση επιτυχία μηδένισε τον μετρητή.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/audit.ts</code> (<code>recentAuthFailures</code>, μετρά μετά το τελευταίο <code>auth.login.success</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-008" data-priority="P3">
+      <h3>Με ορισμένα κλειδιά captcha, ένα αίτημα χωρίς token απορρίπτεται</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Και τα δύο κλειδιά <code>RECAPTCHA_*</code> έχουν οριστεί (τα κλειδιά δοκιμών που συνοδεύουν το έργο) και ο διακομιστής έχει επανεκκινηθεί.</p>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s -i -X POST "$BASE/api/cms/auth/login" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.9.0.1' -d '{"email":"qa-viewer@example.com","password":"Qa-Auth-Pass-2026!"}'</code></li>
+        <li>Επαναλάβετε με <code>-H 'x-captcha-token:   '</code> (μόνο κενά).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και τα δύο απαντούν <code>400</code> με <code>{"ok":false,"error":"captcha_failed","message":"Captcha check failed. Please try again."}</code>, παρόλο που ο κωδικός πρόσβασης είναι σωστός. Το αρχείο καταγραφής του διακομιστή εμφανίζει <code>[cms/api] captcha rejected</code>. Δεν γράφεται εγγραφή στο αρχείο ελέγχου (το captcha ελέγχεται πριν από τον κωδικό πρόσβασης).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/api/handler.ts</code> (βήμα captcha) · <code>src/cms/core/security/captcha.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-session">
+    <h2>Συνεδρίες</h2>
+    <p class="intro">Η συνεδρία είναι ένα υπογεγραμμένο token στο cookie <code>cms_session</code>. Έχει προθεσμία αδράνειας (<code>ADMIN_SESSION_IDLE_MINUTES</code>, προεπιλογή 60), η οποία μετατίθεται όσο εργάζεστε, και απόλυτη προθεσμία (<code>ADMIN_SESSION_TTL_HOURS</code>, προεπιλογή 8), η οποία δεν μετατίθεται ποτέ. Η προειδοποίηση αδράνειας στην οθόνη και η αυτόματη αποσύνδεση είναι οι SET-054, SET-055 και ADM-039 έως ADM-041· το κουμπί Sign out είναι η ADM-020.</p>
+
+    <article class="tc" id="AUTH-009" data-priority="P1">
+      <h3>Σημαίες του cookie της συνεδρίας</h3>
+      <ol class="steps">
+        <li>Συνδεθείτε και ανοίξτε τα εργαλεία προγραμματιστή → Application → Cookies → τον ιστότοπο.</li>
+        <li>Επιλέξτε το <code>cms_session</code> και διαβάστε τις στήλες των σημαιών.</li>
+        <li>Στην καρτέλα Console εκτελέστε <code>document.cookie</code>.</li>
+        <li>Επαναλάβετε τα βήματα 1–2 στο περιβάλλον δοκιμών με HTTPS.</li>
+      </ol>
+      <ul class="exp">
+        <li><code>HttpOnly</code> επιλεγμένο, <code>SameSite</code> <code>Lax</code>, <code>Path</code> <code>/</code>, λήξη περίπου 60 λεπτά αργότερα (όχι “Session”).</li>
+        <li>Το <code>document.cookie</code> δεν περιέχει το <code>cms_session</code>.</li>
+        <li>Στο localhost μέσω HTTP το <code>Secure</code> δεν είναι επιλεγμένο· στο περιβάλλον δοκιμών με HTTPS (build παραγωγής) το <code>Secure</code> είναι επιλεγμένο.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/auth/session.ts</code> (<code>setSessionCookie</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-010" data-priority="P2">
+      <h3>Η συνεδρία παρατείνεται όσο εργάζεστε</h3>
+      <ol class="steps">
+        <li>Συνδεδεμένοι, εκτελέστε <code>curl -s -b "cms_session=$S" "$BASE/api/cms/auth/me"</code> και σημειώστε το <code>sessionExpiresAt</code>.</li>
+        <li>Σημειώστε τη λήξη του <code>cms_session</code> στα εργαλεία προγραμματιστή.</li>
+        <li>Περιμένετε τουλάχιστον 70 δευτερόλεπτα και έπειτα πατήστε οποιονδήποτε σύνδεσμο του διαχειριστικού (η σελίδα στέλνει ένα keepalive στο <code>/api/cms/auth/me</code>· παρακολουθήστε το στην καρτέλα Network).</li>
+        <li>Δείτε τις κεφαλίδες απόκρισης αυτού του αιτήματος και ξανά τη λήξη του cookie.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το βήμα 1 απαντά <code>200</code> με <code>{"ok":true,"data":{"userId":…,"email":"…","sessionExpiresAt":…}}</code>, μια τιμή σε δευτερόλεπτα epoch περίπου 3600 δευτερόλεπτα μετά τη σύνδεση.</li>
+        <li>Η απόκριση του keepalive φέρει κεφαλίδα <code>Set-Cookie: cms_session=…</code>, και η λήξη του cookie μετατέθηκε κατά περίπου τον χρόνο που περιμένατε. Δεν μετατίθεται ποτέ πέρα από 8 ώρες μετά τη σύνδεση.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/auth/guards.ts</code> (<code>requireApiAuth</code>) · <code>src/cms/modules/auth/session-idle.ts</code> (<code>sessionRefreshAfterSeconds</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-011" data-priority="P2">
+      <h3>Ο διακομιστής απορρίπτει ένα αδρανές cookie, ό,τι κι αν κάνει ο browser</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> <code>ADMIN_SESSION_IDLE_MINUTES=2</code> στο <code>.env.local</code>, ο διακομιστής έχει επανεκκινηθεί.</p>
+      <ol class="steps">
+        <li>Συνδεθείτε, αντιγράψτε την τιμή του <code>cms_session</code> στο <code>S</code> και κλείστε την καρτέλα του διαχειριστικού.</li>
+        <li>Εκτελέστε αμέσως <code>curl -s -o /dev/null -w '%{http_code}\n' -b "cms_session=$S" "$BASE/api/cms/auth/me"</code>.</li>
+        <li>Περιμένετε τρία λεπτά χωρίς κανένα αίτημα και εκτελέστε την ξανά με <code>-i</code>.</li>
+        <li>Επαναφέρετε το <code>ADMIN_SESSION_IDLE_MINUTES=60</code> και κάντε επανεκκίνηση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 2 τυπώνει <code>200</code>. Το βήμα 3 απαντά <code>401</code> με <code>{"ok":false,"error":"unauthorized"}</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/auth/session.ts</code> (<code>exp</code>) · <code>src/cms/modules/auth/session-idle.ts</code> (<code>decideSessionRefresh</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-012" data-priority="P3">
+      <h3>Το απόλυτο όριο τερματίζει ακόμη και μια ενεργή συνεδρία</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> <code>ADMIN_SESSION_TTL_HOURS=0.05</code> (τρία λεπτά) στο <code>.env.local</code>, ο διακομιστής έχει επανεκκινηθεί.</p>
+      <ol class="steps">
+        <li>Συνδεθείτε και μετακινηθείτε μεταξύ οθονών του διαχειριστικού κάθε 20 δευτερόλεπτα για τέσσερα λεπτά.</li>
+        <li>Επαναφέρετε το <code>ADMIN_SESSION_TTL_HOURS=8</code> και κάντε επανεκκίνηση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Περίπου τρία λεπτά μετά τη σύνδεση, παρά τη δραστηριότητα, η επόμενη οθόνη σάς στέλνει στη σελίδα σύνδεσης (ο μηχανισμός παρακολούθησης αδράνειας μπορεί να σας μεταφέρει στο <code>/admin/login?timeout=1</code> με την ειδοποίηση αδράνειας). Το keepalive δεν μετέθεσε ποτέ την προθεσμία πέρα από τα τρία λεπτά.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/auth/session.ts</code> (claim <code>abs</code>, <code>getTtlSeconds</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-013" data-priority="P2">
+      <h3>Μετά την αποσύνδεση, το παλιό cookie δεν λειτουργεί πλέον</h3>
+      <ol class="steps">
+        <li>Συνδεθείτε, αντιγράψτε το <code>cms_session</code> στο <code>S</code> και ελέγξτε ότι το <code>curl -s -o /dev/null -w '%{http_code}\n' -b "cms_session=$S" "$BASE/api/cms/auth/me"</code> τυπώνει <code>200</code>.</li>
+        <li>Πατήστε <strong>Sign out</strong> στο διαχειριστικό.</li>
+        <li>Εκτελέστε ξανά την ίδια εντολή curl.</li>
+        <li>Ως superadmin, επαναφέρετε τον κωδικό πρόσβασης του λογαριασμού που χρησιμοποιήσατε (Users → Edit → <strong>Reset password</strong>) ενώ είναι συνδεδεμένος σε άλλον browser, και έπειτα επαναλάβετε την εντολή curl με το cookie εκείνου του browser.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 3 και το βήμα 4 απαντούν <code>401</code>: μια συνεδρία που έχει αποσυνδεθεί ή της οποίας ο κωδικός πρόσβασης έχει επαναφερθεί δεν πρέπει να μπορεί να χρησιμοποιηθεί από όποιον αντέγραψε το cookie.</p>
+      <p class="note">Γνωστός κίνδυνος: η συνεδρία είναι token χωρίς κατάσταση (stateless) και η αποσύνδεση απλώς διαγράφει το cookie στον browser (<code>clearSessionCookie</code>)· τίποτα στον διακομιστή δεν καταγράφει ότι έληξε. Αν το βήμα 3 ή 4 τυπώσει <code>200</code>, σημειώστε Αποτυχία και αναφέρετε «καμία ανάκληση συνεδρίας στον διακομιστή»· το αντιγραμμένο cookie συνεχίζει να λειτουργεί μέχρι την προθεσμία αδράνειάς του.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/auth.ts</code> (<code>logoutRoute</code>) · <code>src/cms/modules/auth/session.ts</code> · docs/dev-guides/05-auth-users-security.md §3.3</p>
+    </article>
+
+    <article class="tc" id="AUTH-014" data-priority="P2">
+      <h3>Η απενεργοποίηση ενός λογαριασμού τερματίζει τη συνεδρία του στο επόμενο αίτημα</h3>
+      <ol class="steps">
+        <li>Σε ιδιωτικό παράθυρο συνδεθείτε ως <code>qa-viewer@example.com</code> και ανοίξτε το <strong>Pages</strong>.</li>
+        <li>Στο κανονικό παράθυρο, ως superadmin, απενεργοποιήστε τον QA Viewer στην οθόνη Users.</li>
+        <li>Στο ιδιωτικό παράθυρο πατήστε οποιονδήποτε σύνδεσμο και έπειτα εκτελέστε <code>curl -s -i -b "cms_session=&lt;viewer cookie&gt;" "$BASE/api/cms/auth/me"</code>.</li>
+        <li>Ενεργοποιήστε ξανά τον QA Viewer.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η επόμενη οθόνη στο ιδιωτικό παράθυρο είναι η <strong>403 — Forbidden</strong> (ο έλεγχος της οθόνης δεν βρίσκει ενεργό λογαριασμό). Το API απαντά <code>401</code> <code>{"ok":false,"error":"unauthorized"}</code>. Μέσα σε λίγα δευτερόλεπτα ο μηχανισμός παρακολούθησης αδράνειας μπορεί να μεταφέρει την καρτέλα στη σελίδα σύνδεσης. Μετά την εκ νέου ενεργοποίηση, μια νέα σύνδεση λειτουργεί.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/auth/guards.ts</code> (το <code>loadUserPermissions</code> επιστρέφει null για απενεργοποιημένο χρήστη) · <code>src/cms/modules/auth/current-user.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-015" data-priority="P3">
+      <h3>Ένα αλλοιωμένο ή ξένο cookie απορρίπτεται</h3>
+      <ol class="steps">
+        <li>Αλλάξτε τον τελευταίο χαρακτήρα του <code>$S</code> και εκτελέστε <code>curl -s -i -b "cms_session=$S" "$BASE/api/cms/auth/me"</code>.</li>
+        <li>Αν το module Customer accounts είναι ενεργό: συνδεθείτε ως πελάτης του καταστήματος στον δημόσιο ιστότοπο, αντιγράψτε την τιμή του cookie <code>cms_customer</code> και στείλτε την ως <code>-b "cms_session=&lt;customer value&gt;"</code>.</li>
+        <li>Κατά τη διάρκεια μιας σύνδεσης που έχει σταματήσει στην προτροπή κωδικού (AUTH-018), αντιγράψτε την τιμή του cookie <code>cms_mfa</code> και στείλτε την ως <code>cms_session</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και τα τρία απαντούν <code>401</code> <code>{"ok":false,"error":"unauthorized"}</code>. Το βήμα 2 είναι Δεν ισχύει όταν το Customer accounts είναι ανενεργό.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/auth/session.ts</code> (audience <code>cms-admin</code>) · <code>src/cms/modules/customers/token.ts</code> (κλειδί HKDF) · <code>src/cms/modules/auth/mfa-challenge.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-2fa">
+    <h2>Έλεγχος ταυτότητας δύο παραγόντων</h2>
+    <p class="intro">Κάθε συνδεδεμένος χρήστης διαχειρίζεται τον δικό του δεύτερο παράγοντα στο <strong>Your account</strong> (<code>/admin/account</code>). Η απουσία του <code>CMS_TOKEN_ENCRYPTION_KEY</code> είναι η SET-007. Χρησιμοποιήστε τον <code>qa-viewer@example.com</code>, εκτός αν μια περίπτωση ορίζει διαφορετικά. Η καταχώριση στην εφαρμογή ελέγχου ταυτότητας φέρει το όνομα του ιστότοπου.</p>
+
+    <article class="tc" id="AUTH-016" data-priority="P1">
+      <h3>Ρύθμιση εφαρμογής ελέγχου ταυτότητας</h3>
+      <ol class="steps">
+        <li>Συνδεδεμένοι ως <code>qa-viewer@example.com</code>, ανοίξτε το <strong>Your account</strong>.</li>
+        <li>Πατήστε <strong>Set up two-factor authentication</strong> και έπειτα <strong>Use an authenticator app</strong>.</li>
+        <li>Σαρώστε τον κωδικό QR με την εφαρμογή του κινητού. Συγκρίνετε το κλειδί που εμφανίζεται μετά το <code>Cannot scan? Enter this key manually:</code> με την καταχώριση στην εφαρμογή.</li>
+        <li>Πληκτρολογήστε τον εξαψήφιο κωδικό της εφαρμογής στο <strong>Code from your app or email</strong> και πατήστε <strong>Turn on two-factor</strong>.</li>
+        <li>Πατήστε <strong>Copy codes</strong>, έπειτα <strong>Download .txt</strong>, και ανοίξτε το αρχείο που κατέβηκε.</li>
+        <li>Πατήστε <strong>I have saved them</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το βήμα 2 εμφανίζει <code>Scan this with your authenticator app, then enter the six-digit code it shows.</code>, μια εικόνα QR και ένα κλειδί με χαρακτήρες A–Z και 2–7.</li>
+        <li>Το βήμα 4 εμφανίζει ένα πορτοκαλί πλαίσιο που ξεκινά με <strong>Save these recovery codes now.</strong> <code>Each one works once, and this is the only time they are shown.</code> και δέκα κωδικούς της μορφής <code>XXXX-XXXX</code>.</li>
+        <li>Η αντιγραφή εμφανίζει <code>Copied 10 recovery codes to the clipboard.</code> (ή, μέσω απλού HTTP χωρίς πρόχειρο, <code>Could not reach the clipboard. Use Download, or select the codes above and copy them.</code>). Η λήψη εμφανίζει <code>Downloaded &lt;site-name&gt;-recovery-codes-YYYY-MM-DD.txt.</code> και το αρχείο αναφέρει τον ιστότοπο, την ημερομηνία και τους δέκα κωδικούς.</li>
+        <li>Μετά το βήμα 6: <code>Two-factor authentication is on.</code>, <strong>Method</strong> <code>Authenticator app</code>, <strong>Turned on</strong> με τη σημερινή ημερομηνία, <strong>Recovery codes left</strong> <code>10</code>, και τα κουμπιά <strong>New recovery codes</strong> και <strong>Turn off</strong>.</li>
+        <li>Το αρχείο ελέγχου εμφανίζει το <em>Set up two-factor authentication</em> με Details <code>"method": "totp"</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/AccountSecurity.tsx</code> · <code>src/cms/admin/MfaEnrollPanel.tsx</code> · <code>src/cms/admin/RecoveryCodesPanel.tsx</code> · <code>src/cms/admin/recovery-codes-file.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-017" data-priority="P3">
+      <h3>Λανθασμένος κωδικός κατά τη ρύθμιση, και Back</h3>
+      <ol class="steps">
+        <li>Σε λογαριασμό με ανενεργό 2FA, ξεκινήστε τη ρύθμιση εφαρμογής ελέγχου ταυτότητας, εισαγάγετε <code>000000</code> και πατήστε <strong>Turn on two-factor</strong>.</li>
+        <li>Πατήστε <strong>Back</strong>, επιλέξτε ξανά <strong>Use an authenticator app</strong> και συγκρίνετε το νέο κλειδί με το πρώτο.</li>
+        <li>Προσπαθήστε να ξεκινήσετε δεύτερη ρύθμιση σε λογαριασμό που έχει ήδη 2FA: <code>curl -s -i -X POST "$BASE/api/cms/auth/2fa/enroll/start" -b "cms_session=$S" -H 'Content-Type: application/json' -d '{"method":"totp"}'</code></li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: <code>That code is not valid. Check the code and try again.</code>· το 2FA παραμένει ανενεργό.</li>
+        <li>Βήμα 2: νέο κλειδί· το πρώτο δεν λειτουργεί πλέον.</li>
+        <li>Βήμα 3: <code>409</code> με μήνυμα <code>Two-factor authentication is already set up. Turn it off first to change how it works.</code>· το κλειδί σε χρήση δεν αντικαθίσταται.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/auth-mfa.ts</code> (<code>mfaEnrollStartRoute</code>, <code>mfaEnrollConfirmRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-018" data-priority="P1">
+      <h3>Σύνδεση με κωδικό από την εφαρμογή ελέγχου ταυτότητας</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Η AUTH-016 έχει ολοκληρωθεί.</p>
+      <ol class="steps">
+        <li>Αποσυνδεθείτε και συνδεθείτε ως <code>qa-viewer@example.com</code> με τον κωδικό πρόσβασης.</li>
+        <li>Πριν πληκτρολογήσετε κωδικό, ελέγξτε τα εργαλεία προγραμματιστή → Cookies.</li>
+        <li>Πληκτρολογήστε τον τρέχοντα κωδικό της εφαρμογής στο <strong>Code</strong> και πατήστε <strong>Verify</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Μετά τον κωδικό πρόσβασης ο υπότιτλος της κάρτας αλλάζει σε <strong>CMS · verify</strong> με <code>Enter the code from your authenticator app, or one of your recovery codes.</code></li>
+        <li>Σε αυτό το σημείο υπάρχει cookie <code>cms_mfa</code> (HttpOnly, περίπου 10 λεπτά) και κανένα <code>cms_session</code>.</li>
+        <li>Μετά το Verify μεταφέρεστε στον πίνακα ελέγχου· το <code>cms_mfa</code> έχει φύγει και έχει οριστεί το <code>cms_session</code>.</li>
+        <li>Το αρχείο ελέγχου εμφανίζει, από το παλαιότερο, τα <em>Asked for a two-factor code</em>, <em>Passed two-factor</em> (Details <code>"via": "totp"</code>) και <em>Signed in</em>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/LoginForm.tsx</code> · <code>src/cms/core/routes/auth-mfa.ts</code> (<code>mfaVerifyRoute</code>) · <code>src/cms/modules/auth/mfa-challenge.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-019" data-priority="P2">
+      <h3>Ένας λανθασμένος κωδικός απορρίπτεται</h3>
+      <ol class="steps">
+        <li>Στην προτροπή κωδικού εισαγάγετε <code>123456</code> (ή οποιονδήποτε κωδικό δεν εμφανίζεται στην εφαρμογή) και πατήστε <strong>Verify</strong>.</li>
+        <li>Εισαγάγετε τον σωστό κωδικό.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 1 εμφανίζει <code>That code is not valid. Check the code and try again.</code>, το πεδίο Code αδειάζει και παραμένετε στο <strong>CMS · verify</strong>. Το βήμα 2 συνδέει. Το αρχείο ελέγχου έχει εγγραφή <em>Failed two-factor code</em>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/login-error.ts</code> (<code>mfaErrorMessage</code>) · <code>src/cms/core/routes/auth-mfa.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-020" data-priority="P3">
+      <h3>Ένας κωδικός δεν μπορεί να χρησιμοποιηθεί δύο φορές</h3>
+      <ol class="steps">
+        <li>Συνδεθείτε με κωδικό από την εφαρμογή. Μέσα στα ίδια 30 δευτερόλεπτα, αποσυνδεθείτε και συνδεθείτε ξανά με τον ίδιο κωδικό.</li>
+        <li>Ενεργοποιήστε 2FA σε νέο λογαριασμό (για παράδειγμα <code>qa-usermgr@example.com</code>) και, μέσα σε 30 δευτερόλεπτα από το πάτημα του <strong>Turn on two-factor</strong>, αποσυνδεθείτε και προσπαθήστε να συνδεθείτε με τον ίδιο κωδικό ενεργοποίησης.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ο επαναλαμβανόμενος κωδικός απορρίπτεται με <code>That code is not valid. Check the code and try again.</code> και στα δύο βήματα· ο επόμενος κωδικός που εμφανίζει η εφαρμογή λειτουργεί.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/auth/mfa.ts</code> (<code>totp_last_step</code>, ενημέρωση υπό συνθήκη) · <code>src/cms/core/security/totp.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-021" data-priority="P3">
+      <h3>Η προτροπή κωδικού λήγει μετά από 10 λεπτά</h3>
+      <ol class="steps">
+        <li>Εισαγάγετε τον κωδικό πρόσβασης και αφήστε την προτροπή κωδικού ανέγγιχτη για 11 λεπτά.</li>
+        <li>Εισαγάγετε έναν τρέχοντα κωδικό και πατήστε <strong>Verify</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>This sign-in attempt has expired. Please sign in again.</code> Με ανανέωση της σελίδας εμφανίζεται το βήμα του κωδικού πρόσβασης.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/auth/mfa-challenge.ts</code> (<code>MFA_CHALLENGE_TTL_SECONDS = 600</code>) · <code>src/cms/admin/login-error.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-022" data-priority="P3">
+      <h3>Η μαντεψιά κωδικών περιορίζεται</h3>
+      <ol class="steps">
+        <li>Στην προτροπή κωδικού εισαγάγετε έντεκα λανθασμένους κωδικούς στη σειρά (επανεκκινήστε πρώτα τον διακομιστή ώστε το όριο της διεύθυνσης να είναι μηδενισμένο).</li>
+        <li>Εισαγάγετε τον σωστό κωδικό.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Οι προσπάθειες 1–10 εμφανίζουν <code>That code is not valid. Check the code and try again.</code>· η προσπάθεια 11 και ο σωστός κωδικός στο βήμα 2 εμφανίζουν <code>Too many attempts. Please wait and try again.</code> (10 ανά 10 λεπτά ανά διεύθυνση· επιπλέον, 10 αποτυχίες ανά 15 λεπτά ανά λογαριασμό μπλοκάρουν τον λογαριασμό με εγγραφή ελέγχου <em>Two-factor blocked (too many attempts)</em>). Επανεκκινήστε τον διακομιστή ή περιμένετε 10 λεπτά για να συνεχίσετε.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/auth-mfa.ts</code> (<code>cms-2fa-verify</code>, <code>MFA_LOCKOUT_MAX_FAILURES</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-023" data-priority="P2">
+      <h3>Σύνδεση με κωδικό ανάκτησης, μία φορά</h3>
+      <ol class="steps">
+        <li>Στην προτροπή κωδικού πληκτρολογήστε τον πρώτο κωδικό ανάκτησης με πεζά και χωρίς την παύλα (για παράδειγμα <code>abcd2345</code> για το <code>ABCD-2345</code>) και πατήστε <strong>Verify</strong>.</li>
+        <li>Ανοίξτε το <strong>Your account</strong>.</li>
+        <li>Αποσυνδεθείτε και δοκιμάστε ξανά τον ίδιο κωδικό ανάκτησης.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το βήμα 1 συνδέει. Το <strong>Recovery codes left</strong> είναι <code>9</code>.</li>
+        <li>Το αρχείο ελέγχου εμφανίζει το <em>Signed in with a recovery code</em> με Details <code>"remaining": 9</code>, καθώς και το <em>Passed two-factor</em> με <code>"via": "recovery"</code>.</li>
+        <li>Βήμα 3: <code>That code is not valid. Check the code and try again.</code></li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/security/recovery-codes.ts</code> (<code>normalizeRecoveryCode</code>) · <code>src/cms/core/routes/auth-mfa.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-024" data-priority="P2">
+      <h3>Αντικατάσταση των κωδικών ανάκτησης</h3>
+      <ol class="steps">
+        <li>Στο <strong>Your account</strong> πατήστε <strong>New recovery codes</strong>, πληκτρολογήστε λανθασμένο κωδικό πρόσβασης και πατήστε <strong>Confirm</strong>.</li>
+        <li>Πληκτρολογήστε τον σωστό κωδικό πρόσβασης και πατήστε <strong>Confirm</strong>.</li>
+        <li>Αποσυνδεθείτε και δοκιμάστε έναν από τους <em>παλιούς</em> κωδικούς και έπειτα έναν από τους νέους.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το βήμα 1 απορρίπτεται και τίποτα δεν αλλάζει. Ο διακομιστής απαντά <code>401</code> <code>That password is not correct.</code>· η οθόνη πρέπει να αναφέρει ότι ο κωδικός πρόσβασης είναι λανθασμένος. Αν αντί γι' αυτό εμφανίσει <code>This sign-in attempt has expired. Please sign in again.</code>, σημειώστε Αποτυχία (κάθε 401 σε αυτή την οθόνη αντιστοιχίζεται στο κείμενο ληγμένης σύνδεσης).</li>
+        <li>Το βήμα 2 εμφανίζει <code>Your old recovery codes no longer work.</code>, ένα νέο πορτοκαλί πλαίσιο <strong>Save these new recovery codes now.</strong> με δέκα κωδικούς, και <strong>Recovery codes left</strong> <code>10</code>. Αρχείο ελέγχου: <em>Generated new recovery codes</em>.</li>
+        <li>Βήμα 3: ο παλιός κωδικός απορρίπτεται, ο νέος συνδέει.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/AccountSecurity.tsx</code> · <code>src/cms/core/routes/auth-mfa.ts</code> (<code>requirePasswordReauth</code>, <code>mfaRecoveryCodesRoute</code>) · <code>src/cms/admin/login-error.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-025" data-priority="P3">
+      <h3>Προειδοποίηση όταν δεν απομένουν κωδικοί ανάκτησης</h3>
+      <ol class="steps">
+        <li>Εκτελέστε:
+<pre><code>UPDATE admin_recovery_codes rc JOIN admin_users u ON u.id = rc.user_id
+SET rc.used_at = NOW() WHERE u.email = 'qa-viewer@example.com';</code></pre></li>
+        <li>Ανανεώστε το <strong>Your account</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <strong>Recovery codes left</strong> <code>0</code> και μια πορτοκαλί ειδοποίηση: <code>You have no recovery codes left. Generate a new set now — without them, losing your device means asking another administrator to reset your access.</code> Δημιουργήστε έπειτα νέο σύνολο κωδικών.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/AccountSecurity.tsx</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-026" data-priority="P2">
+      <h3>Απενεργοποίηση του ελέγχου ταυτότητας δύο παραγόντων</h3>
+      <ol class="steps">
+        <li>Με τη ρύθμιση Security στο <strong>Optional — each administrator chooses</strong>, ανοίξτε το <strong>Your account</strong>, πατήστε <strong>Turn off</strong>, εισαγάγετε τον κωδικό πρόσβασης και πατήστε <strong>Confirm</strong>.</li>
+        <li>Αποσυνδεθείτε και συνδεθείτε ξανά.</li>
+        <li>Εκτελέστε <code>SELECT mfa_method, totp_secret_encrypted, mfa_enrolled_at FROM admin_users WHERE email = 'qa-viewer@example.com';</code> και <code>SELECT COUNT(*) FROM admin_recovery_codes rc JOIN admin_users u ON u.id = rc.user_id WHERE u.email = 'qa-viewer@example.com';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>Two-factor authentication is off.</code> και το κουμπί <strong>Set up two-factor authentication</strong>. Η σύνδεση απαιτεί μόνο τον κωδικό πρόσβασης. Και οι τρεις στήλες είναι NULL και το πλήθος είναι 0. Αρχείο ελέγχου: <em>Turned off two-factor authentication</em>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/auth-mfa.ts</code> (<code>mfaDisableRoute</code>) · <code>src/cms/modules/auth/mfa.ts</code> (<code>clearMfa</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-027" data-priority="P2">
+      <h3>Το “Require two-factor authentication” επιβάλλει τη ρύθμιση κατά τη σύνδεση</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ο <code>qa-usersonly@example.com</code> δεν έχει δεύτερο παράγοντα. Ο superadmin που χρησιμοποιείτε έχει (ή μπορεί να τον ρυθμίσει όταν ζητηθεί).</p>
+      <ol class="steps">
+        <li>Ως superadmin ανοίξτε το <code>/admin/settings?tab=Security</code>, ορίστε το <strong>Require two-factor authentication</strong> σε <strong>Required for all administrators</strong> και πατήστε <strong>Save settings</strong>.</li>
+        <li>Σε ιδιωτικό παράθυρο συνδεθείτε ως <code>qa-usersonly@example.com</code>. Πριν ολοκληρώσετε, δοκιμάστε το <code>/admin</code> σε νέα καρτέλα του ίδιου παραθύρου.</li>
+        <li>Ολοκληρώστε τη ρύθμιση με την εφαρμογή ελέγχου ταυτότητας και πατήστε <strong>I have saved them</strong>.</li>
+        <li>Ανοίξτε το <strong>Your account</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: <code>Settings saved.</code> Οι χρήστες που ήταν ήδη συνδεδεμένοι παραμένουν συνδεδεμένοι.</li>
+        <li>Βήμα 2: ο υπότιτλος είναι <strong>CMS · set up 2FA</strong> με <code>This site requires two-factor authentication. Set it up now to finish signing in.</code> και τα κουμπιά μεθόδου. Η νέα καρτέλα εμφανίζει τη σελίδα σύνδεσης: δεν υπάρχει ακόμη συνεδρία.</li>
+        <li>Το βήμα 3 μεταφέρει στον πίνακα ελέγχου. Αρχείο ελέγχου: <em>Required to set up two-factor</em>, <em>Set up two-factor authentication</em>, <em>Signed in</em>.</li>
+        <li>Βήμα 4: το <strong>Turn off</strong> είναι γκριζαρισμένο, με <code>This site requires two-factor authentication, so it cannot be turned off. An administrator can change that in Settings → Security.</code></li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/settings/schema.ts</code> (<code>SECURITY_REQUIRE_2FA_KEY</code>) · <code>src/cms/admin/LoginForm.tsx</code> (βήμα <code>enroll</code>) · <code>src/cms/admin/AccountSecurity.tsx</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-028" data-priority="P3">
+      <h3>Η απαίτηση δεν μπορεί να παρακαμφθεί μέσω του API</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Η απαίτηση είναι ενεργή (AUTH-027).</p>
+      <ol class="steps">
+        <li>Με συνδεδεμένο λογαριασμό που έχει ρυθμίσει 2FA, εκτελέστε <code>curl -s -i -X POST "$BASE/api/cms/auth/2fa/disable" -b "cms_session=$S" -H 'Content-Type: application/json' -d '{"password":"&lt;correct password&gt;"}'</code></li>
+        <li>Εισαγάγετε τον κωδικό πρόσβασης ενός λογαριασμού χωρίς 2FA ώστε να εμφανιστεί το βήμα ρύθμισης, αντιγράψτε την τιμή του <code>cms_mfa</code> και εκτελέστε <code>curl -s -o /dev/null -w '%{http_code}\n' -b "cms_session=&lt;that value&gt;" "$BASE/api/cms/auth/me"</code>.</li>
+        <li>Επαναφέρετε τη ρύθμιση σε <strong>Optional — each administrator chooses</strong> και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>403</code> με μήνυμα <code>This site requires two-factor authentication. Ask an administrator to change the setting first.</code> και το 2FA παραμένει ενεργό. Βήμα 2: <code>401</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/auth-mfa.ts</code> (<code>mfaDisableRoute</code>, <code>requireEnroller</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-029" data-priority="P3">
+      <h3>Κωδικοί μέσω email: προσφέρονται μόνο όταν έχει ρυθμιστεί η αλληλογραφία</h3>
+      <ol class="steps">
+        <li>Σε λογαριασμό χωρίς 2FA, ανοίξτε το <strong>Your account</strong> → <strong>Set up two-factor authentication</strong>.</li>
+        <li>Αν το <strong>Email me a code</strong> είναι διαθέσιμο (έχει ρυθμιστεί αλληλογραφία μέσω Microsoft Graph): πατήστε το, εισαγάγετε τον κωδικό από το email και ενεργοποιήστε το· αποσυνδεθείτε και συνδεθείτε· πατήστε <strong>Send a new code</strong> έξι φορές στη σειρά.</li>
+      </ol>
+      <ul class="exp">
+        <li>Χωρίς αλληλογραφία: το <strong>Email me a code</strong> είναι γκριζαρισμένο και εμφανίζεται το <code>Emailed codes are unavailable because this site has no mail configured.</code></li>
+        <li>Με αλληλογραφία: <code>We have sent a six-digit code to your email address. Enter it below to finish.</code>· κατά τη σύνδεση <code>We have sent a six-digit code to your email address.</code> και <code>Enter the code from your email, or one of your recovery codes.</code>· το <strong>Send a new code</strong> εμφανίζει <code>A new code is on its way.</code> μέχρι το όριο της διεύθυνσης (5 ανά 10 λεπτά) να απαντήσει <code>Too many attempts. Please wait and try again.</code> Ένας κωδικός μέσω email λειτουργεί μία φορά και λήγει μετά από 10 λεπτά.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/MfaEnrollPanel.tsx</code> · <code>src/cms/modules/auth/mfa.ts</code> (<code>issueEmailCode</code>) · <code>src/cms/modules/auth/mfa-email.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-030" data-priority="P2">
+      <h3>PIN ανάκτησης: το κρυφό παράθυρο διαλόγου συνδέει</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> <code>ADMIN_MFA_BYPASS_CODE=482913</code> στο <code>.env.local</code>, ο διακομιστής έχει επανεκκινηθεί. Ο <code>qa-viewer@example.com</code> έχει ενεργό 2FA.</p>
+      <ol class="steps">
+        <li>Στο βήμα του κωδικού πρόσβασης πατήστε <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>P</kbd>.</li>
+        <li>Εισαγάγετε τον κωδικό πρόσβασης για να φτάσετε στην προτροπή κωδικού. Πληκτρολογήστε <code>482913</code> στο συνηθισμένο πεδίο <strong>Code</strong> και πατήστε <strong>Verify</strong>.</li>
+        <li>Πατήστε <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>P</kbd> (δοκιμάστε επίσης με ενεργή ελληνική διάταξη πληκτρολογίου).</li>
+        <li>Πατήστε <kbd>Escape</kbd>, ανοίξτε το ξανά, πληκτρολογήστε <code>482913</code> στο <strong>Recovery PIN</strong> και πατήστε <strong>Continue</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: δεν συμβαίνει τίποτα.</li>
+        <li>Βήμα 2: <code>That code is not valid. Check the code and try again.</code> Το PIN λειτουργεί μόνο στο δικό του παράθυρο διαλόγου.</li>
+        <li>Βήμα 3: ένα παράθυρο διαλόγου <strong>Recovery access</strong> με <code>Enter the six-digit recovery PIN for this site.</code>, ένα πεδίο <strong>Recovery PIN</strong> (με εστίαση), <strong>Continue</strong> και <strong>Cancel</strong>· η διάταξη πληκτρολογίου δεν έχει σημασία. Το Escape το κλείνει.</li>
+        <li>Το βήμα 4 μεταφέρει στον πίνακα ελέγχου. Αρχείο ελέγχου: <em>Signed in with the recovery PIN</em> και έπειτα <em>Signed in</em>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/MfaBypassDialog.tsx</code> · <code>src/cms/admin/mfa-bypass-hotkey.ts</code> · <code>src/cms/core/routes/auth-mfa.ts</code> (<code>mfaBypassRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-031" data-priority="P3">
+      <h3>PIN ανάκτησης: πέντε προσπάθειες ανά ώρα</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Όπως στην AUTH-030· ο διακομιστής μόλις επανεκκινήθηκε.</p>
+      <ol class="steps">
+        <li>Στην προτροπή κωδικού ανοίξτε το παράθυρο διαλόγου και εισαγάγετε τα λανθασμένα PIN <code>000001</code> έως <code>000006</code>, το ένα μετά το άλλο.</li>
+        <li>Εισαγάγετε το σωστό PIN.</li>
+        <li>Ως άλλος superadmin ανοίξτε το <strong>Audit log</strong>, αναζητήστε <code>bypass</code> και αναπτύξτε τις εγγραφές.</li>
+      </ol>
+      <ul class="exp">
+        <li>Προσπάθειες 1–5: <code>That code is not valid. Check the code and try again.</code> Η προσπάθεια 6 και το σωστό PIN: <code>Too many attempts. Please wait and try again.</code> (5 ανά ώρα ανά διεύθυνση και 5 αποτυχίες ανά ώρα ανά λογαριασμό).</li>
+        <li>Πέντε εγγραφές <em>Failed recovery PIN attempt</em> με Details <code>"reason": "mismatch"</code>. Καμία εγγραφή δεν περιέχει κάποιο υποβληθέν PIN.</li>
+        <li>Ο συνηθισμένος κωδικός της εφαρμογής εξακολουθεί να λειτουργεί (το όριό του είναι ξεχωριστό).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/auth-mfa.ts</code> (<code>cms-2fa-bypass</code>, <code>BYPASS_LOCKOUT_MAX_FAILURES</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-032" data-priority="P3">
+      <h3>PIN ανάκτησης: ανενεργό όταν δεν έχει οριστεί ή είναι λανθασμένης μορφής, ενεργό στην παραγωγή όταν έχει οριστεί</h3>
+      <ol class="steps">
+        <li>Ορίστε <code>ADMIN_MFA_BYPASS_CODE=12345</code> (πέντε ψηφία), κάντε επανεκκίνηση και δοκιμάστε το <code>12345</code> στο παράθυρο διαλόγου. Ελέγξτε το αρχείο καταγραφής του διακομιστή.</li>
+        <li>Αδειάστε τη μεταβλητή, κάντε επανεκκίνηση και δοκιμάστε το <code>482913</code>.</li>
+        <li>Με <code>ADMIN_MFA_BYPASS_CODE=482913</code>, εκτελέστε το build παραγωγής (<code>npm run build</code> και έπειτα <code>npm run start</code>, βλ. SET-030) και δοκιμάστε εκεί το PIN.</li>
+        <li>Στο βήμα ρύθμισης της AUTH-027 (υποχρεωτική ρύθμιση) πατήστε τη συντόμευση.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήματα 1 και 2: το ίδιο <code>That code is not valid. Check the code and try again.</code>· στο αρχείο ελέγχου Details <code>"reason": "disabled"</code>. Το βήμα 1 καταγράφει μία προειδοποίηση για τιμή λανθασμένης μορφής, χωρίς την τιμή.</li>
+        <li>Βήμα 3: το PIN συνδέει και στο build παραγωγής. Αυτή είναι η τρέχουσα συμπεριφορά, όχι σφάλμα αυτής της περίπτωσης: καταγράψτε την ώστε ο υπεύθυνος προϊόντος να αποφασίσει αν η παραγωγή πρέπει να επιτρέπει καθόλου το PIN.</li>
+        <li>Βήμα 4: δεν ανοίγει παράθυρο διαλόγου· το PIN δεν μπορεί να παρακάμψει μια υποχρεωτική ρύθμιση.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/security/mfa-bypass.ts</code> (<code>readBypassCode</code>) · <code>.env.example</code> · docs/dev-guides/05-auth-users-security.md §7</p>
+    </article>
+
+    <article class="tc" id="AUTH-033" data-priority="P3">
+      <h3>Επαναφορά χαμένου δεύτερου παράγοντα από το τερματικό</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>npm run db:reset-mfa -- QA-Viewer@example.com</code> για λογαριασμό με ενεργό 2FA.</li>
+        <li>Εκτελέστε την ξανά.</li>
+        <li>Εκτελέστε <code>npm run db:reset-mfa -- nobody@example.com</code> και <code>npm run db:reset-mfa</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: <code>Cleared two-factor authentication for QA Viewer &lt;qa-viewer@example.com&gt; (was: totp).</code> και <code>They will be asked to set it up again the next time they sign in.</code></li>
+        <li>Βήμα 2: <code>qa-viewer@example.com has no second factor set up. Nothing to do.</code></li>
+        <li>Βήμα 3: <code>No admin account with the email nobody@example.com.</code> και <code>Usage: npm run db:reset-mfa -- &lt;email&gt;</code>, και τα δύο με μη μηδενικό κωδικό εξόδου.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/db/seeds/cli/reset-mfa.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-users">
+    <h2>Οθόνη Users</h2>
+    <p class="intro">Η οθόνη είναι το <code>/admin/users</code> και απαιτεί το <strong>Manage users</strong>· η δημιουργία λογαριασμού ή η επιλογή του ρόλου του απαιτεί επίσης το <strong>Manage roles</strong>. Ένας λογαριασμός μπορεί να αλλάξει μόνο από κάποιον που κατέχει κάθε δικαίωμα που κατέχει εκείνος. Η σύνδεση χρήστη χωρίς πρόσβαση είναι η ADM-036.</p>
+
+    <article class="tc" id="AUTH-034" data-priority="P1">
+      <h3>Δημιουργία χρήστη· το email αποθηκεύεται με πεζά</h3>
+      <ol class="steps">
+        <li>Ως superadmin, στο <strong>Add a user</strong>, συμπληρώστε <strong>Name (required)</strong> <code>QA Mixed</code>, <strong>Email (required)</strong> <code>QA.Mixed@Example.COM</code>, <strong>Password (required)</strong> <code>Qa-Auth-Pass-2026!</code>, <strong>Role (required)</strong> <code>QA viewer</code> και πατήστε <strong>Add user</strong>.</li>
+        <li>Εκτελέστε <code>SELECT email FROM admin_users WHERE email LIKE 'qa.mixed%';</code></li>
+        <li>Συνδεθείτε ως <code>qa.mixed@example.com</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η φόρμα αδειάζει· ο πίνακας εμφανίζει <code>qa.mixed@example.com</code>, ρόλο <code>QA viewer</code>, Last login <code>—</code>, Status <code>active</code>. Το SQL επιστρέφει ακριβώς <code>qa.mixed@example.com</code>. Η σύνδεση λειτουργεί. Το αρχείο ελέγχου εμφανίζει το <em>Created a user</em> με Subject <code>User #&lt;id&gt;</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/users/schema.ts</code> (<code>normalizeEmail</code>) · <code>src/cms/core/users/service.ts</code> (<code>createUser</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-035" data-priority="P2">
+      <h3>Η φόρμα δημιουργίας εξηγεί κάθε πρόβλημα στο πεδίο του</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>Add user</strong> με όλα τα πεδία κενά.</li>
+        <li>Συμπληρώστε όνομα <code>QA Weak</code>, email <code>qa-weak@example.com</code>, κωδικό πρόσβασης <code>password</code>, χωρίς ρόλο· πατήστε <strong>Add user</strong>.</li>
+        <li>Συμπληρώστε το email ενός υπάρχοντος λογαριασμού (με κεφαλαία) με έγκυρο κωδικό πρόσβασης και ρόλο· πατήστε <strong>Add user</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: κάτω από τα πεδία, <code>Enter a name.</code>, <code>Enter an email address.</code>, μια πρόταση <code>Password needs …</code> και <code>Select a role.</code></li>
+        <li>Βήμα 2: <code>Password needs at least 10 characters, an uppercase letter, a number, a symbol, not a common password.</code> και <code>Select a role.</code> Δεν δημιουργείται τίποτα.</li>
+        <li>Βήμα 3: κάτω από το πεδίο email, <code>An account with this email address already exists.</code> Ο πληκτρολογημένος κωδικός πρόσβασης παραμένει στο πεδίο του.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/users/schema.ts</code> (<code>newUserProblems</code>, <code>ROLE_REQUIRED</code>) · <code>src/cms/modules/auth/password-policy.ts</code> · <code>src/cms/admin/UsersManager.tsx</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-036" data-priority="P2">
+      <h3>Επεξεργασία ονόματος και ρόλου χρήστη</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>Edit</strong> στον QA Mixed. Αλλάξτε το <strong>Name</strong> σε <code>QA Mixed Renamed</code> και τον <strong>Role</strong> σε <code>QA limited</code> και πατήστε <strong>Save</strong>.</li>
+        <li>Ανοίξτε ξανά το Edit, αφαιρέστε τον ρόλο (<code>Choose a role…</code>) και πατήστε <strong>Save</strong>.</li>
+        <li>Πατήστε <kbd>Escape</kbd>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Η επικεφαλίδα του πάνελ είναι το email του λογαριασμού. Στη λίστα ρόλων κάθε επιλογή εμφανίζεται όπως <code>QA limited (3 perms)</code>.</li>
+        <li>Το βήμα 1 κλείνει το πάνελ· η γραμμή εμφανίζει το νέο όνομα και τον νέο ρόλο. Αρχείο ελέγχου: <em>Edited a user</em>.</li>
+        <li>Το βήμα 2 απορρίπτεται μέσα στο πάνελ με <code>Select a role.</code></li>
+        <li>Το Escape κλείνει το πάνελ χωρίς αποθήκευση.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/UsersManager.tsx</code> (<code>EditUserPanel</code>) · <code>src/cms/core/routes/users.ts</code> (<code>userUpdateRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-037" data-priority="P2">
+      <h3>Επαναφορά του κωδικού πρόσβασης άλλου χρήστη</h3>
+      <ol class="steps">
+        <li>Επεξεργαστείτε τον QA Mixed Renamed. Στο <strong>Reset password</strong> πληκτρολογήστε <code>Password1!</code> και πατήστε <strong>Save</strong>.</li>
+        <li>Πληκτρολογήστε <code>Qa-Reset-Pass-2026#</code> και πατήστε <strong>Save</strong>.</li>
+        <li>Συνδεθείτε ως <code>qa.mixed@example.com</code> με τον παλιό κωδικό πρόσβασης και έπειτα με τον νέο.</li>
+      </ol>
+      <ul class="exp">
+        <li>Η βοήθεια του πεδίου γράφει <code>Sets a new password for this account; leave it empty to keep the current one. No email is sent, so tell the person yourself.</code></li>
+        <li>Το βήμα 1 απορρίπτεται κάτω από το πεδίο με <code>Password needs not a common password.</code></li>
+        <li>Το βήμα 2 αποθηκεύεται· ο παλιός κωδικός πρόσβασης δίνει <code>Invalid email or password.</code>, ο νέος συνδέει. Κανένα email δεν φτάνει στον χρήστη.</li>
+        <li>Αρχείο ελέγχου: <em>Reset a user's password</em> (με IP) και <em>Edited a user</em>. Καμία από τις δύο εγγραφές δεν περιέχει τον κωδικό πρόσβασης.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/users.ts</code> (<code>strongPasswordOrBlank</code>, <code>user.password.reset</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-038" data-priority="P2">
+      <h3>Απενεργοποίηση και ενεργοποίηση λογαριασμού</h3>
+      <ol class="steps">
+        <li>Πατήστε το <code>active</code> στη στήλη Status του QA Mixed Renamed. Διαβάστε το παράθυρο διαλόγου και πατήστε <strong>Disable account</strong>.</li>
+        <li>Προσπαθήστε να συνδεθείτε ως <code>qa.mixed@example.com</code>.</li>
+        <li>Πατήστε το <code>disabled</code> στο ίδιο κελί.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το παράθυρο διαλόγου έχει τίτλο <code>Disable QA Mixed Renamed?</code> με <code>qa.mixed@example.com will lose access to the admin immediately. You can enable them again afterwards.</code></li>
+        <li>Το κελί γράφει <code>disabled</code> και η γραμμή έχει γκρι φόντο. Η σύνδεση δίνει <code>Invalid email or password.</code></li>
+        <li>Η ενεργοποίηση δεν ζητά επιβεβαίωση και το κελί γράφει <code>active</code>· η σύνδεση λειτουργεί ξανά. Καταγράφονται δύο εγγραφές <em>Edited a user</em>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/UsersManager.tsx</code> (<code>toggleDisabled</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-039" data-priority="P2">
+      <h3>Διαγραφή λογαριασμού</h3>
+      <ol class="steps">
+        <li>Συνδεθείτε άλλη μία φορά ως <code>qa.mixed@example.com</code> (ώστε να έχει εγγραφές στο αρχείο ελέγχου), έπειτα ως superadmin πατήστε <strong>Delete</strong> στη γραμμή του και διαβάστε το παράθυρο διαλόγου. Πατήστε <strong>Delete account</strong>.</li>
+        <li>Ανοίξτε το <strong>Audit log</strong>, βρείτε το <em>Deleted a user</em> και αναπτύξτε το <strong>Details</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Παράθυρο διαλόγου: <code>Delete QA Mixed Renamed?</code> με <code>qa.mixed@example.com is removed permanently. Anything they wrote — documents, media, audit entries — stays, but stops being attributed to them, and this cannot be undone. Disable the account instead if you only want to take their access away.</code></li>
+        <li>Η γραμμή εξαφανίζεται. Το <strong>Before</strong> εμφανίζει <code>"email": "qa.mixed@example.com"</code>, <code>"name"</code> και <code>"roleNames"</code>. Οι παλαιότερες εγγραφές του λογαριασμού παραμένουν, με το Actor να εμφανίζεται πλέον ως <code>system</code> (ο σύνδεσμός τους με τον χρήστη έχει αφαιρεθεί).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/users.ts</code> (<code>userDeleteRoute</code>) · <code>src/cms/core/users/service.ts</code> (<code>deleteUser</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-040" data-priority="P2">
+      <h3>Επαναφορά του ελέγχου ταυτότητας δύο παραγόντων άλλου χρήστη</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ο <code>qa-viewer@example.com</code> έχει ενεργό 2FA· η ρύθμιση Security είναι Optional.</p>
+      <ol class="steps">
+        <li>Ως superadmin βρείτε το κουμπί <strong>Reset 2FA</strong>: εμφανίζεται μόνο στις γραμμές λογαριασμών με ενεργό 2FA. Πατήστε το στον QA Viewer και επιβεβαιώστε με <strong>Reset two-factor</strong>.</li>
+        <li>Συνδεθείτε ως <code>qa-viewer@example.com</code>.</li>
+        <li>Επαναλάβετε με τη ρύθμιση Security σε Required.</li>
+      </ol>
+      <ul class="exp">
+        <li>Παράθυρο διαλόγου: <code>Reset two-factor for QA Viewer?</code> με <code>qa-viewer@example.com will be able to sign in with their password alone until they set it up again, and their recovery codes stop working. Only do this once you are sure who you are talking to.</code></li>
+        <li>Το κουμπί <strong>Reset 2FA</strong> εξαφανίζεται από τη γραμμή. Το βήμα 2 απαιτεί μόνο τον κωδικό πρόσβασης. Το βήμα 3 οδηγεί αντί γι' αυτό στο <strong>CMS · set up 2FA</strong>.</li>
+        <li>Αρχείο ελέγχου: <em>Reset another user's two-factor</em> με Details <code>"email": "qa-viewer@example.com"</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/UsersManager.tsx</code> (<code>resetMfa</code>) · <code>src/cms/core/routes/users.ts</code> (<code>resetMfa</code>, <code>auth.2fa.admin_reset</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-041" data-priority="P1">
+      <h3>Ένας διαχειριστής χρηστών δεν μπορεί να αλλάξει έναν ισχυρότερο λογαριασμό</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ο <code>qa-admin2@example.com</code> (superadmin) έχει ενεργό 2FA, οπότε η γραμμή του έχει <strong>Reset 2FA</strong>.</p>
+      <ol class="steps">
+        <li>Συνδεθείτε ως <code>qa-usermgr@example.com</code> (Access, View content, Manage users, Manage roles) και ανοίξτε το <strong>Users</strong>.</li>
+        <li>Στη γραμμή του QA Admin Two πατήστε <code>active</code> και επιβεβαιώστε το <strong>Disable account</strong>.</li>
+        <li>Στην ίδια γραμμή πατήστε <strong>Delete</strong> → <strong>Delete account</strong>, έπειτα <strong>Reset 2FA</strong> → <strong>Reset two-factor</strong>.</li>
+        <li>Επαναφέρετε τον κωδικό πρόσβασής του μέσω του API: <code>curl -s -i -X PATCH "$BASE/api/cms/users/&lt;id of qa-admin2&gt;" -b "cms_session=$S" -H 'Content-Type: application/json' -d '{"password":"Qa-Takeover-2026!"}'</code> (με το cookie του διαχειριστή χρηστών).</li>
+      </ol>
+      <ul class="exp">
+        <li>Κάθε προσπάθεια απορρίπτεται πάνω από τον πίνακα με <code>You cannot change this account — it holds a permission you do not hold yourself: Full access.</code></li>
+        <li>Το curl απαντά <code>403</code> με το ίδιο μήνυμα.</li>
+        <li>Ο QA Admin Two είναι ακόμη ενεργός, έχει ακόμη 2FA και ο κωδικός πρόσβασής του δεν έχει αλλάξει (η σύνδεση με τον παλιό λειτουργεί).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/roles/can-grant.ts</code> (<code>assertCanManageAccount</code>) · <code>src/cms/core/routes/users.ts</code> (<code>assertCanManageUser</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-042" data-priority="P2">
+      <h3>Η άρνηση κατονομάζει τα δικαιώματα που λείπουν</h3>
+      <ol class="steps">
+        <li>Ως <code>qa-usermgr@example.com</code>, πατήστε <code>active</code> στη γραμμή του QA Editor και επιβεβαιώστε.</li>
+        <li>Πατήστε <strong>Edit</strong> στον QA Editor, αλλάξτε μόνο το όνομα και πατήστε <strong>Save</strong>.</li>
+        <li>Πατήστε <strong>Edit</strong> στον QA Admin Two και πατήστε <strong>Save</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: <code>You cannot change this account — it holds a permission you do not hold yourself: Edit content, Publish content, View media, …</code> με λίστα, με τα ονόματα που εμφανίζονται στην οθόνη, κάθε δικαιώματος του editor που δεν έχει ο διαχειριστής χρηστών.</li>
+        <li>Βήμα 2 (μέσα στο πάνελ): <code>You cannot assign the role "editor" — it grants a permission you do not hold yourself: Edit content, …</code> Βήμα 3: <code>You cannot assign the role "superadmin" — it grants a permission you do not hold yourself: Full access.</code> (Το πάνελ στέλνει πάντα ξανά τον ρόλο, οπότε ο έλεγχος ρόλου απαντά πρώτος.) Τίποτα δεν αλλάζει.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/roles/grants.ts</code> (<code>assertCanAssignRoles</code>) · <code>src/cms/modules/auth/permission-labels.ts</code> (<code>permissionLabel</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-043" data-priority="P2">
+      <h3>Ένας διαχειριστής χρηστών μπορεί να αλλάξει λογαριασμούς εντός των ορίων του· ένας superadmin μπορεί να αλλάξει οποιονδήποτε</h3>
+      <ol class="steps">
+        <li>Ως <code>qa-usermgr@example.com</code>, στον QA Viewer: επαναφέρετε τον κωδικό πρόσβασης, απενεργοποιήστε, ενεργοποιήστε, και (αν είναι ενεργό) πατήστε <strong>Reset 2FA</strong>.</li>
+        <li>Ανοίξτε τη λίστα Role στο <strong>Add a user</strong> και στο πάνελ Edit του QA Viewer.</li>
+        <li>Ως <code>qa-admin@example.com</code>, απενεργοποιήστε και ενεργοποιήστε τους QA User Manager και QA Admin Two, και επαναφέρετε τον κωδικό πρόσβασης του QA Admin Two.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: όλα επιτυγχάνουν (ο QA viewer κατέχει μόνο δικαιώματα που κατέχει και ο διαχειριστής χρηστών).</li>
+        <li>Βήμα 2: οι <code>superadmin</code>, <code>editor</code> και <code>QA limited</code> είναι γκριζαρισμένοι με <code>— above your authority</code>· οι <code>QA viewer</code>, <code>QA no access</code>, <code>QA user manager</code> και <code>QA users only</code> μπορούν να επιλεγούν.</li>
+        <li>Βήμα 3: όλα επιτυγχάνουν.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/roles/grants.ts</code> (<code>assignableRoleIds</code>) · <code>src/cms/admin/UsersManager.tsx</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-044" data-priority="P3">
+      <h3>Manage users χωρίς Manage roles</h3>
+      <ol class="steps">
+        <li>Συνδεθείτε ως <code>qa-usersonly@example.com</code> (Access, Manage users) και ανοίξτε το <strong>Users</strong>.</li>
+        <li>Προσπαθήστε να προσθέσετε χρήστη με ρόλο <code>QA viewer</code>.</li>
+        <li>Επεξεργαστείτε τον QA Viewer, αλλάξτε μόνο το όνομα και πατήστε <strong>Save</strong>.</li>
+        <li>Πατήστε <code>active</code> στη γραμμή του QA Viewer και επιβεβαιώστε.</li>
+      </ol>
+      <ul class="exp">
+        <li>Τα βήματα 2 και 3 απορρίπτονται από τον διακομιστή (το API απαντά <code>403</code> με <code>"missing":"cms.roles.manage"</code>). Στην οθόνη το μήνυμα είναι μόνο <code>forbidden</code>, και η λίστα ρόλων πρόσφερε τον ρόλο σαν να μπορούσε να επιλεγεί. Σημειώστε Αποτυχία αν ένας διαχειριστής χρηστών χωρίς Manage roles δεν μπορεί ούτε καν να μετονομάσει έναν λογαριασμό, και αναφέρετε το σκέτο κείμενο <code>forbidden</code> ως σφάλμα ευχρηστίας.</li>
+        <li>Το βήμα 4 απορρίπτεται με <code>You cannot change this account — it holds a permission you do not hold yourself: View content.</code> (ο QA viewer κατέχει το View content· αυτός ο διαχειριστής χρηστών όχι).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/users.ts</code> (<code>requireRoleAssignment</code>) · <code>src/cms/admin/UsersManager.tsx</code> (το Edit στέλνει πάντα <code>roleIds</code>) · <code>src/cms/admin/api-error-text.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-045" data-priority="P2">
+      <h3>Η δική σας γραμμή: χωρίς διαγραφή, χωρίς απενεργοποίηση</h3>
+      <ol class="steps">
+        <li>Ως <code>qa-admin@example.com</code> δείτε τη δική σας γραμμή.</li>
+        <li>Πατήστε το δικό σας <code>active</code> και επιβεβαιώστε.</li>
+        <li>Επεξεργαστείτε το δικό σας όνομα και αποθηκεύστε· επαναφέρετε τον δικό σας κωδικό πρόσβασης και συνδεθείτε με αυτόν.</li>
+        <li>Εκτελέστε <code>curl -s -i -X DELETE "$BASE/api/cms/users/&lt;your id&gt;" -b "cms_session=$S"</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Η γραμμή σας δεν έχει κουμπί <strong>Delete</strong>.</li>
+        <li>Βήμα 2: <code>You cannot disable your own account.</code></li>
+        <li>Το βήμα 3 λειτουργεί (η επάνω μπάρα εμφανίζει το νέο όνομα μετά από ανανέωση).</li>
+        <li>Βήμα 4: <code>409</code> με <code>You cannot delete your own account.</code></li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/users.ts</code> (<code>assertDisableAllowed</code>, <code>userDeleteRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-046" data-priority="P2">
+      <h3>Ο τελευταίος ενεργός superadmin δεν μπορεί να αφαιρεθεί</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Απενεργοποιήστε κάθε άλλο λογαριασμό με Full access (<code>qa-admin2</code>, <code>qa-en</code> και οποιονδήποτε άλλο superadmin) ώστε ο <code>qa-admin@example.com</code> να είναι ο μόνος ενεργός. Ελέγξτε με το παρακάτω SQL.</p>
+<pre><code>SELECT u.email FROM admin_users u JOIN admin_user_roles ur ON ur.user_id = u.id
+JOIN admin_roles r ON r.id = ur.role_id
+WHERE JSON_CONTAINS(r.permissions, '"*"') AND u.disabled_at IS NULL;</code></pre>
+      <ol class="steps">
+        <li>Ως <code>qa-admin@example.com</code>, επεξεργαστείτε τη δική σας γραμμή, αλλάξτε τον Role σε <code>editor</code> και πατήστε <strong>Save</strong>.</li>
+        <li>Ενεργοποιήστε τον <code>qa-admin2@example.com</code> και επαναλάβετε το βήμα 1.</li>
+        <li>Ως <code>qa-admin2@example.com</code> δώστε ξανά στον <code>qa-admin@example.com</code> τον ρόλο <code>superadmin</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το SQL επιστρέφει μία γραμμή.</li>
+        <li>Το βήμα 1 απορρίπτεται στο πάνελ με <code>This is the last enabled superadmin — taking away its superadmin role would lock everyone out of the admin.</code></li>
+        <li>Το βήμα 2 επιτυγχάνει (υπάρχει άλλος superadmin)· η επόμενη οθόνη σας περιορίζεται στα δικαιώματα του editor.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/users/service.ts</code> (<code>updateUser</code>, <code>deleteUser</code>, <code>FOR UPDATE</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-047" data-priority="P3">
+      <h3>Αναζήτηση στη λίστα, και λογαριασμός με παλαιότερο email με μικτά πεζά-κεφαλαία</h3>
+      <ol class="steps">
+        <li>Πληκτρολογήστε <code>viewer</code> στο <strong>Filter by name or email…</strong>, έπειτα <code>QA limited</code>, έπειτα <code>zzz</code>.</li>
+        <li>Εκτελέστε <code>UPDATE admin_users SET email = 'QA-Viewer@Example.com' WHERE email = 'qa-viewer@example.com';</code> και συνδεθείτε ως <code>qa-viewer@example.com</code>.</li>
+        <li>Επαναφέρετε το email σε πεζά.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το βήμα 1 εμφανίζει τις γραμμές που ταιριάζουν με <code>1 of N accounts</code>· ταιριάζει και το όνομα του ρόλου· το <code>zzz</code> εμφανίζει <code>No accounts match “zzz”.</code></li>
+        <li>Το βήμα 2 συνδέει (η collation της βάσης δεδομένων συγκρίνει χωρίς διάκριση πεζών-κεφαλαίων, κάτι που καλύπτει λογαριασμούς που δημιουργήθηκαν πριν από την κανονικοποίηση των email).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/UsersManager.tsx</code> · docs/dev-guides/05-auth-users-security.md §10</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-roles">
+    <h2>Ρόλοι &amp; δικαιώματα</h2>
+    <p class="intro">Η οθόνη είναι το <code>/admin/roles</code> και απαιτεί το <strong>Manage roles</strong>. Κανείς δεν μπορεί να εκχωρήσει ένα δικαίωμα που δεν κατέχει, ούτε να διαγράψει ρόλο που το περιέχει. Το πλευρικό μενού ανά ρόλο είναι οι ADM-013 έως ADM-016· η αλλαγή ρόλου που αντικατοπτρίζεται στο πλευρικό μενού είναι η ADM-015· η προειδοποίηση Access στον επιλογέα είναι η ADM-001.</p>
+
+    <article class="tc" id="AUTH-048" data-priority="P1">
+      <h3>Δημιουργία ρόλου</h3>
+      <ol class="steps">
+        <li>Ως superadmin ανοίξτε το <strong>Roles</strong>. Ελέγξτε ότι το <strong>Add a role</strong> ξεκινά συμπτυγμένο και έπειτα αναπτύξτε το.</li>
+        <li>Συμπληρώστε <strong>Role name</strong> <code>QA writer</code>. Κρατήστε το <strong>Access</strong>, επιλέξτε τα <strong>View content</strong>, <strong>Edit content</strong>, <strong>View media</strong>. Περάστε τον δείκτη πάνω από το “i” δίπλα στο <strong>Edit content</strong>.</li>
+        <li>Πατήστε <strong>Add role</strong> και έπειτα πατήστε το <code>4 permissions</code> στη νέα γραμμή.</li>
+      </ol>
+      <ul class="exp">
+        <li>Ο επιλογέας ξεκινά με το <strong>Full access</strong> σε χρυσό πλαίσιο (<code>everything, including anything added later.</code>) και ακολουθούν οι ομάδες ACCESS, CONTENT, MEDIA, SEO, FORM SUBMISSIONS, SETTINGS &amp; COOKIES, USERS, ROLES, API TOKENS, AUDIT LOG, SCRIPTS, NEWSLETTER, ORDERS, CUSTOMER ACCOUNTS, PRODUCT REVIEWS, BOOKINGS, BOOKING AVAILABILITY. Το <strong>Access</strong> είναι επιλεγμένο από προεπιλογή.</li>
+        <li>Η επεξήγηση γράφει <code>Create and edit content, and import it in bulk. Needs View content to open the editor; making changes live needs Publish content.</code></li>
+        <li>Η γραμμή εμφανίζει όνομα <code>QA writer</code>, <code>4 permissions</code> που αναπτύσσεται σε Access, View content, Edit content, View media, και Accounts <code>0</code>. Αρχείο ελέγχου: <em>Created a role</em> με Details <code>"name"</code> και <code>"permissions"</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/RolesManager.tsx</code> (<code>PermissionPicker</code>) · <code>src/cms/modules/auth/permission-labels.ts</code> · <code>src/cms/core/routes/roles.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-049" data-priority="P2">
+      <h3>Επεξεργασία ρόλου· οι κάτοχοί του λαμβάνουν την αλλαγή αμέσως</h3>
+      <ol class="steps">
+        <li>Δώστε στον <code>qa-viewer@example.com</code> τον ρόλο <code>QA writer</code> και συνδεθείτε με αυτόν σε ιδιωτικό παράθυρο· αντιγράψτε το cookie του στο <code>V</code>.</li>
+        <li>Εκτελέστε <code>curl -s -o /dev/null -w '%{http_code}\n' -b "cms_session=$V" "$BASE/api/cms/media"</code>.</li>
+        <li>Ως superadmin πατήστε <strong>Edit</strong> στον QA writer· εμφανίζεται η ενότητα <strong>Edit "QA writer"</strong>. Αποεπιλέξτε το <strong>View media</strong>, μετονομάστε τον σε <code>QA writer 2</code> και πατήστε <strong>Save role</strong>.</li>
+        <li>Επαναλάβετε την εντολή curl με <code>-i</code>. Ανανεώστε το ιδιωτικό παράθυρο.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το βήμα 2 τυπώνει <code>200</code>. Το βήμα 4 απαντά <code>403</code> <code>{"ok":false,"error":"forbidden","missing":"cms.media.read"}</code> χωρίς να χρειαστεί νέα σύνδεση του viewer, και το Media εξαφανίζεται από το πλευρικό του μενού.</li>
+        <li>Αρχείο ελέγχου: <em>Edited a role</em>, του οποίου το Details εμφανίζει το νέο όνομα και τα δικαιώματα. Δεν υπάρχει ενότητα Before, οπότε το αρχείο ελέγχου δεν μπορεί να δείξει ποιο δικαίωμα αφαιρέθηκε· σημειώστε το ως κενό.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/roles.ts</code> (<code>roleUpdateRoute</code>, <code>after: input</code>) · <code>src/cms/modules/auth/guards.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-050" data-priority="P2">
+      <h3>Διαγραφή ρόλου: αχρησιμοποίητου και σε χρήση</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>Delete</strong> στον QA writer 2 (που τον κατέχει ο QA Viewer) και διαβάστε το παράθυρο διαλόγου· πατήστε <strong>Delete role</strong>.</li>
+        <li>Μεταφέρετε τον QA Viewer πίσω στον <code>QA viewer</code> και έπειτα διαγράψτε ξανά τον QA writer 2.</li>
+      </ol>
+      <ul class="exp">
+        <li>Παράθυρο διαλόγου βήματος 1: <code>Delete the role "QA writer 2"?</code> με <code>1 account holds this role — the server will refuse until they are moved.</code> Ο διακομιστής αρνείται με <code>1 account still has this role. Move them to another role first — deleting it would leave them signed in with no permissions at all.</code></li>
+        <li>Παράθυρο διαλόγου βήματος 2: <code>No account holds this role, so nothing loses access.</code> Η γραμμή εξαφανίζεται. Αρχείο ελέγχου: <em>Deleted a role</em> (Subject <code>Role #&lt;id&gt;</code>, χωρίς ενότητα Before με το παλιό όνομα ή τα δικαιώματα).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/RolesManager.tsx</code> (<code>removeRole</code>) · <code>src/cms/core/roles/service.ts</code> (<code>deleteRole</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-051" data-priority="P3">
+      <h3>Ονόματα ρόλων: διπλότυπα και σύμβολα</h3>
+      <ol class="steps">
+        <li>Προσθέστε ρόλο με όνομα <code>QA viewer</code> (υπάρχει ήδη).</li>
+        <li>Προσθέστε ρόλο με όνομα <code>QA/writer</code>.</li>
+        <li>Προσθέστε ρόλο με όνομα <code>Συντάκτης</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: <code>A role named "QA viewer" already exists.</code></li>
+        <li>Το βήμα 2 απορρίπτεται (ο κανόνας του διακομιστή είναι <code>Use letters, numbers, spaces, hyphens or underscores.</code>). Αν η οθόνη εμφανίζει μόνο <code>Validation failed.</code>, σημειώστε το ως μικρό σφάλμα: η αιτία δεν μεταφέρεται.</li>
+        <li>Το βήμα 3 γίνεται δεκτό (τα ελληνικά γράμματα είναι γράμματα). Διαγράψτε τον ρόλο στη συνέχεια.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/roles.ts</code> (<code>nameField</code>) · <code>src/cms/admin/RolesManager.tsx</code> (το <code>run</code> εμφανίζει το <code>err.message</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-052" data-priority="P1">
+      <h3>Ο επιλογέας γκριζάρει ό,τι δεν μπορείτε να εκχωρήσετε, και παραμένει γκριζαρισμένος μετά την αποθήκευση</h3>
+      <ol class="steps">
+        <li>Συνδεθείτε ως <code>qa-usermgr@example.com</code> και ανοίξτε το <strong>Roles</strong>. Αναπτύξτε το <strong>Add a role</strong>.</li>
+        <li>Περάστε τον δείκτη πάνω από ένα γκριζαρισμένο δικαίωμα.</li>
+        <li>Δημιουργήστε τον <code>QA mgr made</code> με Access και View content. Αφού ανανεωθεί η λίστα, δείτε ξανά τον επιλογέα και έπειτα πατήστε <strong>Edit</strong> στον νέο ρόλο.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το <strong>Full access</strong> και κάθε δικαίωμα εκτός από τα Access, View content, Manage users και Manage roles είναι γκριζαρισμένα, δεν μπορούν να επιλεγούν και γράφουν <code>— above your authority</code>.</li>
+        <li>Περνώντας τον δείκτη εμφανίζεται <code>You do not hold this permission yourself, so you cannot grant it.</code></li>
+        <li>Μετά την αποθήκευση, τα ίδια πλαίσια παραμένουν γκριζαρισμένα τόσο στη φόρμα προσθήκης όσο και στην ενότητα επεξεργασίας (δεν πρέπει να γίνονται επιλέξιμα μετά την πρώτη αποθήκευση).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/RolesManager.tsx</code> (<code>OUT_OF_REACH</code>, <code>mergeRolesData</code>) · <code>test/cms/roles-manager-refresh.test.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-053" data-priority="P2">
+      <h3>Ο διακομιστής αρνείται εκχώρηση πέρα από τα δικά σας δικαιώματα</h3>
+      <ol class="steps">
+        <li>Με το cookie του διαχειριστή χρηστών στο <code>S</code>, εκτελέστε:
+<pre><code>curl -s -i -X POST "$BASE/api/cms/roles" -b "cms_session=$S" -H 'Content-Type: application/json' \
+  -d '{"name":"QA sneaky","permissions":["cms.access","cms.media.read"]}'
+curl -s -i -X PATCH "$BASE/api/cms/roles/&lt;id of QA mgr made&gt;" -b "cms_session=$S" -H 'Content-Type: application/json' \
+  -d '{"permissions":["*"]}'
+curl -s -i -X DELETE "$BASE/api/cms/roles/&lt;id of an unused role with View media, e.g. a new copy of QA writer&gt;" -b "cms_session=$S"</code></pre></li>
+        <li>Δοκιμάστε επίσης το <code>"permissions":["cms.nonsense"]</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Τα τρία πρώτα απαντούν <code>403</code> με <code>You cannot grant a permission you do not hold yourself: View media.</code>, <code>… Full access.</code> και, για τη διαγραφή, μήνυμα που κατονομάζει τα δικαιώματα του ρόλου που δεν έχει ο διαχειριστής χρηστών. Τίποτα δεν δημιουργείται, αλλάζει ή διαγράφεται.</li>
+        <li>Το άγνωστο κλειδί απαντά <code>422</code> <code>Validation failed.</code> με το πρόβλημα <code>Unknown permission key.</code></li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/roles/can-grant.ts</code> (<code>assertCanGrant</code>) · <code>src/cms/core/roles/service.ts</code> (<code>deleteRole</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-054" data-priority="P2">
+      <h3>Ο μόνος ρόλος πλήρους πρόσβασης δεν μπορεί να χάσει το Full access</h3>
+      <ol class="steps">
+        <li>Ως superadmin πατήστε <strong>Edit</strong> στον <code>superadmin</code>, αποεπιλέξτε το <strong>Full access</strong> (ο επιλογέας μένει μόνο με το Access) και πατήστε <strong>Save role</strong>.</li>
+        <li>Πατήστε <strong>Delete</strong> στον <code>superadmin</code> και επιβεβαιώστε.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: <code>"superadmin" is the only role granting full access to an enabled account — removing full access from it would lock everyone out of the admin.</code> Ο ρόλος διατηρεί το <strong>Full access</strong>.</li>
+        <li>Το βήμα 2 απορρίπτεται με <code>"superadmin" is the only role granting full access to an enabled account — deleting it would lock everyone out of the admin.</code> Ο ρόλος και οι κάτοχοί του παραμένουν αμετάβλητοι.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/roles/service.ts</code> (<code>assertNotLastWildcard</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-055" data-priority="P2">
+      <h3>Κάθε δικαίωμα ανοίγει την οθόνη του και το API του, και τίποτα άλλο</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Όλα τα modules ενεργά (ADM-002). Ένας ρόλος <code>QA probe</code> που τον κατέχει ένας λογαριασμός, συνδεδεμένος σε ιδιωτικό παράθυρο με το cookie του στο <code>P</code>.</p>
+      <ol class="steps">
+        <li>Για κάθε γραμμή παρακάτω: ως superadmin ορίστε στον <code>QA probe</code> το <strong>Access</strong> και μόνο αυτό το δικαίωμα (συν το δικαίωμα που αναφέρεται ως «επίσης», όπου υπάρχει), έπειτα στο ιδιωτικό παράθυρο ανοίξτε την οθόνη και εκτελέστε τον έλεγχο API <code>curl -s -o /dev/null -w '%{http_code}\n' -b "cms_session=$P" "$BASE&lt;API&gt;"</code>. Για δικαίωμα εγγραφής χρησιμοποιήστε τον έλεγχο εγγραφής με <code>-X POST</code> (ή τη μέθοδο που αναφέρεται), <code>-H 'Content-Type: application/json' -d '{}'</code>.</li>
+        <li>Αφαιρέστε ξανά το δικαίωμα και επαναλάβετε την οθόνη και τον έλεγχο.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>OK</th><th>Ετικέτα στην οθόνη Roles</th><th>Κλειδί</th><th>Οθόνη</th><th>Έλεγχος API (με → χωρίς)</th></tr></thead>
+          <tbody>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το Access"></td><td>Access</td><td><code>cms.access</code></td><td>οποιαδήποτε οθόνη (βλ. AUTH-056)</td><td><code>GET /api/cms/auth/me</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το View content"></td><td>View content</td><td><code>cms.content.read</code></td><td><code>/admin/page</code></td><td><code>GET /api/cms/page</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το Edit content"></td><td>Edit content (επίσης View content)</td><td><code>cms.content.write</code></td><td><strong>+ New</strong> και Save σε μια σελίδα</td><td><code>POST /api/cms/page</code> <code>{}</code>: 422 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το Publish content"></td><td>Publish content (επίσης View, Edit content)</td><td><code>cms.content.publish</code></td><td>η κατάσταση <code>published</code> προσφέρεται και αποθηκεύεται (περιπτώσεις CON στη 03)</td><td>μόνο οθόνη</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το View media"></td><td>View media</td><td><code>cms.media.read</code></td><td><code>/admin/media</code></td><td><code>GET /api/cms/media</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το Edit media"></td><td>Edit media (επίσης View media)</td><td><code>cms.media.write</code></td><td>προσφέρονται μεταφόρτωση και διαγραφή</td><td><code>POST /api/cms/media/upload</code> <code>{}</code>: όχι 403 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το View seo"></td><td>View seo</td><td><code>cms.seo.read</code></td><td><code>/admin/seo</code></td><td><code>GET /api/cms/seo/redirects</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το Edit seo"></td><td>Edit seo (επίσης View seo)</td><td><code>cms.seo.write</code></td><td>προσθήκη ανακατεύθυνσης</td><td><code>POST /api/cms/seo/redirects</code> <code>{}</code>: 422 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το View form submissions"></td><td>View form submissions</td><td><code>cms.forms.read</code></td><td><code>/admin/submissions</code></td><td><code>GET /api/cms/forms</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το Edit form submissions"></td><td>Edit form submissions (επίσης View)</td><td><code>cms.forms.write</code></td><td>αλλαγή κατάστασης υποβολής</td><td><code>PATCH /api/cms/forms/1</code> <code>{}</code>: όχι 403 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το View settings"></td><td>View settings &amp; cookies</td><td><code>cms.settings.read</code></td><td><code>/admin/settings</code>, <code>/admin/cookies</code></td><td><code>GET /api/cms/settings</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το Edit settings"></td><td>Edit settings &amp; cookies (επίσης View)</td><td><code>cms.settings.write</code></td><td>το <strong>Save settings</strong> λειτουργεί</td><td><code>POST /api/cms/cookies/categories</code> <code>{}</code>: 422 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το Manage users"></td><td>Manage users</td><td><code>cms.users.manage</code></td><td><code>/admin/users</code></td><td><code>GET /api/cms/users</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το Manage roles"></td><td>Manage roles</td><td><code>cms.roles.manage</code></td><td><code>/admin/roles</code></td><td><code>GET /api/cms/roles</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το Manage api tokens"></td><td>Manage api tokens (επίσης View settings)</td><td><code>cms.tokens.manage</code></td><td>καρτέλα Settings <strong>Connect to Praion.ai</strong></td><td><code>GET /api/cms/api-tokens</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το View audit log"></td><td>View audit log</td><td><code>cms.audit.read</code></td><td><code>/admin/audit</code></td><td><code>GET /api/cms/audit</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το Manage scripts"></td><td>Manage scripts</td><td><code>cms.scripts.manage</code></td><td><code>/admin/scripts</code></td><td><code>GET /api/cms/scripts</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το View orders"></td><td>View orders</td><td><code>cms.commerce.orders.read</code></td><td><code>/admin/orders</code>, <code>/admin/gift-cards</code>, <code>/admin/abandoned</code></td><td><code>GET /api/cms/orders</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το Edit orders"></td><td>Edit orders (επίσης View)</td><td><code>cms.commerce.orders.write</code></td><td>προσφέρεται αλλαγή κατάστασης παραγγελίας</td><td><code>POST /api/cms/orders</code> <code>{}</code>: όχι 403 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το View customer accounts"></td><td>View customer accounts</td><td><code>cms.commerce.customers.read</code></td><td><code>/admin/customers</code></td><td><code>GET /api/cms/customers</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το Edit customer accounts"></td><td>Edit customer accounts (επίσης View)</td><td><code>cms.commerce.customers.write</code></td><td>προσφέρονται απενεργοποίηση / εκ νέου αποστολή</td><td>μόνο οθόνη</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το View product reviews"></td><td>View product reviews</td><td><code>cms.commerce.reviews.read</code></td><td><code>/admin/reviews</code></td><td><code>GET /api/cms/reviews</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το Edit product reviews"></td><td>Edit product reviews (επίσης View)</td><td><code>cms.commerce.reviews.write</code></td><td>προσφέρονται έγκριση / απόρριψη</td><td>μόνο οθόνη</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το View bookings"></td><td>View bookings</td><td><code>cms.booking.reservations.read</code></td><td><code>/admin/reservations</code></td><td><code>GET /api/cms/reservations</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το Edit bookings"></td><td>Edit bookings (επίσης View)</td><td><code>cms.booking.reservations.write</code></td><td>προσφέρονται αποδοχή / απόρριψη</td><td>μόνο οθόνη</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το View booking availability"></td><td>View booking availability</td><td><code>cms.booking.schedule.read</code></td><td><code>/admin/availability</code></td><td><code>GET /api/cms/booking/schedule</code>: όχι 403 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το Edit booking availability"></td><td>Edit booking availability (επίσης View)</td><td><code>cms.booking.schedule.write</code></td><td>θέσεις / ημερομηνίες κλεισίματος επεξεργάσιμες</td><td>μόνο οθόνη</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το View newsletter"></td><td>View newsletter</td><td><code>cms.newsletter.read</code></td><td><code>/admin/newsletter</code></td><td><code>GET /api/cms/newsletter</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκε το Edit newsletter"></td><td>Edit newsletter (επίσης View)</td><td><code>cms.newsletter.write</code></td><td>προσφέρονται απεγγραφή / διαγραφή</td><td>μόνο οθόνη</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul class="exp">
+        <li>Με το δικαίωμα: η οθόνη ανοίγει και ο έλεγχος δίνει το αποτέλεσμα της στήλης «με». Χωρίς αυτό: η οθόνη οδηγεί στο <strong>403 — Forbidden</strong> και το API απαντά <code>403</code> <code>{"ok":false,"error":"forbidden","missing":"&lt;key&gt;"}</code> κατονομάζοντας ακριβώς αυτό το κλειδί.</li>
+        <li>Ένα δικαίωμα εγγραφής χωρίς το αντίστοιχο δικαίωμα προβολής δεν ανοίγει την οθόνη (η οθόνη απαιτεί το κλειδί προβολής).</li>
+        <li>Η οθόνη Roles παραθέτει ακριβώς αυτά τα 29 δικαιώματα συν το <strong>Full access</strong>· κανένα δεν λείπει και κανένα δεν περισσεύει.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/auth/permissions.ts</code> · <code>src/cms/modules/auth/permission-labels.ts</code> · <code>src/app/admin/(shell)/*/page.tsx</code> (<code>requirePerm</code>) · docs/dev-guides/05-auth-users-security.md §5</p>
+    </article>
+
+    <article class="tc" id="AUTH-056" data-priority="P2">
+      <h3>Χωρίς Access, αρνείται και το API, αλλά η αποσύνδεση λειτουργεί</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> <code>qa-noaccess@example.com</code> (ρόλος <code>QA no access</code>: View content, χωρίς Access). Η πλευρά των οθονών είναι η ADM-036.</p>
+      <ol class="steps">
+        <li>Συνδεθείτε ως <code>qa-noaccess@example.com</code> και αντιγράψτε το cookie του στο <code>N</code>.</li>
+        <li>Εκτελέστε:
+<pre><code>curl -s -i -b "cms_session=$N" "$BASE/api/cms/page"
+curl -s -i -b "cms_session=$N" "$BASE/api/cms/auth/me"
+curl -s -i -X POST -b "cms_session=$N" -H 'Content-Type: application/json' -d '{}' "$BASE/api/cms/auth/logout"
+curl -s -o /dev/null -w '%{http_code}\n' -b "cms_session=$N" "$BASE/api/cms/page"</code></pre></li>
+      </ol>
+      <ul class="exp">
+        <li>Τα δύο πρώτα απαντούν <code>403</code> με <code>{"ok":false,"error":"forbidden","missing":"cms.access"}</code>, παρόλο που ο ρόλος κατέχει το View content.</li>
+        <li>Η αποσύνδεση απαντά <code>200</code> <code>{"ok":true,"data":{"ok":true}}</code> με ένα <code>Set-Cookie</code> που αδειάζει το <code>cms_session</code>. Το αρχείο ελέγχου εμφανίζει <em>Signed out</em> για αυτόν τον λογαριασμό.</li>
+        <li>Η τελευταία γραμμή τυπώνει ξανά <code>403</code> (βλ. AUTH-013: το αντιγραμμένο cookie δεν ανακαλείται στον διακομιστή).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/auth/guards.ts</code> (<code>adminApiAccessDenied</code>, <code>allowWithoutAccess</code>) · <code>test/cms/api-access.test.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-tokens">
+    <h2>Κλειδιά API του Product Manager</h2>
+    <p class="intro">Το CMS δεν δημιουργεί ποτέ κλειδί: το Product Manager το δημιουργεί και το εμφανίζει μία φορά, και αυτό επικολλάται στο Settings → <strong>Connect to Praion.ai</strong> (ορατό όταν το module <strong>Praion.ai connection</strong> είναι ενεργό και υπάρχει το δικαίωμα <strong>Manage api tokens</strong>). Για να ελέγξετε χωρίς το Product Manager, δημιουργήστε μόνοι σας ένα κλειδί. Το μυστικό κλειδί (secret) αποθηκεύεται κρυπτογραφημένο, επειδή κάθε αίτημα υπογράφεται με αυτό (HMAC-SHA256) αντί να αποστέλλεται.</p>
+
+    <article class="tc" id="AUTH-057" data-priority="P2">
+      <h3>Σύνδεση κλειδιού</h3>
+      <ol class="steps">
+        <li>Σε τερματικό δημιουργήστε ένα κλειδί και κρατήστε το τερματικό ανοιχτό:
+<pre><code>KEY_ID=$(openssl rand -hex 6)
+SECRET=$(openssl rand -base64 48 | tr '+/' '-_' | tr -d '=\n')
+echo "pmk_${KEY_ID}_${SECRET}"</code></pre></li>
+        <li>Ως superadmin ανοίξτε το <code>/admin/api-tokens</code>.</li>
+        <li>Επικολλήστε την τιμή που τυπώθηκε στο <strong>Setup string</strong>, συμπληρώστε <strong>Name</strong> <code>QA key</code>, αφήστε τα <strong>Permissions</strong> όπως είναι, αφήστε κενό το <strong>Expires</strong> και πατήστε <strong>Connect</strong>.</li>
+        <li>Εκτελέστε <code>SELECT name, key_id, scopes, CAST(secret_encrypted AS CHAR) AS stored, revoked_at FROM cms_api_tokens;</code></li>
+      </ol>
+      <ul class="exp">
+        <li>Το βήμα 2 ανακατευθύνει στο <code>/admin/settings?tab=Connect%20to%20Praion.ai</code>. Τα <strong>Read content</strong> και <strong>Write SEO fields</strong> είναι επιλεγμένα· τα <strong>Write compiled head payloads</strong> και <strong>Write image alt text</strong> όχι.</li>
+        <li>Στο <strong>Connected keys</strong> μια γραμμή εμφανίζει <code>QA key</code>, Key id ίσο με <code>$KEY_ID</code>, σήματα <code>pm:read</code> <code>pm:write</code>, Last used <code>—</code>, Expires <code>—</code>, Status <code>Active</code> και ένα κουμπί <strong>Revoke</strong>. Το μυστικό κλειδί δεν εμφανίζεται πουθενά, ούτε μετά από ανανέωση.</li>
+        <li>Η τιμή <code>stored</code> του SQL είναι κείμενο base64 που δεν περιέχει το <code>$SECRET</code>. Αρχείο ελέγχου: μια εγγραφή για το <code>api_token.import</code> με Details το key id, το όνομα και τα scopes (η ετικέτα της γράφει <em>Api token import</em>: δεν υπάρχει φιλική ετικέτα).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/ApiTokensManager.tsx</code> · <code>src/cms/core/routes/api-tokens.ts</code> · <code>src/cms/core/tokens/credential.ts</code> · <code>src/app/admin/(shell)/api-tokens/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-058" data-priority="P2">
+      <h3>Ένα υπογεγραμμένο αίτημα επιτυγχάνει· η επανάληψή του (replay) αποτυγχάνει</h3>
+      <ol class="steps">
+        <li>Στο ίδιο τερματικό (ορίστε το <code>HOSTPORT</code> στον host και τη θύρα ακριβώς όπως στη γραμμή διευθύνσεων, με πεζά, χωρίς θύρα για το 443):
+<pre><code>HOSTPORT=localhost:3002; REQ=/api/cms/pm/v1/ping
+TS=$(date +%s); NONCE=$(openssl rand -hex 16)
+BODYHASH=$(printf '' | sha256sum | cut -d' ' -f1)
+SIG=$(printf 'PM-HMAC-SHA256\nGET\n%s\n%s\n%s\n%s\n%s' "$HOSTPORT" "$REQ" "$TS" "$NONCE" "$BODYHASH" \
+  | openssl dgst -sha256 -hmac "$SECRET" | sed 's/^.*= //')
+send() { curl -s -i "$BASE$REQ" -H "X-PM-Key-Id: $KEY_ID" -H "X-PM-Timestamp: $TS" \
+  -H "X-PM-Nonce: $NONCE" -H "X-PM-Signature: $SIG" -H 'X-Real-IP: 10.20.0.1'; }
+send</code></pre></li>
+        <li>Εκτελέστε ξανά το <code>send</code> (ίδιο nonce και ίδια υπογραφή).</li>
+        <li>Ανανεώστε τη λίστα Connected keys.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: <code>200</code> με JSON που ξεκινά με <code>{"ok":true,"plugin_version":"1.0.0",…</code> και ένα αντικείμενο <code>capabilities</code>.</li>
+        <li>Βήμα 2: <code>401</code> <code>{"ok":false,"error":"unauthorized"}</code>· το αρχείο καταγραφής του διακομιστή γράφει <code>[cms/pm] replayed nonce for key id</code> ακολουθούμενο από το key id.</li>
+        <li>Βήμα 3: το Last used εμφανίζει την ώρα του βήματος 1 και τη διεύθυνση <code>10.20.0.1</code>.</li>
+        <li>Αν το βήμα 1 δώσει 401 με <code>signature mismatch</code> στο αρχείο καταγραφής σε περιβάλλον πίσω από proxy, ο host που βλέπει ο διακομιστής διαφέρει από το <code>HOSTPORT</code>: καταγράψτε τον host και σημειώστε Μπλοκαρισμένο, όχι Αποτυχία.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/tokens/signature.ts</code> (<code>canonicalString</code>) · <code>src/cms/core/tokens/guard.ts</code> · <code>src/cms/core/tokens/replay.ts</code> · <code>src/cms/modules/pm/routes.ts</code> (<code>pmPingRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-059" data-priority="P3">
+      <h3>Λανθασμένες υπογραφές, παλιές χρονοσφραγίδες και scopes που λείπουν</h3>
+      <ol class="steps">
+        <li>Δημιουργήστε νέο nonce και νέα υπογραφή (επαναλάβετε τις γραμμές <code>TS=</code>…<code>SIG=</code>), έπειτα αλλάξτε τον τελευταίο χαρακτήρα του <code>SIG</code> και εκτελέστε <code>send</code>.</li>
+        <li>Ορίστε <code>TS=$(( $(date +%s) - 400 ))</code>, νέο nonce, υπολογίστε ξανά το <code>SIG</code> και εκτελέστε <code>send</code>.</li>
+        <li>Συνδέστε δεύτερο κλειδί (νέα <code>KEY_ID</code> και <code>SECRET</code>) με επιλεγμένο μόνο το <strong>Write image alt text</strong>, υπογράψτε με αυτό ένα νέο ping και εκτελέστε <code>send</code>.</li>
+        <li>Στείλτε το ping χωρίς κεφαλίδες <code>X-PM-*</code> και χωρίς cookie.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τα βήματα 1, 2 και 4 απαντούν <code>401</code> με το ίδιο ακριβώς σώμα <code>{"ok":false,"error":"unauthorized"}</code> (για τα βήματα 1 και 2 το αρχείο καταγραφής αναφέρει ποιος έλεγχος απέτυχε: <code>signature mismatch</code>, <code>timestamp outside the accepted window</code>). Το βήμα 3 απαντά <code>403</code> <code>{"ok":false,"error":"forbidden","missing":"pm:read"}</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/tokens/guard.ts</code> (<code>verifySigned</code>) · <code>src/cms/core/tokens/signature.ts</code> (<code>CLOCK_SKEW_SECONDS = 300</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-060" data-priority="P2">
+      <h3>Ανάκληση κλειδιού</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>Revoke</strong> στο QA key, διαβάστε το παράθυρο διαλόγου και επιβεβαιώστε με <strong>Revoke</strong>.</li>
+        <li>Υπογράψτε ένα νέο ping με αυτό το κλειδί και εκτελέστε <code>send</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Παράθυρο διαλόγου <code>Revoke "QA key"?</code> με <code>Product Manager will lose access immediately and any sync in progress will fail. To reconnect, generate a new key in Product Manager and paste it here.</code> Η γραμμή εμφανίζει Status <code>Revoked</code> και κανένα κουμπί Revoke· δεν διαγράφεται. Το αίτημα απαντά <code>401</code>. Αρχείο ελέγχου: <code>api_token.revoke</code> (ετικέτα <em>Api token revoke</em>).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/api-tokens.ts</code> (<code>apiTokenRevokeRoute</code>) · <code>src/cms/core/tokens/service.ts</code> (<code>findActiveToken</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-061" data-priority="P3">
+      <h3>Ένα ληγμένο κλειδί απορρίπτεται</h3>
+      <ol class="steps">
+        <li>Συνδέστε τρίτο κλειδί. Εκτελέστε <code>UPDATE cms_api_tokens SET expires_at = NOW() - INTERVAL 1 MINUTE WHERE key_id = '&lt;its key id&gt;';</code></li>
+        <li>Ανανεώστε τη λίστα· υπογράψτε ένα νέο ping με αυτό και εκτελέστε <code>send</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Status <code>Expired</code> (πορτοκαλί), το Expires εμφανίζει την ημερομηνία. Το αίτημα απαντά <code>401</code> και το αρχείο καταγραφής γράφει <code>no active token for key id</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/ApiTokensManager.tsx</code> (<code>statusOf</code>) · <code>src/cms/core/tokens/service.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-062" data-priority="P3">
+      <h3>Η επικόλληση λανθασμένης τιμής απορρίπτεται με αιτιολογία</h3>
+      <ol class="steps">
+        <li>Επικολλήστε <code>pmk_abc</code>, δώστε όνομα και πατήστε <strong>Connect</strong>.</li>
+        <li>Επικολλήστε <code>hello</code>.</li>
+        <li>Επικολλήστε ένα setup string για άλλον ιστότοπο: την έξοδο του <code>printf '{"key_id":"%s","secret":"%s","site_url":"https://other.example"}' "$(openssl rand -hex 6)" "$SECRET" | base64 -w0 | tr '+/' '-_' | tr -d '='</code></li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: <code>That looks like a Praion API key but it is not complete. Copy the whole value, including the "pmk_" prefix and everything after it.</code></li>
+        <li>Βήμα 2: <code>That is not a valid setup string from Product Manager.</code></li>
+        <li>Βήμα 3: <code>That setup string was issued for https://other.example, but this site is http://localhost:3002. Check which connection you copied it from.</code></li>
+        <li>Δεν προστίθεται γραμμή σε κανένα βήμα.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/tokens/credential.ts</code> (<code>parseCredential</code>) · <code>src/cms/core/routes/api-tokens.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-audit">
+    <h2>Αρχείο ελέγχου (audit log)</h2>
+    <p class="intro">Η οθόνη είναι το <code>/admin/audit</code> και απαιτεί το <strong>View audit log</strong>. Οι ώρες είναι σε UTC. Κάθε εγγραφή με επιπλέον δεδομένα έχει ένα αναπτυσσόμενο <strong>Details</strong> που εμφανίζει <strong>Browser</strong>, <strong>Before</strong> και <strong>Details</strong> (τα δεδομένα «μετά»).</p>
+
+    <article class="tc" id="AUTH-063" data-priority="P1">
+      <h3>Τα συμβάντα ασφαλείας εμφανίζονται με ευανάγνωστες ετικέτες</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Οι προηγούμενες ενότητες αυτής της λίστας ελέγχου έχουν εκτελεστεί σήμερα.</p>
+      <ol class="steps">
+        <li>Ανοίξτε το <strong>Audit log</strong>, ορίστε το <strong>Activity</strong> σε <strong>Sign-ins &amp; security</strong> και πατήστε <strong>Filter</strong>.</li>
+        <li>Επιλέξτε κάθε ετικέτα παρακάτω που εμφανίζεται τουλάχιστον μία φορά. Περάστε τον δείκτη πάνω από ένα κελί Action.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>OK</th><th>Ετικέτα ενέργειας</th><th>Από την περίπτωση</th></tr></thead>
+          <tbody>
+          <tr><td><input type="checkbox" aria-label="Εμφανίστηκε το Signed in"></td><td>Signed in</td><td>AUTH-002</td></tr>
+          <tr><td><input type="checkbox" aria-label="Εμφανίστηκε το Failed sign-in attempt"></td><td>Failed sign-in attempt</td><td>AUTH-003</td></tr>
+          <tr><td><input type="checkbox" aria-label="Εμφανίστηκε το Sign-in blocked"></td><td>Sign-in blocked (too many attempts)</td><td>AUTH-006</td></tr>
+          <tr><td><input type="checkbox" aria-label="Εμφανίστηκε το Signed out"></td><td>Signed out</td><td>AUTH-013</td></tr>
+          <tr><td><input type="checkbox" aria-label="Εμφανίστηκε το Asked for a code"></td><td>Asked for a two-factor code</td><td>AUTH-018</td></tr>
+          <tr><td><input type="checkbox" aria-label="Εμφανίστηκε το Passed two-factor"></td><td>Passed two-factor</td><td>AUTH-018</td></tr>
+          <tr><td><input type="checkbox" aria-label="Εμφανίστηκε το Failed two-factor code"></td><td>Failed two-factor code</td><td>AUTH-019</td></tr>
+          <tr><td><input type="checkbox" aria-label="Εμφανίστηκε το Set up two-factor"></td><td>Set up two-factor authentication</td><td>AUTH-016</td></tr>
+          <tr><td><input type="checkbox" aria-label="Εμφανίστηκε το Required to set up"></td><td>Required to set up two-factor</td><td>AUTH-027</td></tr>
+          <tr><td><input type="checkbox" aria-label="Εμφανίστηκε το Turned off two-factor"></td><td>Turned off two-factor authentication</td><td>AUTH-026</td></tr>
+          <tr><td><input type="checkbox" aria-label="Εμφανίστηκε η σύνδεση με κωδικό ανάκτησης"></td><td>Signed in with a recovery code</td><td>AUTH-023</td></tr>
+          <tr><td><input type="checkbox" aria-label="Εμφανίστηκε το New recovery codes"></td><td>Generated new recovery codes</td><td>AUTH-024</td></tr>
+          <tr><td><input type="checkbox" aria-label="Εμφανίστηκε η επαναφορά από διαχειριστή"></td><td>Reset another user's two-factor</td><td>AUTH-040</td></tr>
+          <tr><td><input type="checkbox" aria-label="Εμφανίστηκε η σύνδεση με PIN ανάκτησης"></td><td>Signed in with the recovery PIN</td><td>AUTH-030</td></tr>
+          <tr><td><input type="checkbox" aria-label="Εμφανίστηκε το Failed recovery PIN"></td><td>Failed recovery PIN attempt</td><td>AUTH-031</td></tr>
+          <tr><td><input type="checkbox" aria-label="Εμφανίστηκε η επαναφορά κωδικού πρόσβασης"></td><td>Reset a user's password</td><td>AUTH-037</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul class="exp">
+        <li>Κάθε ετικέτα παραπάνω υπάρχει. Η επεξήγηση του κελιού Action εμφανίζει το τεχνικό όνομα (για παράδειγμα <code>auth.login.fail</code>).</li>
+        <li>Οι στήλες είναι <strong>When (UTC)</strong>, <strong>Actor</strong>, <strong>Action</strong>, <strong>Subject</strong>, <strong>IP</strong>· με αυτό το φίλτρο δεν εμφανίζονται εγγραφές διαχείρισης χρηστών (Created a user, Edited a role), εμφανίζεται όμως το <em>Reset a user's password</em>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/audit-labels.ts</code> · <code>src/cms/core/audit-groups.ts</code> · <code>src/app/admin/(shell)/audit/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-064" data-priority="P2">
+      <h3>Αλλαγές χρηστών, ρόλων και ρυθμίσεων, και τι εμφανίζει το Details</h3>
+      <ol class="steps">
+        <li>Ορίστε το <strong>Activity</strong> σε <strong>Users, roles &amp; tokens</strong>, πατήστε <strong>Filter</strong> και αναπτύξτε τις εγγραφές.</li>
+        <li>Ορίστε το <strong>Activity</strong> σε <strong>Site configuration</strong> και αναπτύξτε την εγγραφή <em>Changed settings</em> από την AUTH-027.</li>
+        <li>Διαγράψτε μια σελίδα στο <strong>Pages</strong> και έπειτα ορίστε το <strong>Activity</strong> σε <strong>Content &amp; media</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το βήμα 1 παραθέτει τα <em>Created a user</em>, <em>Edited a user</em>, <em>Deleted a user</em> (Before: email, name, roleNames), <em>Created a role</em> και <em>Edited a role</em> (Details: name, permissions), <em>Deleted a role</em>, και τις εγγραφές <code>api_token</code>.</li>
+        <li>Το βήμα 2 εμφανίζει Details <code>{"changed": ["security.require2fa"]}</code>: ποια ρύθμιση άλλαξε, όχι την παλιά ή τη νέα τιμή της.</li>
+        <li>Το βήμα 3 εμφανίζει <em>Deleted content</em> για τη σελίδα.</li>
+        <li>Καταγράψτε ως κενά, όχι ως αποτυχίες: τα <em>Edited a user</em>, <em>Created a user</em> και <em>Deleted a role</em> δεν φέρουν καθόλου Before/Details, και καμία εγγραφή δεν εμφανίζει την προηγούμενη τιμή για αλλαγή ρόλου ή ρύθμισης.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/users.ts</code> · <code>src/cms/core/routes/roles.ts</code> · <code>src/cms/core/routes/settings.ts</code> (<code>after: { changed }</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-065" data-priority="P2">
+      <h3>Search, Affected, Clear και σελιδοποίηση</h3>
+      <ol class="steps">
+        <li>Πληκτρολογήστε <code>auth.login.fail</code> στο <strong>Search</strong> (placeholder <code>Action, person or subject id</code>) και πατήστε <strong>Filter</strong>.</li>
+        <li>Αναζητήστε <code>qa-viewer@example.com</code>· έπειτα επιλέξτε <strong>Affected</strong> <code>User</code> με κενή αναζήτηση.</li>
+        <li>Πατήστε <strong>Clear</strong>. Κάντε κύλιση στο κάτω μέρος.</li>
+        <li>Αναζητήστε <code>zzzz</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 1 παραθέτει μόνο εγγραφές <em>Failed sign-in attempt</em>. Το βήμα 2 παραθέτει εγγραφές για αυτή τη διεύθυνση και έπειτα μόνο εγγραφές με Subject <code>User #…</code>. Το Clear επιστρέφει σε όλες τις εγγραφές και αφαιρεί το φίλτρο από τη διεύθυνση URL. Το υποσέλιδο γράφει <code>Showing 1–N of TOTAL</code> με συνδέσμους σελίδων όταν υπάρχουν περισσότερες. Το βήμα 4 εμφανίζει <code>No entries match this filter.</code></p>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/audit/page.tsx</code> · <code>src/cms/core/audit.ts</code> (<code>listAuditLogs</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-066" data-priority="P3">
+      <h3>Το αρχείο ελέγχου δεν περιέχει μυστικά και καταγράφει την πραγματική διεύθυνση</h3>
+      <ol class="steps">
+        <li>Εκτελέστε:
+<pre><code>SELECT COUNT(*) FROM audit_logs
+WHERE CONCAT(IFNULL(CAST(`before` AS CHAR), ''), IFNULL(CAST(`after` AS CHAR), ''))
+      REGEXP 'Qa-Auth-Pass|Qa-Reset-Pass|Qa-Takeover|482913|000001|pmk_';</code></pre></li>
+        <li>Στο περιβάλλον δοκιμών πίσω από το nginx, συνδεθείτε από το δικό σας μηχάνημα και δείτε τη στήλη IP της νέας εγγραφής <em>Signed in</em>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το πλήθος είναι <code>0</code>: δεν γράφτηκε κανένας κωδικός πρόσβασης, PIN, κωδικός ή κλειδί. Στο περιβάλλον δοκιμών η IP είναι η δημόσια διεύθυνσή σας (όχι <code>unknown</code>, όχι <code>127.0.0.1</code>). Στο localhost μπορεί να είναι <code>::1</code>, <code>unknown</code> ή η τιμή <code>X-Real-IP</code> που έστειλε το curl.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/audit.ts</code> (<code>logAudit</code>) · <code>src/cms/core/rate-limit.ts</code> (<code>clientIpLabel</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-067" data-priority="P3">
+      <h3>Μόνο όσοι έχουν δικαίωμα ανάγνωσης του αρχείου ελέγχου μπορούν να το διαβάσουν</h3>
+      <ol class="steps">
+        <li>Ως <code>qa-viewer@example.com</code> ανοίξτε το <code>/admin/audit</code> και έπειτα εκτελέστε <code>curl -s -i -b "cms_session=$V" "$BASE/api/cms/audit?pageSize=500"</code>.</li>
+        <li>Ως <code>qa-limited@example.com</code> (έχει το View audit log) εκτελέστε το ίδιο με το cookie του.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: σελίδα 403, και <code>403</code> <code>{"ok":false,"error":"forbidden","missing":"cms.audit.read"}</code>. Βήμα 2: η οθόνη ανοίγει· το API απαντά <code>422</code> για <code>pageSize=500</code> (το μέγιστο είναι 200) και <code>200</code> για <code>pageSize=200</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/audit.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-web">
+    <h2>Έλεγχος προέλευσης (cross-origin) &amp; κεφαλίδες ασφαλείας</h2>
+    <p class="intro">Ένα λανθασμένο <code>NEXT_PUBLIC_SITE_URL</code> που απορρίπτει κάθε εγγραφή είναι η SET-008. Οι κεφαλίδες του διαχειριστικού και του δημόσιου ιστότοπου είναι οι SET-073 έως SET-075 και του μετακινημένου διαχειριστικού η SET-057· εδώ βρίσκεται μόνο ό,τι δεν καλύπτουν εκείνες.</p>
+
+    <article class="tc" id="AUTH-068" data-priority="P1">
+      <h3>Μια εγγραφή από άλλη προέλευση (cross-origin) απορρίπτεται</h3>
+      <ol class="steps">
+        <li>Συνδεδεμένοι, με το cookie στο <code>S</code>, εκτελέστε:
+<pre><code>curl -s -i -X POST "$BASE/api/cms/auth/logout" -b "cms_session=$S" -H 'Origin: https://evil.example' \
+  -H 'Content-Type: application/json' -d '{}'
+curl -s -i -X PATCH "$BASE/api/cms/users/&lt;id of qa-viewer&gt;" -b "cms_session=$S" -H 'Origin: https://evil.example' \
+  -H 'Content-Type: application/json' -d '{"disabled":true}'
+curl -s -o /dev/null -w '%{http_code}\n' "$BASE/api/cms/auth/me" -b "cms_session=$S" -H 'Origin: https://evil.example'</code></pre></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και οι δύο εγγραφές απαντούν <code>403</code> με <code>{"ok":false,"error":"forbidden","message":"Cross-origin request rejected."}</code>· η συνεδρία παραμένει έγκυρη και ο QA Viewer παραμένει ενεργός. Το GET τυπώνει <code>200</code> (στις αναγνώσεις δεν ελέγχεται η προέλευση).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/api/same-origin.ts</code> (<code>isSameOrigin</code>) · <code>src/cms/core/api/handler.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-069" data-priority="P3">
+      <h3>Μια σελίδα άλλου ιστότοπου δεν μπορεί να ενεργήσει με τη συνεδρία σας</h3>
+      <ol class="steps">
+        <li>Συνδεδεμένοι στο διαχειριστικό, ανοίξτε οποιονδήποτε άλλο ιστότοπο σε νέα καρτέλα (για παράδειγμα <code>https://example.com</code>), ανοίξτε την καρτέλα Console των εργαλείων προγραμματιστή και εκτελέστε <code>fetch('http://localhost:3002/api/cms/auth/logout', {method: 'POST', credentials: 'include', headers: {'Content-Type': 'application/json'}, body: '{}'}).then(r =&gt; r.status).catch(e =&gt; e.message)</code> (χρησιμοποιήστε τη διεύθυνση του περιβάλλοντος δοκιμών).</li>
+        <li>Επιστρέψτε στην καρτέλα του διαχειριστικού και πατήστε έναν σύνδεσμο.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η κλήση αποτυγχάνει (σφάλμα CORS στην κονσόλα, και στην καρτέλα Network είτε δεν στάλθηκε cookie λόγω του <code>SameSite=Lax</code> είτε ο διακομιστής απάντησε <code>403</code>). Παραμένετε συνδεδεμένοι στην καρτέλα του διαχειριστικού.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/auth/session.ts</code> (<code>sameSite: 'lax'</code>) · <code>src/cms/core/api/same-origin.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-070" data-priority="P2">
+      <h3>Κεφαλίδες στο περιβάλλον δοκιμών με HTTPS, συμπεριλαμβανομένων των αποκρίσεων του API</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s -I https://&lt;test host&gt;/</code>, <code>curl -s -I https://&lt;test host&gt;/admin/login</code> και <code>curl -s -D - -o /dev/null https://&lt;test host&gt;/api/cms/auth/me</code>.</li>
+        <li>Εκτελέστε <code>curl -s -I http://&lt;test host&gt;/</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Και οι τρεις αποκρίσεις HTTPS φέρουν <code>X-Frame-Options: DENY</code>, <code>X-Content-Type-Options: nosniff</code>, <code>Referrer-Policy: strict-origin-when-cross-origin</code>, <code>X-DNS-Prefetch-Control: on</code> και ένα <code>Content-Security-Policy</code> με <code>frame-ancestors 'none'</code> και <code>upgrade-insecure-requests</code>. Η σελίδα του διαχειριστικού έχει <code>Cross-Origin-Embedder-Policy: unsafe-none</code>· η αρχική σελίδα και το API έχουν <code>credentialless</code>.</li>
+        <li>Το <code>Strict-Transport-Security</code> υπάρχει με <code>max-age</code> τουλάχιστον <code>15552000</code> (το ορίζει το nginx· η εφαρμογή όχι). Αν λείπει, σημειώστε Αποτυχία για τη ρύθμιση του διακομιστή.</li>
+        <li>Το απλό HTTP ανακατευθύνει (<code>301</code> ή <code>308</code>) σε HTTPS.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>next.config.ts</code> (<code>baseSecurityHeaders</code>, <code>PRODUCTION_CSP</code>, <code>ADMIN_CSP</code>) · docs/dev-guides/05-auth-users-security.md §3.13 (“HSTS is left to nginx”) · docs/STAGING-SETUP.md</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-public">
+    <h2>Όρια αιτημάτων στα δημόσια endpoints</h2>
+    <p class="intro">Τα endpoints της φόρμας επικοινωνίας και της συγκατάθεσης cookies χρησιμοποιούν τον ίδιο περιοριστή ανά διεύθυνση με το διαχειριστικό. Οι παρακάτω εντολές στέλνουν μη έγκυρα σώματα, οπότε δεν αποστέλλεται email και δεν αποθηκεύεται τίποτα· το όριο μετράται πριν διαβαστεί το σώμα.</p>
+
+    <article class="tc" id="AUTH-071" data-priority="P2">
+      <h3>Φόρμα επικοινωνίας: 5 ανά λεπτό ανά διεύθυνση</h3>
+      <ol class="steps">
+        <li>Εκτελέστε:
+<pre><code>for i in $(seq 1 6); do
+  curl -s -o /dev/null -D - -X POST "$BASE/api/contact" -H 'Content-Type: application/json' \
+    -H 'X-Real-IP: 10.30.0.1' -d '{"kind":"contact"}' | grep -iE '^HTTP|^retry-after|^x-ratelimit'
+done</code></pre></li>
+        <li>Εκτελέστε μία φορά με <code>-H 'X-Real-IP: 10.30.0.2'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τα αιτήματα 1–5 απαντούν <code>400</code> (σώμα <code>{"ok":false,"error":"invalid_payload"}</code>). Το αίτημα 6 απαντά <code>429</code> <code>{"ok":false,"error":"rate_limited"}</code> με <code>Retry-After</code> (60 ή λιγότερο), <code>X-RateLimit-Limit: 5</code>, <code>X-RateLimit-Remaining: 0</code> και <code>X-RateLimit-Reset</code>. Η άλλη διεύθυνση λαμβάνει <code>400</code>.</p>
+      <p class="ref">Αναφ.: <code>src/app/api/contact/route.ts</code> (<code>RATE_LIMIT</code>) · <code>test/lib/public-rate-limit.test.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-072" data-priority="P2">
+      <h3>Συγκατάθεση cookies: 20 ανά λεπτό ανά διεύθυνση</h3>
+      <ol class="steps">
+        <li>Εκτελέστε:
+<pre><code>for i in $(seq 1 21); do
+  curl -s -o /dev/null -w '%{http_code} ' -X POST "$BASE/api/cookies/consent" -H 'Content-Type: application/json' \
+    -H 'X-Real-IP: 10.31.0.1' -d 'not json'
+done; echo</code></pre></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Είκοσι <code>400</code> (<code>invalid_json</code>) και έπειτα ένα <code>429</code>. Το <code>GET /api/cookies/consent</code> δεν έχει όριο και εξακολουθεί να απαντά <code>200</code>.</p>
+      <p class="ref">Αναφ.: <code>src/app/api/cookies/consent/route.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-073" data-priority="P3">
+      <h3>Η παραγωγή χωρίς X-Real-IP αρνείται· οι ξένες προελεύσεις απορρίπτονται</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Το build παραγωγής στη θύρα 3000, με απευθείας πρόσβαση (SET-030), χωρίς proxy.</p>
+      <ol class="steps">
+        <li>Εκτελέστε το πρώτο αίτημα των AUTH-071 και AUTH-072 στο <code>http://localhost:3000</code> χωρίς καμία κεφαλίδα <code>X-Real-IP</code>.</li>
+        <li>Εκτελέστε <code>curl -s -i -X POST http://localhost:3000/api/contact -H 'Content-Type: application/json' -H 'X-Real-IP: 10.32.0.1' -H 'Origin: https://evil.example' -d '{"kind":"contact"}'</code>.</li>
+        <li>Στον διακομιστή ανάπτυξης, στείλτε το αίτημα επικοινωνίας έξι φορές χωρίς <code>X-Real-IP</code> και έπειτα μία φορά με νέο <code>X-Real-IP</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: και τα δύο απαντούν <code>429</code> ήδη στο πρώτο αίτημα· το αρχείο καταγραφής εμφανίζει μία φορά το <code>[cms] No X-Real-IP on an incoming request</code>.</li>
+        <li>Βήμα 2: <code>403</code> <code>{"ok":false,"error":"forbidden"}</code>.</li>
+        <li>Βήμα 3 (μόνο σε περιβάλλον ανάπτυξης): τα αιτήματα χωρίς την κεφαλίδα μοιράζονται έναν κάδο και το έκτο είναι <code>429</code>· το αίτημα με δική του διεύθυνση δεν επηρεάζεται.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/rate-limit.ts</code> (<code>checkRateLimit</code>) · <code>src/lib/public-origin.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-secrets">
+    <h2>Αποθηκευμένα μυστικά κλειδιά (secrets)</h2>
+    <p class="intro">Ένα κλειδί, το <code>CMS_TOKEN_ENCRYPTION_KEY</code>, κρυπτογραφεί τα μυστικά κλειδιά των εφαρμογών ελέγχου ταυτότητας, τα μυστικά κλειδιά των κλειδιών API (AUTH-057) και τα διαπιστευτήρια των ενσωματώσεων. Οι κωδικοί πρόσβασης και οι κωδικοί ανάκτησης αποθηκεύονται ως hash, όχι κρυπτογραφημένοι.</p>
+
+    <article class="tc" id="AUTH-074" data-priority="P2">
+      <h3>Τα μυστικά κλειδιά της εφαρμογής ελέγχου ταυτότητας αποθηκεύονται κρυπτογραφημένα</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ένας λογαριασμός με ρυθμισμένη εφαρμογή ελέγχου ταυτότητας· έχετε σημειώσει το κλειδί χειροκίνητης εισαγωγής που εμφανίστηκε κατά τη ρύθμιση.</p>
+      <ol class="steps">
+        <li>Εκτελέστε:
+<pre><code>SELECT email, mfa_method, CAST(totp_secret_encrypted AS CHAR) AS stored, LENGTH(totp_secret_encrypted) AS len
+FROM admin_users WHERE mfa_method = 'totp';</code></pre></li>
+        <li>Εκτελέστε <code>SELECT COUNT(*) FROM admin_users WHERE CAST(totp_secret_encrypted AS CHAR) LIKE '%&lt;manual key&gt;%';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το <code>stored</code> είναι κείμενο base64 (γράμματα, ψηφία, <code>+</code>, <code>/</code>, <code>=</code>) μήκους περίπου 64 χαρακτήρων, διαφορετικό για κάθε λογαριασμό και διαφορετικό από το κλειδί χειροκίνητης εισαγωγής. Το πλήθος είναι <code>0</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/tokens/crypto.ts</code> (<code>encryptSecret</code>, AES-256-GCM) · <code>src/cms/modules/auth/mfa.ts</code> (<code>startTotpEnrollment</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-075" data-priority="P2">
+      <h3>Τα διαπιστευτήρια ενσωματώσεων είναι μόνο για εγγραφή και κρυπτογραφημένα</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Commerce ενεργό.</p>
+      <ol class="steps">
+        <li>Ανοίξτε το Settings → <strong>Ecommerce</strong> → <strong>Shipping</strong> και μετακινηθείτε στο <strong>Couriers</strong>. Στο <strong>BoxNow client secret</strong> πληκτρολογήστε <code>qa-boxnow-secret-9876</code> και πατήστε <strong>Save</strong>.</li>
+        <li>Ανανεώστε τη σελίδα. Εκτελέστε <code>curl -s -b "cms_session=$S" "$BASE/api/cms/shipping/couriers"</code>.</li>
+        <li>Εκτελέστε <code>SELECT `key`, hint, CAST(ciphertext AS CHAR) AS stored FROM integration_secrets;</code></li>
+        <li>Πατήστε <strong>Clear</strong> σε αυτό και επιβεβαιώστε.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: <code>Saved.</code> Μετά την ανανέωση το πεδίο είναι κενό με placeholder <code>••••9876</code> και τη σημείωση <code>Set · ••••9876 — type a new value to replace it</code>.</li>
+        <li>Η απόκριση του API και ο πηγαίος κώδικας της σελίδας δεν περιέχουν ποτέ το <code>qa-boxnow-secret</code>· μόνο <code>"masked"</code> <code>••••9876</code> και <code>"set": true</code>.</li>
+        <li>SQL: key <code>courier.boxnow.clientSecret</code>, hint <code>9876</code>, και το <code>stored</code> είναι base64 που δεν περιέχει το μυστικό κλειδί.</li>
+        <li>Αρχείο ελέγχου (Site configuration): <em>Saved an integration credential</em> και <em>Removed an integration credential</em>, μόνο με το όνομα του κλειδιού.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/secrets/service.ts</code> · <code>src/cms/admin/CourierCredentials.tsx</code> · <code>src/cms/modules/commerce/shipping-methods.ts</code> (<code>COURIER_SECRET_DEFS</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-076" data-priority="P3">
+      <h3>Οι κωδικοί πρόσβασης και οι κωδικοί ανάκτησης αποθηκεύονται ως hash</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>SELECT email, password_hash FROM admin_users LIMIT 3;</code></li>
+        <li>Εκτελέστε <code>SELECT code_hash, used_at FROM admin_recovery_codes LIMIT 3;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε τιμή είναι hash bcrypt 60 χαρακτήρων που ξεκινά με <code>$2</code> με κόστος <code>12</code> (για παράδειγμα <code>$2a$12$…</code> ή <code>$2b$12$…</code>). Δεν εμφανίζεται κανένας κωδικός πρόσβασης σε απλό κείμενο ούτε κωδικός <code>XXXX-XXXX</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/auth/password.ts</code> · <code>src/cms/core/security/recovery-codes.ts</code> (<code>padForHash</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-077" data-priority="P3">
+      <h3>Η αλλαγή του κλειδιού κρυπτογράφησης αποτυγχάνει με ασφάλεια (fail closed)</h3>
+      <ol class="steps">
+        <li>Αντικαταστήστε το <code>CMS_TOKEN_ENCRYPTION_KEY</code> με νέα τιμή 64 χαρακτήρων και κάντε επανεκκίνηση.</li>
+        <li>Συνδεθείτε με λογαριασμό που έχει ρυθμισμένη εφαρμογή ελέγχου ταυτότητας με τρέχοντα κωδικό της εφαρμογής· έπειτα με κωδικό ανάκτησης.</li>
+        <li>Στείλτε ένα υπογεγραμμένο ping με συνδεδεμένο κλειδί (AUTH-058).</li>
+        <li>Επαναφέρετε το αρχικό κλειδί και κάντε επανεκκίνηση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ο κωδικός της εφαρμογής απορρίπτεται (<code>That code is not valid. Check the code and try again.</code>) και το αρχείο καταγραφής αναφέρει μυστικό κλειδί που δεν μπορεί να αποκρυπτογραφηθεί· ο κωδικός ανάκτησης εξακολουθεί να συνδέει. Το ping απαντά <code>401</code>. Τίποτα δεν καταρρέει. Μετά την επαναφορά του κλειδιού όλα λειτουργούν ξανά.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/tokens/crypto.ts</code> (το <code>decryptSecret</code> προκαλεί εξαίρεση) · docs/dev-guides/05-auth-users-security.md §3.10</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-seeds">
+    <h2>Seeds, ανάκτηση &amp; γνωστά κενά</h2>
+    <p class="intro">Η προαγωγή ενός υπάρχοντος editor με <code>db:seed-admin</code> είναι η SET-016· η εκ νέου εκτέλεση του <code>db:seed-roles</code> που αφήνει ανέπαφο έναν προσαρμοσμένο editor είναι η SET-017· η απόρριψη αδύναμου κωδικού πρόσβασης είναι η SET-014.</p>
+
+    <article class="tc" id="AUTH-078" data-priority="P3">
+      <h3>Τα αιτήματα χωρίς κεφαλίδα Origin περνούν τον έλεγχο προέλευσης</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s -i -X PATCH "$BASE/api/cms/users/&lt;id of qa-viewer&gt;" -b "cms_session=$S" -H 'Content-Type: application/json' -d '{"name":"QA Viewer"}'</code> (χωρίς <code>Origin</code>).</li>
+        <li>Εκτελέστε την ξανά χωρίς το cookie.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Με το cookie: <code>200</code> (client εκτός browser· το cookie είναι αυτό που τον ταυτοποιεί). Χωρίς: <code>401</code> <code>{"ok":false,"error":"unauthorized"}</code>. Αυτός είναι ο τεκμηριωμένος σχεδιασμός: χωρίς token CSRF, με cookie same-site συν τον έλεγχο Origin.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/api/same-origin.ts</code> (“No Origin header → non-browser client”)</p>
+    </article>
+
+    <article class="tc" id="AUTH-079" data-priority="P3">
+      <h3>Το db:seed-roles επαναφέρει το Full access στον superadmin</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>UPDATE admin_roles SET permissions = '["cms.access"]' WHERE name = 'superadmin';</code></li>
+        <li>Εκτελέστε <code>npm run db:seed-roles</code>.</li>
+        <li>Εκτελέστε <code>SELECT name, permissions FROM admin_roles WHERE name IN ('superadmin','editor');</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Έξοδος <code>Roles seeded (created 0, updated 1, left as configured 1).</code> Ο <code>superadmin</code> είναι ξανά <code>["*"]</code>· ο <code>editor</code> δεν έχει αλλάξει σε σχέση με πριν από το βήμα 1.</p>
+      <p class="ref">Αναφ.: <code>src/cms/db/seeds/roles.ts</code> (<code>planRoleSeed</code>, <code>sync: true</code>) · <code>src/cms/db/seeds/cli/seed-roles.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-080" data-priority="P3">
+      <h3>Γνωστό κενό: δεν υπάρχει “forgot password” για το διαχειριστικό ούτε “change my password”</h3>
+      <ol class="steps">
+        <li>Αναζητήστε σύνδεσμο “Forgot password” στο <code>/admin/login</code>.</li>
+        <li>Αναζητήστε ενότητα κωδικού πρόσβασης στο <strong>Your account</strong>.</li>
+        <li>Εκτελέστε <code>curl -s -o /dev/null -w '%{http_code}\n' -X POST "$BASE/api/cms/auth/password" -b "cms_session=$S"</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο (γνωστό κενό):</span> Κανένας σύνδεσμος, καμία ενότητα, και <code>404</code>. Ο κωδικός πρόσβασης ενός διαχειριστή αλλάζει μόνο από κάτοχο του <strong>Manage users</strong> (AUTH-037) ή με <code>npm run db:seed-admin</code> (SET-016). Οι διαδρομές forgot/reset για πελάτες κάτω από το <code>/api/cms/customer/</code> ανήκουν στο κατάστημα (λίστα ελέγχου 08). Σημειώστε Επιτυχία αν η συμπεριφορά ταιριάζει, και κρατήστε το κενό στη λίστα εκκρεμοτήτων.</p>
+      <p class="ref">Αναφ.: docs/dev-guides/05-auth-users-security.md §3.6 · docs/user-guides/src/06-rythmiseis-xristes.md (Users)</p>
+    </article>
+
+    <article class="tc" id="AUTH-081" data-priority="P3">
+      <h3>Επαναφορά του περιβάλλοντος δοκιμών</h3>
+      <ol class="steps">
+        <li>Επαναφέρετε τα <code>RECAPTCHA_SITE_KEY</code>, <code>RECAPTCHA_SECRET_KEY</code>, <code>ADMIN_SESSION_IDLE_MINUTES=60</code>, <code>ADMIN_SESSION_TTL_HOURS=8</code>, αδειάστε το <code>ADMIN_MFA_BYPASS_CODE=</code>, και επαναφέρετε το αρχικό <code>CMS_TOKEN_ENCRYPTION_KEY</code>· κάντε επανεκκίνηση.</li>
+        <li>Επαναφέρετε το Security σε <strong>Optional — each administrator chooses</strong>, ενεργοποιήστε κάθε απενεργοποιημένο superadmin του QA, και βεβαιωθείτε ότι ο <code>qa-admin@example.com</code> έχει τον ρόλο <code>superadmin</code>.</li>
+        <li>Ανακαλέστε τα υπόλοιπα κλειδιά του QA και διαγράψτε τους ρόλους και τους χρήστες του QA που δεν χρειάζεται καμία άλλη λίστα ελέγχου.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η σελίδα σύνδεσης εμφανίζει ξανά το πλαίσιο captcha, ο <code>qa-admin@example.com</code> συνδέεται, και το SQL της AUTH-046 παραθέτει κάθε superadmin που πρέπει να υπάρχει.</p>
+      <p class="ref">Αναφ.: <code>.env.example</code></p>
+    </article>
+  </section>
+
+</main>
+<footer class="page">Λίστα ελέγχου 05 από 12. Τα αποτελέσματα αποθηκεύονται μόνο σε αυτόν τον browser· χρησιμοποιήστε την εξαγωγή πριν καθαρίσετε τα δεδομένα του browser. Στο τέλος επαναφέρετε το αρχείο περιβάλλοντος και τη ρύθμιση Security (AUTH-081), και διαγράψτε τους λογαριασμούς, τους ρόλους και τα κλειδιά API του QA αν άλλες λίστες ελέγχου δεν αναμένουν κανένα.</footer>
+</body>
+</html>

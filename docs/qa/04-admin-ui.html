@@ -1,0 +1,1010 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin UI &amp; navigation</title>
+<link rel="stylesheet" href="qa.css">
+<script src="qa.js" defer></script>
+</head>
+<body>
+<nav class="crumbs"><a href="index.html">CMS manual QA</a></nav>
+<header class="page">
+  <h1>04 · Admin UI &amp; navigation</h1>
+  <p class="scope">The admin shell and everything around the content: the sign-in page, the dashboard, the sidebar per module and per role, the top bar and sign out, “Back to site”, the admin bar on the public site, the 403 page, idle sign-out, the shared controls (tabs, dialogs, messages, tables, the unsaved-changes guard), every admin screen loading with its empty state, the admin under a moved path, phone-width layout, keyboard and screen-reader use, and the colour scheme. Editing documents, fields, publishing, versions, locks, list search and delete rights are in checklist 03; sign-in security, two-factor and role editing in 05. You need two browsers (or one normal and one private window), a terminal on the test machine to edit <code>.env.local</code>, and for the accessibility cases a screen reader (NVDA, VoiceOver or Narrator) or the browser's accessibility tree.</p>
+</header>
+<main>
+
+  <section class="suite" id="suite-prep">
+    <h2>Before you start</h2>
+    <p class="intro">Checklist 01 must be done: migrations applied, the superadmin <code>qa-admin@example.com</code> exists and the seeded pages were published with <code>npm run db:seed-site -- --force --publish-samples</code>. The URLs below use <code>http://localhost:3002</code>; on a hosted test environment use its address instead. The admin is at <code>/admin</code> unless a case says otherwise. “Signed in as X” means sign in at <code>/admin/login</code> with that account (tick the reCAPTCHA box; complete two-factor setup if asked, see checklist 05). Cases that need the shop or bookings expect the content from checklists 08 and 09 (at least one published product in a published category and tag, and one published experience); if those modules are off on the site under test, mark those cases N/A.</p>
+
+    <article class="tc" id="ADM-001" data-priority="P2">
+      <h3>Create the accounts used by the role cases</h3>
+      <ol class="steps">
+        <li>Signed in as <code>qa-admin@example.com</code>, open <strong>Roles</strong>. Under <strong>Add a role</strong> enter <strong>Role name</strong> <code>QA limited</code>, leave <strong>Access</strong> ticked, tick <strong>View media</strong> and <strong>View audit log</strong> only, click <strong>Add role</strong>.</li>
+        <li>Add a second role <code>QA no access</code>: untick <strong>Access</strong>, tick <strong>View content</strong>, click <strong>Add role</strong>.</li>
+        <li>Open <strong>Users</strong>. Under <strong>Add a user</strong> create, clicking <strong>Add user</strong> each time: <code>qa-editor@example.com</code> (name <code>QA Editor</code>, role <code>editor</code>), <code>qa-limited@example.com</code> (name <code>QA Limited</code>, role <code>QA limited</code>) and <code>qa-noaccess@example.com</code> (name <code>QA No Access</code>, role <code>QA no access</code>), each with a strong password such as <code>Qa-Admin-Ui-Pass-2026!</code>.</li>
+        <li>In a terminal run <code>npm run db:seed-admin -- qa-en@example.com 'Qa-English-Pass-2026!' 'QA English' --locale en</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>While <strong>Access</strong> is unticked in step 2 an amber note reads <code>Without Access this role cannot open the admin at all — every screen will refuse it.</code> The role is still saved.</li>
+        <li>All four users are created without error. <code>qa-en@example.com</code> is a superadmin whose account language is English.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/RolesManager.tsx</code> · <code>src/cms/admin/UsersManager.tsx</code> · <code>src/cms/db/seeds/roles.ts</code> (editor permissions)</p>
+    </article>
+
+    <article class="tc" id="ADM-002" data-priority="P2">
+      <h3>Switch every module on</h3>
+      <ol class="steps">
+        <li>Signed in as <code>qa-admin@example.com</code>, open <code>/admin/settings?tab=Modules</code>. Tick every box (Commerce, Booking, Forms, Seo, Newsletter, Customer accounts, Google reviews &amp; testimonials, Popups, Media, Praion.ai connection) and click <strong>Save settings</strong>.</li>
+        <li>Open the <strong>Ecommerce</strong> tab, then its <strong>Gift cards</strong> sub-tab. Tick <strong>Sell gift cards</strong> and click <strong>Save</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1 shows <code>Settings saved.</code> in green. Step 2 shows <code>Saved.</code> The sidebar now has <strong>Ecommerce</strong> and <strong>Booking</strong> headings. Unless a case says otherwise, the rest of this checklist assumes this state; checklist 01 restores the defaults.</p>
+      <p class="ref">Ref: <code>src/cms/admin/SettingsForm.tsx</code> · <code>src/cms/admin/GiftCardSettings.tsx</code> · <code>src/cms/core/settings/modules.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-login">
+    <h2>Sign-in page</h2>
+    <p class="intro">A first sign-in, the deep link and the basic <code>next</code> attacks are in checklist 01 (SET-025, SET-028, SET-029); wrong password and captcha errors in SET-027.</p>
+
+    <article class="tc" id="ADM-003" data-priority="P2">
+      <h3>What the sign-in page shows</h3>
+      <ol class="steps">
+        <li>Signed out, open <code>/admin/login</code>.</li>
+        <li>Type a password and click the eye button at the end of the password box, then click it again.</li>
+        <li>Look at the browser tab title, then view the page source and search for <code>robots</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>A centred white card on a light grey page: a gold square icon, the site name as heading, and under it <strong>CMS · sign in</strong> in small capitals. Below: <strong>Email</strong> (focused on load), <strong>Password</strong>, the reCAPTCHA box and a full-width <strong>Sign in</strong> button. No sidebar or top bar.</li>
+        <li>Step 2: the password becomes readable and the button's name changes from <code>Show password</code> to <code>Hide password</code> (hover or inspect it); clicking again hides it.</li>
+        <li>Step 3: the tab title is <code>CMS</code>; the source has <code>&lt;meta name="robots" content="noindex, nofollow"&gt;</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/admin/login/page.tsx</code> · <code>src/cms/admin/LoginForm.tsx</code> · <code>src/cms/admin/ui/PasswordInput.tsx</code> · <code>src/app/admin/layout.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-004" data-priority="P2">
+      <h3>A filtered list and a language tab survive the sign-in</h3>
+      <ol class="steps">
+        <li>Signed out, type <code>/admin/page?q=about&amp;status=published</code> into the address bar and sign in.</li>
+        <li>Sign out. Open the edit address of a page that has an English version with <code>?locale=en</code> on the end (for example <code>/admin/page/&lt;id&gt;?locale=en</code>) and sign in.</li>
+        <li>Sign out. Open <code>/admin/audit?q=Signed</code> and sign in.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Each time the login address carries the requested path in <code>next=</code>, and after sign-in you land exactly there: step 1 on Pages with <code>about</code> in the search box and <strong>published</strong> in the status filter; step 2 on the editor with the EN tab selected; step 3 on the Audit log filtered to <code>Signed</code>.</p>
+      <p class="ref">Ref: <code>src/proxy.ts</code> · <code>src/cms/core/admin-deep-link.ts</code> · <code>src/cms/admin/safe-next.ts</code></p>
+    </article>
+
+    <article class="tc" id="ADM-005" data-priority="P3">
+      <h3>More hostile next values fall back to the dashboard</h3>
+      <ol class="steps">
+        <li>Signed out, open each of these, sign in, note where you land, then sign out again:
+          <code>/admin/login?next=https://evil.example</code>,
+          <code>/admin/login?next=/admin@evil.example</code>,
+          <code>/admin/login?next=javascript:alert(1)</code>,
+          <code>/admin/login?next=/about</code>,
+          <code>/admin/login?next=%2F%2Fevil.example</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Every one lands on the dashboard at <code>/admin</code> on the test host. No other domain is ever opened, no script runs, and the public <code>/about</code> page is not the destination (only admin paths are allowed).</p>
+      <p class="ref">Ref: <code>src/cms/admin/safe-next.ts</code> (<code>safeNextPath</code>) · <code>test/cms/safe-next.test.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-dashboard">
+    <h2>Dashboard</h2>
+
+    <article class="tc" id="ADM-006" data-priority="P1">
+      <h3>Dashboard contents for a superadmin</h3>
+      <ol class="steps">
+        <li>Signed in as <code>qa-admin@example.com</code>, open <code>/admin</code>.</li>
+        <li>Hover or focus the small “i” next to <strong>Content</strong>, then the one next to <strong>Recent submissions</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>The heading is the site name, with <code>Manage your site content.</code> under it.</li>
+        <li>A <strong>Content</strong> section has one card per collection shown in the sidebar, in sidebar order (Pages, Brands, Testimonials, Popups, Categories, Size charts, Tags, Products, Categories, Types, Locations, Experiences with every module on). Each card shows an icon, the plural name, <code>N items</code> (or <code>1 item</code>) and, when some are drafts, <code>· M in draft</code> in gold; under it <strong>View</strong> · <strong>New</strong> (with a plus icon).</li>
+        <li>A <strong>Recent submissions</strong> section lists up to six latest form entries (date, form, email, status) with <strong>View all →</strong> on the right, or <code>No submissions yet.</code></li>
+        <li>The tips read <code>Each item is counted once, however many languages it has. …</code> and <code>The latest messages sent through your site’s forms. …</code></li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/page.tsx</code> · <code>src/cms/admin/shared.ts</code> (<code>visibleAdminCollections</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-007" data-priority="P2">
+      <h3>Dashboard counts match the lists</h3>
+      <ol class="steps">
+        <li>Note the Pages card: items and drafts.</li>
+        <li>Click <strong>View</strong> on it and read <code>N total</code> under the list. Set the status filter to <strong>draft</strong> and read the total again.</li>
+        <li>Pick a page that has both EL and EN versions and check it appears once in the list.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The card's item count equals the list's unfiltered total, and its “in draft” count equals the total with the draft filter. A page with two languages counts as one item in both places.</p>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/page.tsx</code> (<code>countOf</code>, <code>draftCountOf</code>) · <code>src/cms/core/documents/service.ts</code> (<code>listDocumentGroups</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-008" data-priority="P2">
+      <h3>Every dashboard link goes to the right screen</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> At least one form submission exists (send the contact form on <code>/contact</code> once from a private window).</p>
+      <ol class="steps">
+        <li>On each card click <strong>View</strong>, check the address, go back; then <strong>New</strong>, check, go back.</li>
+        <li>Click <strong>View all →</strong>.</li>
+        <li>Back on the dashboard click one row under Recent submissions.</li>
+      </ol>
+      <ul class="exp">
+        <li><strong>View</strong> opens <code>/admin/&lt;key&gt;</code> and <strong>New</strong> opens <code>/admin/&lt;key&gt;/new</code>, where key is <code>page</code>, <code>brand</code>, <code>testimonial</code>, <code>popup</code>, <code>category</code>, <code>sizechart</code>, <code>tag</code>, <code>product</code>, <code>booking_category</code>, <code>vessel_type</code>, <code>departure_location</code>, <code>booking</code>. None ends on a 404 or 403 for the superadmin.</li>
+        <li><strong>View all →</strong> opens <code>/admin/submissions</code>.</li>
+        <li>A row opens <code>/admin/submissions?search=&lt;that email&gt;</code> with the email already in the search box and that submission listed.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/page.tsx</code> · <code>src/cms/admin/SubmissionsTable.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-009" data-priority="P2">
+      <h3>Dashboard for the editor and the limited role</h3>
+      <ol class="steps">
+        <li>Sign in as <code>qa-editor@example.com</code> and look at the dashboard.</li>
+        <li>Sign in as <code>qa-limited@example.com</code> and look at the dashboard. Click <strong>View</strong> on the Pages card.</li>
+      </ol>
+      <ul class="exp">
+        <li>Editor: the same content cards as the superadmin and the <strong>Recent submissions</strong> section (the editor may read submissions).</li>
+        <li>Limited role: no <strong>Recent submissions</strong> section. The content cards are still shown, but <strong>View</strong> leads to <strong>403 — Forbidden</strong> because the role lacks <strong>View content</strong>. Record this as a usability defect: the dashboard offers cards the user cannot open.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/page.tsx</code> (<code>canForms</code>; cards not gated by <code>contentRead</code>) · <code>src/app/admin/(shell)/[collection]/page.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-sidebar">
+    <h2>Sidebar</h2>
+    <p class="intro">The sidebar is built on the server from the module switches and the signed-in user's current permissions. Module on/off effects per module are also in checklist 01 (SET-033 to SET-043); this suite checks the full structure, the role differences and the highlighting.</p>
+
+    <article class="tc" id="ADM-010" data-priority="P1">
+      <h3>Full sidebar for a superadmin with every module on</h3>
+      <ol class="steps">
+        <li>Signed in as <code>qa-admin@example.com</code> on a desktop-width window, read the sidebar from top to bottom.</li>
+        <li>Hover each entry and read the link address in the browser's status bar.</li>
+      </ol>
+      <ul class="exp">
+        <li>Top: a gold icon, the site name and <code>CMS</code> under it; then <strong>Back to site</strong> (arrow icon) and <strong>Dashboard</strong>.</li>
+        <li><strong>CONTENT</strong>: Pages, Brands, Testimonials, Popups.</li>
+        <li><strong>ECOMMERCE</strong>: Categories, Size charts, Tags, Products, Orders, Customers, Gift cards, Reviews, Abandoned carts.</li>
+        <li><strong>BOOKING</strong>: Categories, Types, Locations, Experiences, Reservations, Availability.</li>
+        <li><strong>SYSTEM</strong>: Submissions, Newsletter, SEO, Media, Users, Roles, Audit log, Your account, Cookies, Settings, Scripts.</li>
+        <li>Each entry has an icon. Collections link to <code>/admin/&lt;key&gt;</code> (as in ADM-008); tools link to <code>/admin/orders</code>, <code>/admin/customers</code>, <code>/admin/gift-cards</code>, <code>/admin/reviews</code>, <code>/admin/abandoned</code>, <code>/admin/reservations</code>, <code>/admin/availability</code>, <code>/admin/submissions</code>, <code>/admin/newsletter</code>, <code>/admin/seo</code>, <code>/admin/media</code>, <code>/admin/users</code>, <code>/admin/roles</code>, <code>/admin/audit</code>, <code>/admin/account</code>, <code>/admin/cookies</code>, <code>/admin/settings</code>, <code>/admin/scripts</code>. <strong>Back to site</strong> links to <code>/</code>.</li>
+        <li>If the list is longer than the window, the sidebar scrolls on its own while the page stays put.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/layout.tsx</code> (tools) · <code>src/cms/admin/Sidebar.tsx</code> · <code>src/cms/admin/shared.ts</code> (<code>groupSidebarItems</code>, <code>MODULE_GROUPS</code>) · <code>src/site.config.ts</code></p>
+    </article>
+
+    <article class="tc" id="ADM-011" data-priority="P2">
+      <h3>Sidebar with the default modules only</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> In Settings → Modules only Forms, Seo and Media ticked (the state after the site seed); saved.</p>
+      <ol class="steps">
+        <li>As superadmin reload any admin screen and read the sidebar.</li>
+        <li>Tick <strong>Newsletter</strong>, save, reload. Then tick <strong>Google reviews &amp; testimonials</strong> and <strong>Popups</strong>, save, reload.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: CONTENT has Pages and Brands only; there is no ECOMMERCE or BOOKING heading at all; SYSTEM is Submissions, SEO, Media, Users, Roles, Audit log, Your account, Cookies, Settings, Scripts.</li>
+        <li>Step 2: <strong>Newsletter</strong> appears in SYSTEM between Submissions and SEO; then <strong>Testimonials</strong> and <strong>Popups</strong> appear under CONTENT after Brands. The dashboard gains the matching cards.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/shared.ts</code> (empty module sections are dropped) · <code>src/app/admin/(shell)/layout.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-012" data-priority="P3">
+      <h3>Customer accounts on while Commerce is off</h3>
+      <ol class="steps">
+        <li>In Settings → Modules untick <strong>Commerce</strong>, leave <strong>Customer accounts</strong> ticked, click <strong>Save settings</strong>.</li>
+        <li>Reload and read the sidebar; click any customer entry you see.</li>
+        <li>Tick Commerce again and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Record what happens. The site configuration says customer accounts need the shop, so either the Modules tab should refuse or explain this combination, or the sidebar should show no ECOMMERCE heading. If the save succeeds and an ECOMMERCE heading appears holding only <strong>Customers</strong>, mark Fail and note it.</p>
+      <p class="ref">Ref: <code>src/site.config.ts</code> (<code>customers</code> comment) · <code>src/app/admin/(shell)/layout.tsx</code> (Customers gated on <code>moduleFlags.customers</code> only)</p>
+    </article>
+
+    <article class="tc" id="ADM-013" data-priority="P2">
+      <h3>Sidebar for the editor role</h3>
+      <ol class="steps">
+        <li>Sign in as <code>qa-editor@example.com</code> and read the sidebar.</li>
+      </ol>
+      <ul class="exp">
+        <li>CONTENT, ECOMMERCE and BOOKING collections are all listed.</li>
+        <li>ECOMMERCE tools: Orders, Gift cards, Reviews, Abandoned carts. No <strong>Customers</strong> (the editor role has no customer permission).</li>
+        <li>BOOKING tools: Reservations, Availability.</li>
+        <li>SYSTEM: Submissions, Newsletter, SEO, Media, Your account. No Users, Roles, Audit log, Cookies, Settings or Scripts.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/db/seeds/roles.ts</code> (<code>editor</code>) · <code>src/app/admin/(shell)/layout.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-014" data-priority="P2">
+      <h3>Sidebar for a restricted custom role</h3>
+      <ol class="steps">
+        <li>Sign in as <code>qa-limited@example.com</code> (Access, View media, View audit log) and read the sidebar.</li>
+        <li>Click <strong>Media</strong>, then <strong>Audit log</strong>, then <strong>Pages</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>SYSTEM shows only <strong>Media</strong>, <strong>Audit log</strong> and <strong>Your account</strong>.</li>
+        <li>Media and Audit log open normally. Pages lands on <strong>403 — Forbidden</strong>.</li>
+        <li>Record: collections under CONTENT, ECOMMERCE and BOOKING are still listed although this role cannot open any of them (collection entries are gated by module only, not by <strong>View content</strong>). The user guide says every entry appears only if the role has the right to it, so report this as a defect.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/layout.tsx</code> · <code>src/cms/admin/shared.ts</code> (<code>visibleAdminCollections</code>) · docs/user-guides/src/01-vasika.md (“Ο χάρτης της οθόνης”)</p>
+    </article>
+
+    <article class="tc" id="ADM-015" data-priority="P2">
+      <h3>A role change reaches the sidebar without signing in again</h3>
+      <ol class="steps">
+        <li>Keep <code>qa-limited@example.com</code> signed in in the private window.</li>
+        <li>In the normal window, as superadmin, open <strong>Roles</strong>, edit <code>QA limited</code>, tick <strong>View form submissions</strong>, save.</li>
+        <li>In the private window reload the page.</li>
+        <li>Untick the permission again and reload the private window once more.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> After step 3 <strong>Submissions</strong> appears in SYSTEM and opens; after step 4 it is gone and <code>/admin/submissions</code> answers 403. No sign-out is needed either way.</p>
+      <p class="ref">Ref: <code>src/cms/modules/auth/guards.ts</code> (<code>requirePerm</code> reads permissions fresh) · <code>src/app/admin/(shell)/layout.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-016" data-priority="P2">
+      <h3>Screens hidden from the sidebar are still refused by address</h3>
+      <ol class="steps">
+        <li>As <code>qa-editor@example.com</code> type each address directly: <code>/admin/users</code>, <code>/admin/roles</code>, <code>/admin/audit</code>, <code>/admin/cookies</code>, <code>/admin/settings</code>, <code>/admin/scripts</code>, <code>/admin/customers</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Every one lands on <code>/admin/403</code> with <strong>403 — Forbidden</strong>. None shows any data, even for a moment.</p>
+      <p class="ref">Ref: each <code>src/app/admin/(shell)/&lt;tool&gt;/page.tsx</code> (<code>requirePerm</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-017" data-priority="P2">
+      <h3>Active item highlighting</h3>
+      <ol class="steps">
+        <li>As superadmin open, in turn: <code>/admin</code>, <code>/admin/page</code>, a page's edit screen, <code>/admin/page/new</code>, <code>/admin/settings?tab=Modules</code>, <code>/admin/booking_category</code>, <code>/admin/booking</code>, <code>/admin/category</code>.</li>
+        <li>Each time, look at which sidebar entries are highlighted (gold text on a faint gold background).</li>
+      </ol>
+      <ul class="exp">
+        <li>Exactly one entry is highlighted each time: Dashboard; Pages (for the list, edit and new screens); Settings; Categories under BOOKING; Experiences; Categories under ECOMMERCE.</li>
+        <li>Dashboard is not highlighted on any screen other than <code>/admin</code>. <strong>Back to site</strong> is never highlighted.</li>
+        <li><code>/admin/booking</code> does not also highlight the booking Categories entry, and <code>/admin/booking_category</code> does not highlight Experiences.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/Sidebar.tsx</code> (<code>pathname === href || pathname.startsWith(href + '/')</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-018" data-priority="P1">
+      <h3>Back to site</h3>
+      <ol class="steps">
+        <li>As superadmin, from any admin screen click <strong>Back to site</strong> at the top of the sidebar.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The public home page <code>/</code> opens in Greek with a full page load (the admin chrome is gone, the site header and footer render). The dark admin bar is at the very top (see ADM-025). The browser Back button returns to the admin screen you left.</p>
+      <p class="ref">Ref: <code>src/cms/admin/Sidebar.tsx</code> · <code>src/app/[locale]/layout.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-topbar">
+    <h2>Top bar &amp; sign out</h2>
+    <p class="intro">The top bar holds the screen name, the signed-in user's name and <strong>Sign out</strong>. There is no user menu: the account screen is <strong>Your account</strong> in the sidebar.</p>
+
+    <article class="tc" id="ADM-019" data-priority="P2">
+      <h3>Screen name in the top bar</h3>
+      <ol class="steps">
+        <li>As superadmin open <code>/admin</code>, <code>/admin/page</code>, a page's edit screen, <code>/admin/page/new</code>, <code>/admin/settings</code>, <code>/admin/account</code>, <code>/admin/orders</code>.</li>
+        <li>Read the text at the top left each time and the page's own heading below it.</li>
+      </ol>
+      <ul class="exp">
+        <li>Top bar: <code>Dashboard</code>, <code>Pages</code>, <code>Pages · Edit</code>, <code>Pages · New</code>, <code>Settings</code>, <code>Your account</code>, <code>Orders</code>.</li>
+        <li>The top-bar text is not a heading; the page shows its own heading (for example <strong>Pages</strong>, the page title, <strong>New Page</strong>, <strong>Settings</strong>, <strong>Your account</strong> with the user's name and email under it).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/TopBar.tsx</code> · <code>src/app/admin/(shell)/[collection]/new/page.tsx</code> · <code>src/app/admin/(shell)/account/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-020" data-priority="P1">
+      <h3>Sign out</h3>
+      <ol class="steps">
+        <li>As superadmin check the right side of the top bar, then click <strong>Sign out</strong>.</li>
+        <li>Press the browser Back button.</li>
+        <li>In a second tab of the same browser open <code>/admin/page</code>.</li>
+        <li>Sign in again and open <strong>Audit log</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: the top bar shows the user's name (<code>QA Admin</code>) and a <strong>Sign out</strong> button with an exit icon. After the click you are on <code>/admin/login</code>.</li>
+        <li>Steps 2 and 3: no admin content is shown; you are sent to the login page (with <code>next=</code> for step 3).</li>
+        <li>Step 4: the newest entries include <em>Signed out</em> for <code>qa-admin@example.com</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/TopBar.tsx</code> · <code>src/cms/core/audit-labels.ts</code></p>
+    </article>
+
+    <article class="tc" id="ADM-021" data-priority="P3">
+      <h3>Sign out while the session has already expired</h3>
+      <ol class="steps">
+        <li>Sign in, then delete the admin session cookie for the site in the browser's developer tools (Application → Cookies).</li>
+        <li>Without reloading, click <strong>Sign out</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> You still land on <code>/admin/login</code> with no error message and no blank screen.</p>
+      <p class="ref">Ref: <code>src/cms/admin/TopBar.tsx</code> (<code>finally</code> redirects)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-adminbar">
+    <h2>Admin bar on the public site</h2>
+    <p class="intro">A dark strip above the site header, shown only to someone signed in to the admin with <strong>Access</strong>. Its labels follow the admin user's language, not the page's: Greek users see <strong>Διαχείριση</strong> and <strong>Επεξεργασία</strong>, English users <strong>Admin</strong> and <strong>Edit</strong>. <strong>Επεξεργασία</strong> appears only on pages that show a CMS document and only for users with <strong>View content</strong>. Preview mode from the editor is in checklist 03 (CON-065); the moved-admin links in 01 (SET-056). The bar has no close or hide control.</p>
+
+    <article class="tc" id="ADM-022" data-priority="P1">
+      <h3>The bar shows for a signed-in admin</h3>
+      <ol class="steps">
+        <li>Signed in as <code>qa-admin@example.com</code>, open <code>/about</code> in the same browser.</li>
+        <li>Click <strong>Διαχείριση</strong> in the bar.</li>
+      </ol>
+      <ul class="exp">
+        <li>A dark navy strip sits above the site header, containing <strong>Διαχείριση</strong> (dashboard icon), <strong>Επεξεργασία</strong> (pencil icon) and, on the right, <code>QA Admin</code>.</li>
+        <li><strong>Διαχείριση</strong> opens the dashboard at <code>/admin</code> with a full page load.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/admin-bar/AdminBar.tsx</code> · <code>src/lib/admin-bar.ts</code> (<code>adminBarFor</code>) · <code>src/app/[locale]/layout.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-023" data-priority="P1">
+      <h3>Visitors never see the bar or the admin address</h3>
+      <ol class="steps">
+        <li>In a signed-out private window open <code>/</code>, <code>/about</code> and <code>/en/about</code>.</li>
+        <li>On <code>/about</code> view the page source and search it for <code>Εργαλεία διαχειριστή</code>, <code>Admin tools</code>, <code>/admin</code> and <code>?locale=</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> No dark strip above the header on any page. None of the searched strings appear in the source, so the admin address and the document id are not published to visitors.</p>
+      <p class="ref">Ref: <code>src/components/admin-bar/AdminEditTarget.tsx</code> (renders nothing for visitors) · <code>test/components/admin-bar.test.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-024" data-priority="P2">
+      <h3>A signed-in shop customer does not see the bar</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Commerce and Customer accounts on; a customer account exists (checklist 08).</p>
+      <ol class="steps">
+        <li>In a private window sign in as the customer on <code>/account</code>.</li>
+        <li>Open <code>/</code>, <code>/about</code> and a product page.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> No admin bar on any page. The customer session is not an admin session.</p>
+      <p class="ref">Ref: <code>src/lib/admin-bar.ts</code> · <code>src/cms/modules/auth/current-user.ts</code></p>
+    </article>
+
+    <article class="tc" id="ADM-025" data-priority="P1">
+      <h3>Edit opens the page's editor in the right language</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> A page published in both languages, for example About with its EN version published (or QA Translate from checklist 03). Write down its id from the admin list.</p>
+      <ol class="steps">
+        <li>As superadmin open <code>/about</code>, hover <strong>Επεξεργασία</strong> and read the address; click it.</li>
+        <li>Open <code>/en/about</code> and click <strong>Επεξεργασία</strong>.</li>
+        <li>Open <code>/</code> (home) and click <strong>Επεξεργασία</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: the link is <code>/admin/page/&lt;id&gt;?locale=el</code>; the editor opens with the EL tab selected.</li>
+        <li>Step 2: the link ends <code>?locale=en</code>; the editor opens on the EN tab.</li>
+        <li>Step 3: the editor for the page with slug <code>home</code> opens on the EL tab.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/lib/admin-bar.ts</code> (<code>adminEditHref</code>) · <code>src/app/[locale]/[slug]/page.tsx</code> · <code>src/components/site/HomeSections.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-026" data-priority="P2">
+      <h3>Edit from shop pages: product, category, tag</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Commerce on; a published product with a published category and tag, EN versions published.</p>
+      <ol class="steps">
+        <li>As superadmin open <code>/shop/&lt;product-slug&gt;</code> and click <strong>Επεξεργασία</strong>. Repeat on <code>/en/shop/&lt;product-slug&gt;</code>.</li>
+        <li>Open <code>/shop/category/&lt;category-slug&gt;</code> and click <strong>Επεξεργασία</strong>; repeat under <code>/en</code>.</li>
+        <li>Open <code>/shop/tag/&lt;tag-slug&gt;</code> and click <strong>Επεξεργασία</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The product opens <code>/admin/product/&lt;id&gt;?locale=el</code> (then <code>?locale=en</code>) on that product. The category opens <code>/admin/category/&lt;id&gt;?locale=el</code> / <code>en</code>. The tag opens <code>/admin/tag/&lt;id&gt;?locale=el</code>. In every case the id is that document's own and the matching language tab is selected.</p>
+      <p class="ref">Ref: <code>src/app/[locale]/shop/[slug]/page.tsx</code> · <code>src/app/[locale]/shop/category/[slug]/page.tsx</code> · <code>src/app/[locale]/shop/tag/[slug]/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-027" data-priority="P2">
+      <h3>Edit from a booking experience and the contact page</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Booking on; a published experience. A published page with slug <code>contact</code> for step 2 (otherwise skip step 2).</p>
+      <ol class="steps">
+        <li>As superadmin open <code>/booking/&lt;experience-slug&gt;</code> and <code>/en/booking/&lt;experience-slug&gt;</code>; click <strong>Επεξεργασία</strong> each time.</li>
+        <li>Open <code>/contact</code> and click <strong>Επεξεργασία</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The experience opens <code>/admin/booking/&lt;id&gt;?locale=el</code> (then <code>en</code>), the Experiences editor for that experience. The contact page opens <code>/admin/page/&lt;id of contact&gt;?locale=el</code>.</p>
+      <p class="ref">Ref: <code>src/app/[locale]/booking/[slug]/page.tsx</code> · <code>src/app/[locale]/contact/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-028" data-priority="P2">
+      <h3>No Edit on pages that are not a single document</h3>
+      <ol class="steps">
+        <li>As superadmin open <code>/shop</code>, <code>/booking</code>, <code>/cart</code>, a legal page under <code>/legal/</code>, and <code>/page-not-found</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The bar shows <strong>Διαχείριση</strong> and the user name only; there is no <strong>Επεξεργασία</strong> link on these pages.</p>
+      <p class="ref">Ref: <code>src/components/admin-bar/AdminBar.tsx</code> (Edit only when a page registered a target)</p>
+    </article>
+
+    <article class="tc" id="ADM-029" data-priority="P3">
+      <h3>The Edit link follows in-site navigation</h3>
+      <ol class="steps">
+        <li>As superadmin open <code>/about</code>, note the Edit address.</li>
+        <li>Using the site's own header links (not the address bar), go to the home page, then to the shop, then to a product.</li>
+        <li>Check the Edit link after each click.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> After each navigation the link points at the document now on screen: home's page id, then no Edit link on <code>/shop</code>, then the product's id. It never keeps pointing at the previous page.</p>
+      <p class="ref">Ref: <code>src/components/admin-bar/AdminBar.tsx</code> (<code>RegisterEditTarget</code> clean-up)</p>
+    </article>
+
+    <article class="tc" id="ADM-030" data-priority="P3">
+      <h3>English labels for an English-language admin</h3>
+      <ol class="steps">
+        <li>Sign in as <code>qa-en@example.com</code>. Open <code>/about</code> (a Greek page) and <code>/en/about</code>.</li>
+        <li>Inspect the strip's name in the browser's accessibility tree.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> On both pages the bar reads <strong>Admin</strong>, <strong>Edit</strong> and <code>QA English</code>. The navigation landmark is named <code>Admin tools</code>. (For a Greek admin it is <code>Εργαλεία διαχειριστή</code>.)</p>
+      <p class="ref">Ref: <code>src/components/admin-bar/AdminBar.tsx</code> (<code>LABELS</code>) · <code>src/lib/admin-bar.ts</code> (<code>barLocale</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-031" data-priority="P2">
+      <h3>Users without content rights or without access</h3>
+      <ol class="steps">
+        <li>Sign in as <code>qa-limited@example.com</code> (Access but no View content) and open <code>/about</code>.</li>
+        <li>Sign out. Sign in as <code>qa-noaccess@example.com</code> (no Access) and open <code>/about</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: the bar shows <strong>Διαχείριση</strong> and <code>QA Limited</code>, but no <strong>Επεξεργασία</strong>.</li>
+        <li>Step 2: no bar at all.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/lib/admin-bar.ts</code> (<code>adminAccessFor</code>: Access required, Edit needs <code>cms.content.read</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-032" data-priority="P3">
+      <h3>The bar after a role change or sign-out</h3>
+      <ol class="steps">
+        <li>Sign in as <code>qa-editor@example.com</code> in the private window and open <code>/about</code>: Edit is shown.</li>
+        <li>In the normal window, as superadmin, remove <strong>View content</strong> from the <code>editor</code> role and save.</li>
+        <li>In the private window reload <code>/about</code> and click Edit if it is still there.</li>
+        <li>Restore <strong>View content</strong> on the editor role. In the private window sign out from the admin, then reload <code>/about</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 3: the Edit link may still show until the editor signs in again (the public bar reads the sign-in snapshot, not the database). If it does, clicking it lands on <strong>403 — Forbidden</strong>; no document is shown. Note which of the two you saw.</li>
+        <li>Step 4: after signing out the bar is gone on reload.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/[locale]/layout.tsx</code> (<code>getCurrentUser</code> = signed cookie, no DB) · <code>src/app/admin/(shell)/[collection]/[id]/page.tsx</code> (fresh guard)</p>
+    </article>
+
+    <article class="tc" id="ADM-033" data-priority="P3">
+      <h3>Preview-only bar after signing out mid-preview</h3>
+      <ol class="steps">
+        <li>As superadmin open a draft page's editor and click <strong>Preview draft (EL) ↗</strong> (see CON-065). Keep the preview tab open.</li>
+        <li>In the admin tab click <strong>Sign out</strong>.</li>
+        <li>Reload the preview tab. Then click the bar's exit link.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> After the reload the bar shows only the gold <strong>Προεπισκόπηση</strong> badge and <strong>Έξοδος</strong>: no Διαχείριση, no Edit, no user name. (On an <code>/en/…</code> page the labels are <strong>Preview</strong> and <strong>Exit preview</strong>.) Exit returns to the same address without draft mode, which for an unpublished page is the not-found page, and the bar disappears.</p>
+      <p class="ref">Ref: <code>src/lib/admin-bar.ts</code> (<code>adminBarFor</code> preview branch) · <code>src/lib/admin-bar.ts</code> (<code>exitPreviewHref</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-034" data-priority="P3">
+      <h3>Admin bar: keyboard, layout and no hide control</h3>
+      <ol class="steps">
+        <li>As superadmin open <code>/about</code>, click in the address bar and press Tab repeatedly.</li>
+        <li>Narrow the window to 390 px (developer tools device mode) and look at the bar.</li>
+        <li>Look for any control that hides or closes the bar.</li>
+      </ol>
+      <ul class="exp">
+        <li>The first Tab stops are <strong>Διαχείριση</strong> then <strong>Επεξεργασία</strong>, each with a visible gold focus ring; Enter follows the link.</li>
+        <li>At 390 px the bar stays one line high, the user name shortens with an ellipsis if needed, and the page does not scroll sideways.</li>
+        <li>There is no hide or close control; the bar is on every public page while signed in. Note in the result if the product owner expects one.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/admin-bar/AdminBar.tsx</code> (<code>LINK_CLASS</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-403">
+    <h2>Access denied &amp; switched-off screens</h2>
+
+    <article class="tc" id="ADM-035" data-priority="P2">
+      <h3>The 403 page</h3>
+      <ol class="steps">
+        <li>As <code>qa-limited@example.com</code> open <code>/admin/users</code>.</li>
+        <li>Click <strong>Back to dashboard</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The address becomes <code>/admin/403</code>. A centred page without sidebar or top bar shows <strong>403 — Forbidden</strong>, <code>You don’t have permission to view this page.</code> and a <strong>Back to dashboard</strong> link, which opens the dashboard at <code>/admin</code>.</p>
+      <p class="ref">Ref: <code>src/app/admin/403/page.tsx</code> · <code>src/cms/modules/auth/guards.ts</code></p>
+    </article>
+
+    <article class="tc" id="ADM-036" data-priority="P2">
+      <h3>A user without Access is stuck on 403</h3>
+      <ol class="steps">
+        <li>Sign in as <code>qa-noaccess@example.com</code>.</li>
+        <li>Click <strong>Back to dashboard</strong>. Look for a way to sign out.</li>
+        <li>Open <code>/admin/account</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>After sign-in you land on <strong>403 — Forbidden</strong>; <strong>Back to dashboard</strong> leads straight back to it; <code>/admin/account</code> is 403 as well.</li>
+        <li>Record: the 403 page offers no <strong>Sign out</strong>, so this user can only leave by clearing cookies or waiting for the session to expire. Report it as a usability defect (a <strong>Sign out</strong> link on the 403 page would fix it).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/admin/403/page.tsx</code> · <code>src/app/admin/(shell)/layout.tsx</code> (<code>requirePerm(PERMISSIONS.access)</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-037" data-priority="P2">
+      <h3>Gift cards entry when selling gift cards is off</h3>
+      <ol class="steps">
+        <li>As superadmin open Settings → <strong>Ecommerce</strong> → <strong>Gift cards</strong>, untick <strong>Sell gift cards</strong>, click <strong>Save</strong>.</li>
+        <li>Reload and look for <strong>Gift cards</strong> in the ECOMMERCE section; click it if present.</li>
+        <li>Tick <strong>Sell gift cards</strong> again and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The sidebar should not offer a screen that does not exist. The Gift cards screen answers “Page not found” while selling is off, so if the <strong>Gift cards</strong> entry is still in the sidebar and leads to that not-found page, mark Fail (the entry is gated on Commerce only, not on the gift-card setting).</p>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/gift-cards/page.tsx</code> (<code>if (!enabled) notFound()</code>) · <code>src/app/admin/(shell)/layout.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-038" data-priority="P3">
+      <h3>Switched-off module screens answer not-found, whatever the role</h3>
+      <ol class="steps">
+        <li>Untick <strong>Newsletter</strong> and <strong>Booking</strong> in Settings → Modules and save.</li>
+        <li>As superadmin open <code>/admin/newsletter</code>, <code>/admin/reservations</code> and <code>/admin/availability</code>.</li>
+        <li>As <code>qa-limited@example.com</code> open the same three addresses.</li>
+        <li>Tick both modules again and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Superadmin: all three show “Page not found”. Limited role: <code>/admin/reservations</code> and <code>/admin/availability</code> show “Page not found”; <code>/admin/newsletter</code> shows <strong>403 — Forbidden</strong> instead because that screen checks the permission before the module. Record the newsletter difference as a minor inconsistency.</p>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/newsletter/page.tsx</code> (permission first) · <code>src/app/admin/(shell)/reservations/page.tsx</code> (module first)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-idle">
+    <h2>Idle sign-out</h2>
+    <p class="intro">The basic warning, sign-out, “Stay signed in” and cross-tab behaviour are in checklist 01 (SET-054, SET-055). For these cases set <code>ADMIN_SESSION_IDLE_MINUTES=2</code> in <code>.env.local</code> and restart the server; put it back to <code>60</code> and restart afterwards. The warning appears after about one minute of no clicks, typing, scrolling or touches.</p>
+
+    <article class="tc" id="ADM-039" data-priority="P2">
+      <h3>Sign out now from the warning</h3>
+      <ol class="steps">
+        <li>Signed in as superadmin, open the dashboard and wait for the warning in the bottom-right corner.</li>
+        <li>Read it, then click <strong>Sign out now</strong>.</li>
+        <li>Sign in again and open <strong>Audit log</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>The amber box reads <strong>You are about to be signed out</strong> and <code>You have been inactive for a while. Anything unsaved will be lost.</code> with <strong>Stay signed in</strong> and <strong>Sign out now</strong>.</li>
+        <li><strong>Sign out now</strong> goes straight to <code>/admin/login?timeout=1</code> with <code>You were signed out because you had been inactive. Please sign in again.</code></li>
+        <li>The audit log shows <em>Signed out automatically (inactive)</em>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/IdleLogout.tsx</code> · <code>src/cms/core/audit-labels.ts</code></p>
+    </article>
+
+    <article class="tc" id="ADM-040" data-priority="P3">
+      <h3>The warning with keyboard and screen reader</h3>
+      <ol class="steps">
+        <li>With a screen reader running, wait for the warning without touching anything.</li>
+        <li>When it appears, press Tab once.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The screen reader announces <code>You are about to be signed out</code> as an alert when the box appears. Any key press counts as activity: after Tab the box disappears and you stay signed in. Focus is not moved into the box; record whether a keyboard user can reach its buttons before it disappears (it is expected that they cannot, because any key dismisses it).</p>
+      <p class="ref">Ref: <code>src/cms/admin/IdleLogout.tsx</code> (<code>role="alertdialog"</code>, <code>keydown</code> is activity)</p>
+    </article>
+
+    <article class="tc" id="ADM-041" data-priority="P3">
+      <h3>Coming back to a hidden tab after the deadline</h3>
+      <ol class="steps">
+        <li>Signed in, open the dashboard, then switch to another tab or minimise the browser for at least three minutes.</li>
+        <li>Switch back to the admin tab and wait ten seconds without doing anything else.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Within a few seconds of returning, the tab moves to <code>/admin/login?timeout=1</code> with the inactivity notice; it does not stay on a dashboard whose next save would fail. Reopening <code>/admin</code> asks for sign-in.</p>
+      <p class="ref">Ref: <code>src/cms/admin/IdleLogout.tsx</code> (server expiry check on each 5-second tick)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-kit">
+    <h2>Shared controls: tabs, dialogs, messages, tables, unsaved work</h2>
+
+    <article class="tc" id="ADM-042" data-priority="P2">
+      <h3>Language tabs: arrow keys, Home and End</h3>
+      <ol class="steps">
+        <li>Open a page that has EL and EN in the editor. Click just above the tabs, then press Tab until focus reaches the language tabs.</li>
+        <li>Press Right arrow, Right arrow again, Left arrow, End, Home.</li>
+        <li>Press Tab once more.</li>
+      </ol>
+      <ul class="exp">
+        <li>Only the selected tab is a Tab stop. Each arrow press moves focus <em>and</em> selection; the address bar's <code>?locale=</code> updates to match; arrows wrap from the last tab to the first; Home selects the first language, End the last.</li>
+        <li>The focused tab shows a gold focus ring.</li>
+        <li>Step 3 moves focus into the form below, not onto the other language tab.</li>
+        <li>A screen reader announces a tab list named <code>Language</code> and the selected state.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/ui/Tabs.tsx</code> (<code>TabList</code>, <code>nextTabIndex</code>) · <code>src/cms/admin/DocumentForm.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-043" data-priority="P2">
+      <h3>SEO section tabs keep what you typed</h3>
+      <ol class="steps">
+        <li>On a page's editor scroll to the <strong>SEO &amp; AEO</strong> section. Type a meta title on the <strong>General</strong> tab.</li>
+        <li>With the keyboard, move to <strong>Social</strong>, <strong>AEO</strong>, <strong>Advanced</strong> with the Right arrow, then press Home.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The tabs behave as in ADM-042 (one Tab stop, arrows, Home/End, wrapping; tab list named <code>SEO sections</code>). Back on General the typed meta title is still there, and General's tab shows a gold count badge (read as <code>1 filled in</code> by a screen reader).</p>
+      <p class="ref">Ref: <code>src/cms/admin/SeoPanel.tsx</code> · <code>src/cms/core/seo/fields.ts</code> (<code>SEO_TABS</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-044" data-priority="P3">
+      <h3>Settings tabs with the keyboard</h3>
+      <ol class="steps">
+        <li>Open <strong>Settings</strong>. Tab to the tab strip at the top and press the Right arrow, End and Home.</li>
+        <li>Press Tab repeatedly across the strip.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Settings tabs should work like ADM-042: one Tab stop, arrow keys move between tabs. Current code gives these buttons tab roles but no arrow-key handling: arrows do nothing and every tab is its own Tab stop. If that is what you see, mark Fail and note “Settings tab strip lacks the keyboard pattern”.</p>
+      <p class="ref">Ref: <code>src/cms/admin/SettingsForm.tsx</code> (hand-rolled <code>role="tablist"</code>, not <code>ui/Tabs</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-045" data-priority="P2">
+      <h3>Confirm dialog: focus, trap, Escape</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> A throwaway draft page <code>qa-confirm</code> exists.</p>
+      <ol class="steps">
+        <li>On the Pages list, using only the keyboard, Tab to the <strong>Delete</strong> on the <code>qa-confirm</code> row and press Enter.</li>
+        <li>Press Tab several times, then Shift+Tab several times. Try to scroll the page behind with the mouse wheel.</li>
+        <li>Press Escape.</li>
+        <li>Open the dialog again and click the dark area outside it.</li>
+        <li>Open it once more and choose <strong>Delete</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>A dialog titled <strong>Delete this document?</strong> with <code>This cannot be undone.</code> opens over a dimmed page; focus starts on the red <strong>Delete</strong> button.</li>
+        <li>Tab and Shift+Tab cycle between <strong>Cancel</strong> and <strong>Delete</strong> only; the page behind does not scroll.</li>
+        <li>Escape and the outside click each close it with nothing deleted, and focus returns to the row's Delete button.</li>
+        <li>Step 5 removes the row.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/ui/ConfirmDialog.tsx</code> · <code>src/cms/admin/ui/use-dialog.ts</code> · <code>src/cms/admin/DocumentList.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-046" data-priority="P2">
+      <h3>Destructive actions ask first</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> One throwaway item in each place: an uploaded image, a redirect, a script snippet, a cookie category and a cookie service added under it (<strong>Add service</strong>), a role with no users, and <code>qa-limited@example.com</code>.</p>
+      <ol class="steps">
+        <li>Click the delete control for each item below and read the dialog, then choose <strong>Cancel</strong>:
+          Media → a file's delete;
+          SEO → a redirect's delete;
+          Scripts → a snippet's delete;
+          Cookies → a category's <strong>Delete</strong>;
+          Roles → the unused role's delete;
+          Users → <code>QA Limited</code>'s status button (it reads <strong>active</strong>) and its <strong>Delete</strong>.</li>
+        <li>Cookies → the throwaway service's <strong>remove</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1 titles: <code>Delete this file?</code>; <code>Delete the redirect for &lt;source&gt;?</code> (button <strong>Delete redirect</strong>); <code>Delete “&lt;name&gt;”?</code>; <code>Delete this category?</code> (<code>Every service inside it is deleted too. …</code>); <code>Delete the role "&lt;name&gt;"?</code> (button <strong>Delete role</strong>); <code>Disable QA Limited?</code> (button <strong>Disable account</strong>) and <code>Delete QA Limited?</code> (button <strong>Delete account</strong>). Cancel leaves every item unchanged.</li>
+        <li>Step 2 should also ask first. Current code removes a cookie service at once with no dialog; if so, mark Fail.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/MediaLibrary.tsx</code> · <code>src/cms/admin/SeoManager.tsx</code> · <code>src/cms/admin/ScriptsManager.tsx</code> · <code>src/cms/admin/CookiesManager.tsx</code> (<code>removeService</code>) · <code>src/cms/admin/RolesManager.tsx</code> · <code>src/cms/admin/UsersManager.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-047" data-priority="P2">
+      <h3>Side panels and pickers: focus, Escape, return</h3>
+      <ol class="steps">
+        <li>On <strong>Users</strong>, Tab to a row's <strong>Edit</strong> and press Enter. Tab around the panel; press Escape.</li>
+        <li>Open the panel again and click the dimmed area to its left.</li>
+        <li>On a page editor, Tab to <strong>Choose image…</strong> under Hero image, press Enter; press Tab a few times, then Escape.</li>
+      </ol>
+      <ul class="exp">
+        <li>The user panel slides in from the right with the account's email as heading and a <strong>Close</strong> (✕) button; focus is inside it and Tab never leaves it. Escape and the outside click close it; focus returns to the Edit button that opened it.</li>
+        <li>The picker opens as a dialog titled <strong>Media library</strong> with <strong>Upload</strong>; focus stays inside; Escape closes it and focus returns to <strong>Choose image…</strong>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/UsersManager.tsx</code> · <code>src/cms/admin/fields/MediaPicker.tsx</code> · <code>src/cms/admin/ui/Drawer.tsx</code> · <code>src/cms/admin/ui/use-dialog.ts</code></p>
+    </article>
+
+    <article class="tc" id="ADM-048" data-priority="P2">
+      <h3>Saved, warning and error messages</h3>
+      <ol class="steps">
+        <li>On Settings (General tab) change a value and click <strong>Save settings</strong>.</li>
+        <li>As superadmin edit the role <code>QA limited</code>: tick <strong>View settings &amp; cookies</strong> (not <strong>Edit settings &amp; cookies</strong>) and save. In the private window, signed in as <code>qa-limited@example.com</code>, open Settings, change a value and click <strong>Save settings</strong>. Untick the permission again afterwards.</li>
+        <li>Repeat steps 1 and 2 with a screen reader on.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: a green <code>Settings saved.</code> box appears above the tabs and stays until the next change.</li>
+        <li>Step 2: a red box appears above the tabs and the setting is not stored (check with a reload). Record the exact text: the code shows the server's bare error, likely just <code>forbidden</code>, and the form offers an enabled <strong>Save settings</strong> to a user who cannot save (compare CON-077).</li>
+        <li>Step 3: the success message is announced politely (status) and the error assertively (alert) without moving focus. There are no pop-up toasts in the admin; every message is inline near the top of the screen or next to the button.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/SettingsForm.tsx</code> · <code>src/cms/admin/api-error-text.ts</code> · docs/dev-guides/04-admin-ui.md §6 (Messages)</p>
+    </article>
+
+    <article class="tc" id="ADM-049" data-priority="P3">
+      <h3>Info “i” tips</h3>
+      <ol class="steps">
+        <li>On the dashboard hover the “i” next to Content, move away; then Tab to it; press Escape.</li>
+        <li>Click it (it stays open), click it again; click it, then click anywhere else.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Hover and keyboard focus both show the dark bubble and hide it when leaving; Escape closes it. A click pins it open until a second click, an outside click, scrolling or resizing. A screen reader reads the button as <code>About these counts</code> with the bubble text as its description. The bubble never runs off the right edge of the window.</p>
+      <p class="ref">Ref: <code>src/cms/admin/ui/InfoTip.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-050" data-priority="P2">
+      <h3>Tables: paging, scrolling, no sorting</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> The audit log has more than one page (sign in and out a few times, or use the bulk pages from CON-069 whose saves are logged).</p>
+      <ol class="steps">
+        <li>Open <strong>Audit log</strong>. Read the line under the table and use <strong>Next</strong> and <strong>Previous</strong>.</li>
+        <li>Filter by a search word, then page forward.</li>
+        <li>Click each column header of the Audit log and the Pages list.</li>
+        <li>Narrow the window to 390 px and Tab to the table.</li>
+      </ol>
+      <ul class="exp">
+        <li>The line reads <code>Showing 1–&lt;n&gt; of &lt;total&gt;</code>; the paging links sit in a navigation named <code>Audit log pages</code> with <code>Page 1 of &lt;n&gt;</code>. Previous is absent on page 1 and Next on the last page. The address carries <code>?page=</code> and keeps the filter.</li>
+        <li>Headers are plain text; clicking them does nothing (no table in this build sorts).</li>
+        <li>At 390 px the table scrolls sideways inside its own box; the box takes keyboard focus (gold ring, named <code>Table, scrollable</code>) and the arrow keys scroll it. The page itself does not scroll sideways.</li>
+        <li>Pages list paging is covered by CON-070.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/audit/page.tsx</code> · <code>src/cms/admin/ui/index.tsx</code> (<code>Table</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-051" data-priority="P2">
+      <h3>Unsaved-changes guard on Settings</h3>
+      <ol class="steps">
+        <li>On Settings change a field without saving. Click <strong>Pages</strong> in the sidebar and choose Cancel in the browser dialog.</li>
+        <li>Click <strong>Back to site</strong>; choose Cancel.</li>
+        <li>Reload the tab; cancel the browser's leave dialog.</li>
+        <li>Ctrl+click (Cmd+click on a Mac) <strong>Pages</strong>.</li>
+        <li>Click <strong>Save settings</strong>, then click <strong>Pages</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Steps 1 and 2: the browser asks <code>You have unsaved changes. Leave without saving?</code>; Cancel keeps you on Settings with the change intact.</li>
+        <li>Step 3: the browser's own “leave site?” dialog appears.</li>
+        <li>Step 4: Pages opens in a new tab with no prompt; the Settings tab keeps the change.</li>
+        <li>Step 5: no prompt after saving. (The document editor's guard is CON-068.)</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/use-unsaved-changes.ts</code> · <code>src/cms/admin/SettingsForm.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-052" data-priority="P3">
+      <h3>Leaving unsaved work by Sign out or the Back button</h3>
+      <ol class="steps">
+        <li>Open a page in the editor from the Pages list, change the title, do not save. Press the browser Back button.</li>
+        <li>Open the page again, change the title, click <strong>Sign out</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both should warn before discarding the change. The guard only watches link clicks and page unloads, so the code gives no warning for the Back button (an in-app navigation) or for Sign out (a button). If the change is lost without a prompt, mark Fail and say which of the two.</p>
+      <p class="ref">Ref: <code>src/cms/admin/use-unsaved-changes.ts</code> · <code>src/cms/admin/TopBar.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-screens">
+    <h2>Every admin screen loads, and shows its empty state</h2>
+
+    <article class="tc" id="ADM-053" data-priority="P1">
+      <h3>Every screen loads for a superadmin</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Every module on and gift cards selling (ADM-002). Signed in as <code>qa-admin@example.com</code>. Keep the browser console open (F12).</p>
+      <ol class="steps">
+        <li>Open each address in the table. Tick the box when the screen shows its heading, no error text, no endless “Loading…”, and no red error in the console.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>OK</th><th>Address</th><th>Heading on the page</th></tr></thead>
+          <tbody>
+          <tr><td><input type="checkbox" aria-label="Dashboard loads"></td><td><code>/admin</code></td><td>site name</td></tr>
+          <tr><td><input type="checkbox" aria-label="Pages loads"></td><td><code>/admin/page</code></td><td>Pages</td></tr>
+          <tr><td><input type="checkbox" aria-label="New page loads"></td><td><code>/admin/page/new</code></td><td>New Page</td></tr>
+          <tr><td><input type="checkbox" aria-label="Page edit loads"></td><td><code>/admin/page/&lt;id&gt;</code></td><td>the page's title</td></tr>
+          <tr><td><input type="checkbox" aria-label="Brands loads"></td><td><code>/admin/brand</code></td><td>Brands</td></tr>
+          <tr><td><input type="checkbox" aria-label="Testimonials loads"></td><td><code>/admin/testimonial</code></td><td>Testimonials</td></tr>
+          <tr><td><input type="checkbox" aria-label="Popups loads"></td><td><code>/admin/popup</code></td><td>Popups</td></tr>
+          <tr><td><input type="checkbox" aria-label="Shop categories loads"></td><td><code>/admin/category</code></td><td>Categories</td></tr>
+          <tr><td><input type="checkbox" aria-label="Size charts loads"></td><td><code>/admin/sizechart</code></td><td>Size charts</td></tr>
+          <tr><td><input type="checkbox" aria-label="Tags loads"></td><td><code>/admin/tag</code></td><td>Tags</td></tr>
+          <tr><td><input type="checkbox" aria-label="Products loads"></td><td><code>/admin/product</code></td><td>Products</td></tr>
+          <tr><td><input type="checkbox" aria-label="Booking categories loads"></td><td><code>/admin/booking_category</code></td><td>Categories</td></tr>
+          <tr><td><input type="checkbox" aria-label="Types loads"></td><td><code>/admin/vessel_type</code></td><td>Types</td></tr>
+          <tr><td><input type="checkbox" aria-label="Locations loads"></td><td><code>/admin/departure_location</code></td><td>Locations</td></tr>
+          <tr><td><input type="checkbox" aria-label="Experiences loads"></td><td><code>/admin/booking</code></td><td>Experiences</td></tr>
+          <tr><td><input type="checkbox" aria-label="Orders loads"></td><td><code>/admin/orders</code></td><td>Orders</td></tr>
+          <tr><td><input type="checkbox" aria-label="Customers loads"></td><td><code>/admin/customers</code></td><td>Customers</td></tr>
+          <tr><td><input type="checkbox" aria-label="Gift cards loads"></td><td><code>/admin/gift-cards</code></td><td>Gift cards</td></tr>
+          <tr><td><input type="checkbox" aria-label="Reviews loads"></td><td><code>/admin/reviews</code></td><td>Reviews</td></tr>
+          <tr><td><input type="checkbox" aria-label="Abandoned carts loads"></td><td><code>/admin/abandoned</code></td><td>Abandoned carts</td></tr>
+          <tr><td><input type="checkbox" aria-label="Reservations loads"></td><td><code>/admin/reservations</code></td><td>Reservations</td></tr>
+          <tr><td><input type="checkbox" aria-label="Availability loads"></td><td><code>/admin/availability</code></td><td>Availability</td></tr>
+          <tr><td><input type="checkbox" aria-label="Submissions loads"></td><td><code>/admin/submissions</code></td><td>Submissions</td></tr>
+          <tr><td><input type="checkbox" aria-label="Newsletter loads"></td><td><code>/admin/newsletter</code></td><td>Newsletter</td></tr>
+          <tr><td><input type="checkbox" aria-label="SEO loads"></td><td><code>/admin/seo</code></td><td>SEO</td></tr>
+          <tr><td><input type="checkbox" aria-label="Media loads"></td><td><code>/admin/media</code></td><td>Media</td></tr>
+          <tr><td><input type="checkbox" aria-label="Users loads"></td><td><code>/admin/users</code></td><td>Users</td></tr>
+          <tr><td><input type="checkbox" aria-label="Roles loads"></td><td><code>/admin/roles</code></td><td>Roles</td></tr>
+          <tr><td><input type="checkbox" aria-label="Audit log loads"></td><td><code>/admin/audit</code></td><td>Audit log</td></tr>
+          <tr><td><input type="checkbox" aria-label="Your account loads"></td><td><code>/admin/account</code></td><td>Your account</td></tr>
+          <tr><td><input type="checkbox" aria-label="Cookies loads"></td><td><code>/admin/cookies</code></td><td>Cookies</td></tr>
+          <tr><td><input type="checkbox" aria-label="Settings loads"></td><td><code>/admin/settings</code> (click every tab and sub-tab)</td><td>Settings</td></tr>
+          <tr><td><input type="checkbox" aria-label="Scripts loads"></td><td><code>/admin/scripts</code></td><td>Scripts</td></tr>
+          <tr><td><input type="checkbox" aria-label="API tokens redirect works"></td><td><code>/admin/api-tokens</code></td><td>redirects to Settings, tab <strong>Connect to Praion.ai</strong></td></tr>
+          <tr><td><input type="checkbox" aria-label="403 page loads"></td><td><code>/admin/403</code></td><td>403 — Forbidden</td></tr>
+          <tr><td><input type="checkbox" aria-label="Login page loads"></td><td><code>/admin/login</code> (in a private window)</td><td>site name, CMS · sign in</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Expected:</span> Every box can be ticked. The tick boxes are a working aid and are not saved; record any address that fails in the notes.</p>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/**/page.tsx</code> · docs/dev-guides/04-admin-ui.md §5.1</p>
+    </article>
+
+    <article class="tc" id="ADM-054" data-priority="P2">
+      <h3>New and edit screens for every collection</h3>
+      <ol class="steps">
+        <li>For each collection key in ADM-008, open <code>/admin/&lt;key&gt;/new</code>, then open one existing item from its list (skip the edit step where the list is empty).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Each New screen shows <strong>New &lt;singular name&gt;</strong> (New Page, New Brand, New Testimonial, New Popup, New Category, New Size chart, New Tag, New Product, New Category, New Type, New Location, New Experience) with the language tabs and the Save button. Each edit screen opens with the item's title as heading. The top bar reads <code>&lt;Plural&gt; · New</code> / <code>&lt;Plural&gt; · Edit</code>. No screen errors.</p>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/[collection]/new/page.tsx</code> · <code>src/app/admin/(shell)/[collection]/[id]/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-055" data-priority="P3">
+      <h3>Unknown admin addresses</h3>
+      <ol class="steps">
+        <li>As superadmin open <code>/admin/does-not-exist</code>, <code>/admin/does-not-exist/new</code> and <code>/admin/settings?tab=Nope</code>.</li>
+        <li>Open <code>/admin/api-tokens</code> with the <strong>Praion.ai connection</strong> module switched off.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The first two show “Page not found”, never a server error. <code>?tab=Nope</code> opens Settings on its first tab. With Praion.ai off, <code>/admin/api-tokens</code> still redirects to Settings and lands on the first tab (the Praion.ai tab does not exist then).</p>
+      <p class="ref">Ref: <code>src/lib/cms/collection-route.ts</code> (<code>resolveAdminCollection</code>) · <code>src/app/admin/(shell)/api-tokens/page.tsx</code> · <code>src/cms/admin/SettingsForm.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-056" data-priority="P2">
+      <h3>Empty states on a fresh site</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> A freshly installed test site (checklist 01) with every module on, before any content, orders, bookings, uploads, submissions or subscribers exist.</p>
+      <ol class="steps">
+        <li>Open each screen below and read what it shows where the data would be.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Screen</th><th>Expected empty text</th></tr></thead>
+          <tbody>
+          <tr><td>Dashboard, Recent submissions</td><td><code>No submissions yet.</code></td></tr>
+          <tr><td>Any empty collection list (e.g. Brands)</td><td><code>No documents match.</code> and <code>0 total</code></td></tr>
+          <tr><td>Submissions</td><td><code>No submissions.</code></td></tr>
+          <tr><td>Newsletter</td><td><code>Nobody has subscribed yet. The footer band and the article sidebar cards feed this list.</code></td></tr>
+          <tr><td>SEO</td><td><code>No redirects.</code>, <code>No 404s logged.</code>, <code>No overrides.</code> in their sections</td></tr>
+          <tr><td>Media</td><td><code>No media yet — upload a file to get started.</code></td></tr>
+          <tr><td>Orders</td><td><code>No orders yet.</code></td></tr>
+          <tr><td>Customers</td><td><code>No customer accounts yet.</code></td></tr>
+          <tr><td>Gift cards</td><td><code>No gift cards yet.</code></td></tr>
+          <tr><td>Reviews</td><td><code>No reviews in this view.</code></td></tr>
+          <tr><td>Abandoned carts</td><td><code>No carts in this view.</code></td></tr>
+          <tr><td>Reservations</td><td><code>No bookings match these filters.</code></td></tr>
+          <tr><td>Availability</td><td><strong>Nothing to schedule yet</strong> and <code>Publish an experience and it appears here. …</code></td></tr>
+          <tr><td>Scripts</td><td><code>No script snippets yet.</code></td></tr>
+          <tr><td>Cookies (only if the cookie seed was not run)</td><td><code>No cookie categories yet.</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Expected:</span> Each screen shows the text in the table, with its normal heading and controls, and no error. Media with a search that matches nothing shows <code>No files match “&lt;search&gt;”.</code>; Users filtered to nothing shows <code>No accounts match “&lt;search&gt;”.</code>; the Audit log filtered to nothing shows <code>No entries match this filter.</code> and <code>No entries</code>.</p>
+      <p class="ref">Ref: <code>src/cms/admin/*Table.tsx</code> · <code>src/cms/admin/MediaLibrary.tsx</code> · <code>src/cms/admin/SeoManager.tsx</code> · <code>src/cms/admin/AvailabilityCalendar.tsx</code> · <code>src/app/admin/(shell)/audit/page.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-path">
+    <h2>Custom admin path</h2>
+    <p class="intro">Set <code>ADMIN_PATH=studio</code> in <code>.env.local</code> and restart the server before this suite; put it back to <code>admin</code> and restart at the end. Sidebar, top bar, sign-out, deep links, idle sign-out and the admin bar under the moved path are in checklist 01 (SET-050 to SET-058); these cases cover the remaining links and redirects.</p>
+
+    <article class="tc" id="ADM-057" data-priority="P2">
+      <h3>Dashboard, list and editor links stay on /studio</h3>
+      <ol class="steps">
+        <li>Signed in at <code>/studio</code>, hover every <strong>View</strong>, <strong>New</strong>, <strong>View all →</strong> and submission row on the dashboard.</li>
+        <li>Open Pages; hover a row title; click <strong>+ New</strong>.</li>
+        <li>Create a draft page <code>qa-studio</code> and save it. Then click the form's <strong>Cancel</strong>.</li>
+        <li>Change the list search and status filter; page forward if possible.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Every link starts with <code>/studio/</code>. After the first save the address becomes <code>/studio/page/&lt;id&gt;</code>; Cancel returns to <code>/studio/page</code>; list filters update <code>/studio/page?q=…</code>. Nothing ever lands on <code>/admin/…</code> or a 404.</p>
+      <p class="ref">Ref: <code>src/cms/admin/DocumentForm.tsx</code> (post-create <code>router.push</code>) · <code>src/cms/admin/DocumentList.tsx</code> · <code>src/app/admin/(shell)/page.tsx</code> · <code>src/cms/admin/admin-path.ts</code></p>
+    </article>
+
+    <article class="tc" id="ADM-058" data-priority="P2">
+      <h3>Highlighting and screen name under /studio</h3>
+      <ol class="steps">
+        <li>Open <code>/studio/page</code>, a page's editor, <code>/studio/settings</code> and <code>/studio</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Exactly as in ADM-017 and ADM-019: Pages highlighted with top bar <code>Pages</code> / <code>Pages · Edit</code>, Settings highlighted with <code>Settings</code>, Dashboard highlighted with <code>Dashboard</code>. If nothing is highlighted and the top bar says <code>Dashboard</code> on every screen, the browser is seeing the internal <code>/admin</code> path: mark Fail.</p>
+      <p class="ref">Ref: <code>src/cms/admin/Sidebar.tsx</code> · <code>src/cms/admin/TopBar.tsx</code> (both compare <code>usePathname()</code> with <code>/studio/…</code> links) · <code>src/proxy.ts</code> (rewrite)</p>
+    </article>
+
+    <article class="tc" id="ADM-059" data-priority="P3">
+      <h3>403, alias and retired-page redirects under /studio</h3>
+      <ol class="steps">
+        <li>As <code>qa-limited@example.com</code> open <code>/studio/users</code>; click <strong>Back to dashboard</strong>.</li>
+        <li>As superadmin open <code>/studio/pages</code> and <code>/studio/api-tokens</code>.</li>
+        <li>On <code>/studio/audit</code> page forward, and switch Settings tabs.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1 lands on <code>/studio/403</code> and Back to dashboard goes to <code>/studio</code>. <code>/studio/pages</code> redirects to <code>/studio/page</code>; <code>/studio/api-tokens</code> redirects to <code>/studio/settings?tab=Connect%20to%20Praion.ai</code>. Audit paging and Settings tabs keep <code>/studio/…</code> in the address.</p>
+      <p class="ref">Ref: <code>src/app/admin/403/page.tsx</code> · <code>src/lib/cms/collection-route.ts</code> · <code>src/app/admin/(shell)/api-tokens/page.tsx</code> · <code>src/app/admin/(shell)/audit/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-060" data-priority="P3">
+      <h3>Admin bar Edit on shop and booking pages uses /studio</h3>
+      <ol class="steps">
+        <li>As superadmin open a product page, a shop category page and an experience page on the public site; hover <strong>Επεξεργασία</strong> each time and click one.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The links are <code>/studio/product/&lt;id&gt;?locale=el</code>, <code>/studio/category/&lt;id&gt;?locale=el</code> and <code>/studio/booking/&lt;id&gt;?locale=el</code> and open the right editor. <strong>Διαχείριση</strong> links to <code>/studio</code>.</p>
+      <p class="ref">Ref: <code>src/components/admin-bar/AdminEditTarget.tsx</code> · <code>src/lib/admin-bar.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-responsive">
+    <h2>Phone width &amp; layout</h2>
+    <p class="intro">Use the browser's device mode at 390 × 844 (or a real phone). Below 768 px wide the sidebar becomes a drawer.</p>
+
+    <article class="tc" id="ADM-061" data-priority="P2">
+      <h3>Navigation drawer on a phone</h3>
+      <ol class="steps">
+        <li>As superadmin open <code>/admin</code> at 390 px.</li>
+        <li>Tap the three-line button at the top left.</li>
+        <li>Tap <strong>Pages</strong>.</li>
+        <li>Open the drawer again and tap the dimmed area; open it again and press Escape (with a keyboard attached).</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: no sidebar is visible; the top bar shows the three-line button, the screen name and an icon-only sign-out button (no user name).</li>
+        <li>Step 2: the sidebar slides in from the left over a dimmed page; the button turns into an X.</li>
+        <li>Step 3: Pages opens and the drawer closes by itself.</li>
+        <li>Step 4: both the backdrop tap and Escape close the drawer.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/AdminNav.tsx</code> · <code>src/cms/admin/Sidebar.tsx</code> · <code>src/cms/admin/TopBar.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-062" data-priority="P2">
+      <h3>No sideways scrolling at 390 px</h3>
+      <ol class="steps">
+        <li>At 390 px open the dashboard, Pages list, a page editor, Settings (Modules and Fields tabs), Users, Roles, Media, Audit log and Orders.</li>
+        <li>On each, try to drag the page left and right.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The page never scrolls sideways and nothing important is cut off. Dashboard cards stack in one column. Wide tables scroll inside their own box (ADM-050). Buttons and links are large enough to tap without zooming.</p>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/layout.tsx</code> (<code>overflow-x-hidden</code> on main) · <code>src/cms/admin/ui/index.tsx</code> (<code>Table</code>)</p>
+    </article>
+
+    <article class="tc" id="ADM-063" data-priority="P3">
+      <h3>Resizing across the breakpoint and 200% zoom</h3>
+      <ol class="steps">
+        <li>At 390 px open the drawer, then widen the window past 768 px.</li>
+        <li>At a normal desktop width set browser zoom to 200%.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: the drawer becomes the normal left column and the dimmed backdrop disappears; nothing is left covering the page. Step 2: the layout switches to the phone layout with the three-line button; all content is reachable without sideways scrolling.</p>
+      <p class="ref">Ref: <code>src/cms/admin/AdminNav.tsx</code> (<code>md:hidden</code>) · <code>src/cms/admin/Sidebar.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-a11y">
+    <h2>Keyboard, focus &amp; screen reader</h2>
+
+    <article class="tc" id="ADM-064" data-priority="P2">
+      <h3>Keyboard-only use of the shell on a desktop</h3>
+      <ol class="steps">
+        <li>On the dashboard at desktop width, click the address bar, then press Tab repeatedly through the whole screen, and Shift+Tab back.</li>
+        <li>Press Enter on <strong>Pages</strong>, then keep tabbing to a row and open it with Enter.</li>
+      </ol>
+      <ul class="exp">
+        <li>Tab order: Back to site, Dashboard, every sidebar entry top to bottom, Sign out, then the page content in reading order. No focus stop is invisible.</li>
+        <li>Every focused element shows a clearly visible outline or gold ring, including sidebar links on the dark background.</li>
+        <li>Enter opens links; every action on these screens can be done without a mouse.</li>
+        <li>Record: there is no “skip to content” link, so reaching the content means tabbing past about 30 sidebar entries with every module on. Report it as an accessibility defect.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/Sidebar.tsx</code> · <code>src/cms/admin/TopBar.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-065" data-priority="P3">
+      <h3>Keyboard with the drawer at phone width</h3>
+      <ol class="steps">
+        <li>At 390 px with a keyboard attached (device mode in a desktop browser is fine), load the dashboard, click the address bar and press Tab slowly, watching where focus goes.</li>
+        <li>Tab to the three-line button and press Enter; press Tab.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> With the drawer closed, focus should never land on the hidden sidebar links, and after opening the drawer, Tab should move into it. The drawer is only slid off-screen, not hidden from the keyboard, and it comes before the top bar in the page, so the first Tab stops are likely invisible links. If focus disappears off-screen, mark Fail and note how many presses it took to reach the menu button.</p>
+      <p class="ref">Ref: <code>src/cms/admin/Sidebar.tsx</code> (<code>-translate-x-full</code> only) · <code>src/cms/admin/AdminNav.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-066" data-priority="P2">
+      <h3>Landmarks and headings</h3>
+      <ol class="steps">
+        <li>With a screen reader (or the browser's accessibility tree), list the landmarks and headings on the dashboard, the Pages list and a page editor.</li>
+      </ol>
+      <ul class="exp">
+        <li>One <strong>main</strong> region; the top bar as a banner/header; the sidebar as a landmark named <code>Primary navigation</code> (announced as complementary because it is an <code>aside</code>; note whether it should be a navigation landmark).</li>
+        <li>Exactly one heading level 1 per screen: the page's own heading. The top-bar screen name is not read out as a heading.</li>
+        <li>In the editor each card (Content, Document, Publishing, SEO &amp; AEO, custom sections) is a region named by its title.</li>
+        <li>The public admin bar is a navigation landmark named <code>Εργαλεία διαχειριστή</code> (or <code>Admin tools</code>).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/Sidebar.tsx</code> · <code>src/cms/admin/TopBar.tsx</code> · <code>src/cms/admin/ui/Section.tsx</code> · <code>src/components/admin-bar/AdminBar.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-067" data-priority="P2">
+      <h3>Icon-only buttons have names</h3>
+      <ol class="steps">
+        <li>With a screen reader, or by inspecting each control's accessible name, check the controls in the table's order: phone-width menu button (closed and open), phone-width Sign out, the Users panel's ✕, a Media library dialog's close, the password eye on the login page, the dashboard “i”, repeater row buttons in a repeater field (CON-002's QA rows), the colour swatch in a colour field.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Names are, in order: <code>Open navigation menu</code> / <code>Close navigation menu</code> (with expanded false / true), <code>Sign out</code>, <code>Close</code>, <code>Close</code>, <code>Show password</code> / <code>Hide password</code>, <code>About these counts</code>, <code>Move up</code>, <code>Move down</code>, <code>Duplicate</code>, <code>Remove</code>, <code>Pick colour</code>. No control is announced as just “button”.</p>
+      <p class="ref">Ref: <code>src/cms/admin/AdminNav.tsx</code> · <code>src/cms/admin/TopBar.tsx</code> · <code>src/cms/admin/fields/FieldInput.tsx</code> · <code>src/cms/admin/ui/PasswordInput.tsx</code></p>
+    </article>
+
+    <article class="tc" id="ADM-068" data-priority="P3">
+      <h3>Known accessibility gaps to confirm</h3>
+      <ol class="steps">
+        <li>With a screen reader, focus the header of a collapsible card in the page editor (for example Publishing) and toggle it.</li>
+        <li>On Cookies, go through the <strong>Add service</strong> form fields.</li>
+        <li>On the Pages list, move through a row's language chips.</li>
+        <li>Open several admin screens and read the browser tab titles.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Each should be announced fully. Current code suggests these gaps; mark Fail for each that you confirm and list them in the notes: (1) the card header does not say expanded/collapsed; (2) the Provider and Purpose boxes have only placeholder text as their label, and the EL/EN name boxes are both just “Name”; (3) a chip reads only “EL”/“EN” without its status (status is shown by colour and a hover title only); (4) every admin tab is titled <code>CMS</code>, so screens cannot be told apart in the tab list or history.</p>
+      <p class="ref">Ref: <code>src/cms/admin/ui/Section.tsx</code> · <code>src/cms/admin/CookiesManager.tsx</code> · <code>src/cms/admin/DocumentList.tsx</code> (<code>STATUS_COLORS</code>) · <code>src/app/admin/layout.tsx</code> (<code>title: 'CMS'</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-theme">
+    <h2>Colour scheme</h2>
+
+    <article class="tc" id="ADM-069" data-priority="P3">
+      <h3>Dark system setting</h3>
+      <ol class="steps">
+        <li>Switch the operating system (or the browser's developer tools “prefers-color-scheme”) to dark.</li>
+        <li>Open <code>/admin/login</code>, the dashboard, a page editor with its dialogs, and a public page with the admin bar.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The admin has no dark theme: every screen renders in the same light colours as with the light setting, with the dark sidebar unchanged. Text stays readable everywhere; there is no half-dark mix such as dark form controls on white cards or light text on a light background. The admin bar is the same dark navy strip in both settings.</p>
+      <p class="ref">Ref: <code>src/app/admin/layout.tsx</code> · <code>src/app/globals.css</code> · <code>src/cms/core/brand/BrandStyle.tsx</code></p>
+    </article>
+  </section>
+
+</main>
+<footer class="page">Checklist 04 of 12. Results are saved in this browser only; use Export before clearing browser data. Afterwards restore <code>ADMIN_PATH=admin</code> and <code>ADMIN_SESSION_IDLE_MINUTES</code>, restore the module switches and the editor role, and delete the QA accounts and roles if other checklists expect none.</footer>
+</body>
+</html>

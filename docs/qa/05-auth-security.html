@@ -1,0 +1,1299 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Authentication &amp; security</title>
+<link rel="stylesheet" href="qa.css">
+<script src="qa.js" defer></script>
+</head>
+<body>
+<nav class="crumbs"><a href="index.html">CMS manual QA</a></nav>
+<header class="page">
+  <h1>05 · Authentication, users, roles &amp; security</h1>
+  <p class="scope">Admin sign-in and its throttles, the session cookie and its expiry, two-factor authentication (authenticator app, recovery codes, the “Require two-factor authentication” setting and the recovery PIN), the Users and Roles screens with the rule that nobody can grant or change more than they hold, the Access permission on screens and API, Product Manager API keys and signed requests, the audit log, the cross-origin check, public rate limits, encryption of stored secrets, the role seeds and known gaps. The sign-in page layout, the <code>next</code> redirect, idle sign-out, the 403 page and the sidebar per role are in checklists 01 and 04 and are referenced by ID. Shop customer accounts are in checklist 08. You need two browsers (or one normal and one private window), a phone with an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password or similar), a terminal with <code>curl</code>, <code>openssl</code> and <code>sha256sum</code>, database client access, and permission to edit <code>.env.local</code> and restart the server.</p>
+</header>
+<main>
+
+  <section class="suite" id="suite-prep">
+    <h2>Before you start</h2>
+    <p class="intro">Checklist 01 must be done (migrations, seeds, superadmin <code>qa-admin@example.com</code>) and ADM-001 in checklist 04 (roles <code>QA limited</code> and <code>QA no access</code>; users <code>qa-editor@example.com</code>, <code>qa-limited@example.com</code>, <code>qa-noaccess@example.com</code>, <code>qa-en@example.com</code>). URLs use <code>http://localhost:3002</code> (<code>npm run dev</code>); on a hosted test environment use its address. “Signed in as X” means sign in at <code>/admin/login</code> with that account. The API does not use an <code>Authorization</code> header: browser calls carry the <code>cms_session</code> cookie, and Product Manager keys sign each request with <code>X-PM-*</code> headers.</p>
+    <div class="callout">
+      <p><strong>Using curl with a session.</strong> Sign in, open developer tools → Application (Chrome) or Storage (Firefox) → Cookies → the site, and copy the <em>value</em> of <code>cms_session</code>. In the terminal run <code>BASE=http://localhost:3002</code> and <code>S='&lt;pasted value&gt;'</code>, then add <code>-b "cms_session=$S"</code> to a curl command. curl sends no <code>Origin</code> header, so the cross-origin check lets it through; that is by design (see AUTH-078).</p>
+      <p><strong>Sign-in with curl.</strong> The login API needs a reCAPTCHA token when both <code>RECAPTCHA_*</code> keys are set. For the curl sign-in cases, blank <code>RECAPTCHA_SITE_KEY=</code> and <code>RECAPTCHA_SECRET_KEY=</code> in <code>.env.local</code> and restart; the login page then shows no captcha box. Restore the keys at the end. Rate limits are kept in server memory per <code>X-Real-IP</code> header value; restarting <code>npm run dev</code> empties them. In development curl may set <code>X-Real-IP</code> itself; behind nginx the proxy overwrites it.</p>
+    </div>
+
+    <article class="tc" id="AUTH-001" data-priority="P2">
+      <h3>Create the roles and accounts used by this checklist</h3>
+      <ol class="steps">
+        <li>Signed in as <code>qa-admin@example.com</code>, open <strong>Roles</strong> and expand <strong>Add a role</strong>. Create <code>QA user manager</code>: keep <strong>Access</strong>, tick <strong>View content</strong>, <strong>Manage users</strong> and <strong>Manage roles</strong>, click <strong>Add role</strong>.</li>
+        <li>Create <code>QA viewer</code> with <strong>Access</strong> and <strong>View content</strong>.</li>
+        <li>Create <code>QA users only</code> with <strong>Access</strong> and <strong>Manage users</strong>.</li>
+        <li>Open <strong>Users</strong>. Under <strong>Add a user</strong> create, each with password <code>Qa-Auth-Pass-2026!</code>: <code>qa-usermgr@example.com</code> (name <code>QA User Manager</code>, role <code>QA user manager</code>), <code>qa-viewer@example.com</code> (<code>QA Viewer</code>, <code>QA viewer</code>), <code>qa-usersonly@example.com</code> (<code>QA Users Only</code>, <code>QA users only</code>), <code>qa-admin2@example.com</code> (<code>QA Admin Two</code>, <code>superadmin</code>).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Each role appears in the Roles table with its permission count (2, 4 or 2); each user appears in the Users table with that role and Status <code>active</code>. No error is shown.</p>
+      <p class="ref">Ref: <code>src/cms/admin/RolesManager.tsx</code> · <code>src/cms/admin/UsersManager.tsx</code> · docs/user-guides/src/06-rythmiseis-xristes.md</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-login">
+    <h2>Admin sign-in</h2>
+    <p class="intro">What the sign-in page looks like is ADM-003; the captcha, wrong-password and unknown-email messages on screen are SET-027; the <code>next</code> redirect is SET-028, SET-029, ADM-004 and ADM-005; a production server without <code>X-Real-IP</code> is SET-031. The limits below come from <code>src/cms/core/routes/auth.ts</code>: 10 password attempts per 10 minutes per IP address, and 10 failures per 15 minutes per email address counted from the audit log since the last successful sign-in.</p>
+
+    <article class="tc" id="AUTH-002" data-priority="P1">
+      <h3>A successful sign-in is recorded</h3>
+      <ol class="steps">
+        <li>Sign out, then sign in as <code>qa-viewer@example.com</code> in a private window.</li>
+        <li>In the normal window, as <code>qa-admin@example.com</code>, open <strong>Users</strong> and read the <strong>Last login</strong> cell of QA Viewer.</li>
+        <li>Open <strong>Audit log</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>QA Viewer lands on the dashboard. Last login shows today's date (UTC, <code>YYYY-MM-DD</code>).</li>
+        <li>The newest audit rows include <em>Signed in</em> with Actor <code>QA Viewer</code> and Subject <code>Email address #qa-viewer@example.com</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/routes/auth.ts</code> (<code>loginRoute</code>) · <code>src/cms/modules/auth/login.ts</code> (<code>issueSession</code>) · <code>src/cms/core/audit-labels.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-003" data-priority="P2">
+      <h3>Wrong password, unknown email, disabled account: one answer</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Captcha keys blanked (see the note above). <code>qa-limited@example.com</code> disabled on the Users screen (click its <code>active</code> status and confirm).</p>
+      <ol class="steps">
+        <li>Run each command and note the status line and body:
+<pre><code>curl -s -i -X POST "$BASE/api/cms/auth/login" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.5.0.1' \
+  -d '{"email":"qa-viewer@example.com","password":"Wrong-Pass-2026!"}'
+curl -s -i -X POST "$BASE/api/cms/auth/login" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.5.0.2' \
+  -d '{"email":"nobody-here@example.com","password":"Wrong-Pass-2026!"}'
+curl -s -i -X POST "$BASE/api/cms/auth/login" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.5.0.3' \
+  -d '{"email":"qa-limited@example.com","password":"Qa-Admin-Ui-Pass-2026!"}'</code></pre></li>
+        <li>Repeat the first two with <code>-o /dev/null -w '%{time_total}\n'</code> instead of <code>-i</code> three times each.</li>
+        <li>Enable <code>qa-limited@example.com</code> again.</li>
+      </ol>
+      <ul class="exp">
+        <li>All three answer <code>HTTP/1.1 401</code> with the identical body <code>{"ok":false,"error":"unauthorized","message":"Invalid email or password."}</code>, including the disabled account with its correct password.</li>
+        <li>The response times for the known and the unknown address are similar (both pay one bcrypt comparison; a difference of more than about 100 ms consistently is a Fail).</li>
+        <li>The audit log shows three <em>Failed sign-in attempt</em> rows; opening <strong>Details</strong> shows <code>"reason": "invalid_credentials"</code>, <code>"invalid_credentials"</code> and <code>"disabled"</code>. The Actor column reads <code>system</code> because nobody was signed in.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/auth/login.ts</code> (<code>verifyCredentials</code>, <code>DUMMY_HASH</code>) · <code>src/cms/core/routes/auth.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-004" data-priority="P2">
+      <h3>The email address is not case-sensitive at sign-in</h3>
+      <ol class="steps">
+        <li>Sign out. On the login page type <code>QA-Viewer@Example.COM</code> and the correct password, tick the box, click <strong>Sign in</strong>.</li>
+        <li>Open <strong>Audit log</strong> as superadmin.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Sign-in succeeds. The <em>Signed in</em> row's Subject is <code>Email address #qa-viewer@example.com</code> in lower case.</p>
+      <p class="ref">Ref: <code>src/cms/modules/auth/login.ts</code> (<code>trim().toLowerCase()</code>) · <code>src/cms/core/routes/auth.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-005" data-priority="P2">
+      <h3>Ten attempts per IP address, then 429</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Captcha keys blanked; server freshly restarted.</p>
+      <ol class="steps">
+        <li>Run:
+<pre><code>for i in $(seq 1 11); do
+  curl -s -o /dev/null -D - -X POST "$BASE/api/cms/auth/login" -H 'Content-Type: application/json' \
+    -H 'X-Real-IP: 10.6.0.1' -d "{\"email\":\"probe$i@example.com\",\"password\":\"x\"}" | grep -iE '^HTTP|^retry-after'
+done</code></pre></li>
+        <li>Run once more with <code>-H 'X-Real-IP: 10.6.0.2'</code> and the correct password for <code>qa-viewer@example.com</code>.</li>
+        <li>In the browser (no <code>X-Real-IP</code>, so the shared development bucket) type a wrong password 11 times.</li>
+      </ol>
+      <ul class="exp">
+        <li>Requests 1–10 answer <code>401</code>; request 11 answers <code>429</code> with a <code>Retry-After</code> header of about 600 seconds or less, body <code>{"ok":false,"error":"rate_limited","message":"Too many requests."}</code>.</li>
+        <li>The request from the other address signs in (<code>200</code>): the limit is per address.</li>
+        <li>In the browser the eleventh attempt shows <code>Too many attempts. Please wait and try again.</code></li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/routes/auth.ts</code> (<code>rateLimit: cms-login 10 / 10 min</code>) · <code>src/cms/core/rate-limit.ts</code> · <code>src/cms/admin/login-error.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-006" data-priority="P2">
+      <h3>Ten failures for one account lock it for 15 minutes, from any address</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Captcha keys blanked.</p>
+      <ol class="steps">
+        <li>Send ten wrong passwords for one account, each from a different address:
+<pre><code>for i in $(seq 1 10); do
+  curl -s -o /dev/null -w '%{http_code}\n' -X POST "$BASE/api/cms/auth/login" -H 'Content-Type: application/json' \
+    -H "X-Real-IP: 10.7.0.$i" -d '{"email":"qa-viewer@example.com","password":"Wrong-Pass-2026!"}'
+done</code></pre></li>
+        <li>Send the <em>correct</em> password from a new address, with <code>-i</code>:
+<pre><code>curl -s -i -X POST "$BASE/api/cms/auth/login" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.7.1.1' \
+  -d '{"email":"qa-viewer@example.com","password":"Qa-Auth-Pass-2026!"}'</code></pre></li>
+        <li>Try the same account in the browser with the correct password.</li>
+        <li>Sign in as <code>qa-admin@example.com</code> (a different account) and open <strong>Audit log</strong>.</li>
+        <li>To unlock without waiting 15 minutes, run:
+<pre><code>DELETE FROM audit_logs WHERE action = 'auth.login.fail' AND subject_id = 'qa-viewer@example.com';</code></pre></li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1 prints ten <code>401</code>. Step 2 answers <code>429</code>, header <code>Retry-After: 900</code>, body <code>{"ok":false,"error":"rate_limited","message":"Too many attempts. Try again later."}</code>.</li>
+        <li>Step 3 shows <code>Too many attempts. Please wait and try again.</code> Other accounts are not affected (step 4 works).</li>
+        <li>The audit log has <em>Sign-in blocked (too many attempts)</em> rows for <code>qa-viewer@example.com</code>, whose Details show <code>"failures": 10</code>.</li>
+        <li>After step 5 the correct password signs in again.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/routes/auth.ts</code> (<code>ACCOUNT_LOCKOUT_MAX_FAILURES = 10</code>, <code>ACCOUNT_LOCKOUT_WINDOW_MS</code>) · <code>src/cms/core/audit.ts</code> (<code>recentLoginFailures</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-007" data-priority="P3">
+      <h3>A successful sign-in resets the account's failure count</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Captcha keys blanked; no recent failures for <code>qa-viewer@example.com</code>.</p>
+      <ol class="steps">
+        <li>Send nine wrong passwords from nine addresses (the loop of AUTH-006 with <code>seq 1 9</code> and <code>10.8.0.$i</code>).</li>
+        <li>Sign in correctly once (any new address).</li>
+        <li>Send nine more wrong passwords from <code>10.8.1.$i</code>, then the correct password from <code>10.8.2.1</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 2 and the last request of step 3 both answer <code>200</code>. Eighteen failures in 15 minutes did not lock the account, because the success in between reset the count.</p>
+      <p class="ref">Ref: <code>src/cms/core/audit.ts</code> (<code>recentAuthFailures</code>, counts after the last <code>auth.login.success</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-008" data-priority="P3">
+      <h3>With captcha keys set, a request without a token is refused</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Both <code>RECAPTCHA_*</code> keys set (the shipped test keys) and the server restarted.</p>
+      <ol class="steps">
+        <li>Run <code>curl -s -i -X POST "$BASE/api/cms/auth/login" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.9.0.1' -d '{"email":"qa-viewer@example.com","password":"Qa-Auth-Pass-2026!"}'</code></li>
+        <li>Repeat with <code>-H 'x-captcha-token:   '</code> (spaces only).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both answer <code>400</code> with <code>{"ok":false,"error":"captcha_failed","message":"Captcha check failed. Please try again."}</code>, even though the password is correct. The server log shows <code>[cms/api] captcha rejected</code>. No audit row is written (the captcha runs before the password check).</p>
+      <p class="ref">Ref: <code>src/cms/core/api/handler.ts</code> (captcha step) · <code>src/cms/core/security/captcha.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-session">
+    <h2>Sessions</h2>
+    <p class="intro">The session is a signed token in the <code>cms_session</code> cookie. It has an idle deadline (<code>ADMIN_SESSION_IDLE_MINUTES</code>, default 60) that moves forward while you work, and an absolute deadline (<code>ADMIN_SESSION_TTL_HOURS</code>, default 8) that never moves. The on-screen idle warning and sign-out are SET-054, SET-055 and ADM-039 to ADM-041; the Sign out button is ADM-020.</p>
+
+    <article class="tc" id="AUTH-009" data-priority="P1">
+      <h3>Session cookie flags</h3>
+      <ol class="steps">
+        <li>Sign in and open developer tools → Application → Cookies → the site.</li>
+        <li>Select <code>cms_session</code> and read the flag columns.</li>
+        <li>In the Console tab run <code>document.cookie</code>.</li>
+        <li>Repeat steps 1–2 on the HTTPS test environment.</li>
+      </ol>
+      <ul class="exp">
+        <li><code>HttpOnly</code> ticked, <code>SameSite</code> <code>Lax</code>, <code>Path</code> <code>/</code>, an expiry about 60 minutes ahead (not “Session”).</li>
+        <li><code>document.cookie</code> does not contain <code>cms_session</code>.</li>
+        <li>On localhost over HTTP <code>Secure</code> is not ticked; on the HTTPS test environment (a production build) <code>Secure</code> is ticked.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/auth/session.ts</code> (<code>setSessionCookie</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-010" data-priority="P2">
+      <h3>The session slides forward while you work</h3>
+      <ol class="steps">
+        <li>Signed in, run <code>curl -s -b "cms_session=$S" "$BASE/api/cms/auth/me"</code> and note <code>sessionExpiresAt</code>.</li>
+        <li>Note the <code>cms_session</code> expiry in developer tools.</li>
+        <li>Wait at least 70 seconds, then click any admin link (the page sends a keepalive to <code>/api/cms/auth/me</code>; watch it in the Network tab).</li>
+        <li>Look at the response headers of that request and at the cookie expiry again.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1 answers <code>200</code> with <code>{"ok":true,"data":{"userId":…,"email":"…","sessionExpiresAt":…}}</code>, an epoch-seconds value about 3600 seconds after sign-in.</li>
+        <li>The keepalive response carries a <code>Set-Cookie: cms_session=…</code> header, and the cookie expiry moved forward by about the time you waited. It never moves past 8 hours after sign-in.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/auth/guards.ts</code> (<code>requireApiAuth</code>) · <code>src/cms/modules/auth/session-idle.ts</code> (<code>sessionRefreshAfterSeconds</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-011" data-priority="P2">
+      <h3>The server refuses an idle cookie, whatever the browser does</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> <code>ADMIN_SESSION_IDLE_MINUTES=2</code> in <code>.env.local</code>, server restarted.</p>
+      <ol class="steps">
+        <li>Sign in, copy the <code>cms_session</code> value into <code>S</code>, then close the admin tab.</li>
+        <li>Immediately run <code>curl -s -o /dev/null -w '%{http_code}\n' -b "cms_session=$S" "$BASE/api/cms/auth/me"</code>.</li>
+        <li>Wait three minutes without any request, then run it again with <code>-i</code>.</li>
+        <li>Put <code>ADMIN_SESSION_IDLE_MINUTES=60</code> back and restart.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 2 prints <code>200</code>. Step 3 answers <code>401</code> with <code>{"ok":false,"error":"unauthorized"}</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/auth/session.ts</code> (<code>exp</code>) · <code>src/cms/modules/auth/session-idle.ts</code> (<code>decideSessionRefresh</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-012" data-priority="P3">
+      <h3>The absolute limit ends even an active session</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> <code>ADMIN_SESSION_TTL_HOURS=0.05</code> (three minutes) in <code>.env.local</code>, server restarted.</p>
+      <ol class="steps">
+        <li>Sign in and keep clicking between admin screens every 20 seconds for four minutes.</li>
+        <li>Restore <code>ADMIN_SESSION_TTL_HOURS=8</code> and restart.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> About three minutes after sign-in, despite the activity, the next screen sends you to the login page (the idle watcher may take you to <code>/admin/login?timeout=1</code> with the inactivity notice). The keepalive never pushed the deadline past three minutes.</p>
+      <p class="ref">Ref: <code>src/cms/modules/auth/session.ts</code> (<code>abs</code> claim, <code>getTtlSeconds</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-013" data-priority="P2">
+      <h3>After sign out, the old cookie no longer works</h3>
+      <ol class="steps">
+        <li>Sign in, copy <code>cms_session</code> into <code>S</code>, and check <code>curl -s -o /dev/null -w '%{http_code}\n' -b "cms_session=$S" "$BASE/api/cms/auth/me"</code> prints <code>200</code>.</li>
+        <li>Click <strong>Sign out</strong> in the admin.</li>
+        <li>Run the same curl again.</li>
+        <li>As superadmin, reset the password of the account you used (Users → Edit → <strong>Reset password</strong>) while it is signed in in another browser, then repeat the curl with that browser's cookie.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 3 and step 4 answer <code>401</code>: a signed-out or password-reset session must not be usable by anyone who copied the cookie.</p>
+      <p class="note">Known risk: the session is a stateless token and sign-out only deletes the cookie in the browser (<code>clearSessionCookie</code>); nothing on the server records that it ended. If step 3 or 4 prints <code>200</code>, mark Fail and report “no server-side session revocation”; the copied cookie keeps working until its idle deadline.</p>
+      <p class="ref">Ref: <code>src/cms/core/routes/auth.ts</code> (<code>logoutRoute</code>) · <code>src/cms/modules/auth/session.ts</code> · docs/dev-guides/05-auth-users-security.md §3.3</p>
+    </article>
+
+    <article class="tc" id="AUTH-014" data-priority="P2">
+      <h3>Disabling an account ends its session on the next request</h3>
+      <ol class="steps">
+        <li>In a private window sign in as <code>qa-viewer@example.com</code> and open <strong>Pages</strong>.</li>
+        <li>In the normal window, as superadmin, disable QA Viewer on the Users screen.</li>
+        <li>In the private window click any link, then run <code>curl -s -i -b "cms_session=&lt;viewer cookie&gt;" "$BASE/api/cms/auth/me"</code>.</li>
+        <li>Enable QA Viewer again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The next screen in the private window is <strong>403 — Forbidden</strong> (the screen guard finds no enabled account). The API answers <code>401</code> <code>{"ok":false,"error":"unauthorized"}</code>. Within a few seconds the idle watcher may move the tab to the login page. After re-enabling, a fresh sign-in works.</p>
+      <p class="ref">Ref: <code>src/cms/modules/auth/guards.ts</code> (<code>loadUserPermissions</code> returns null for a disabled user) · <code>src/cms/modules/auth/current-user.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-015" data-priority="P3">
+      <h3>A tampered or foreign cookie is refused</h3>
+      <ol class="steps">
+        <li>Change the last character of <code>$S</code> and run <code>curl -s -i -b "cms_session=$S" "$BASE/api/cms/auth/me"</code>.</li>
+        <li>If the Customer accounts module is on: sign in as a shop customer on the public site, copy the <code>cms_customer</code> cookie value, and send it as <code>-b "cms_session=&lt;customer value&gt;"</code>.</li>
+        <li>During a sign-in stopped at the code prompt (AUTH-018), copy the <code>cms_mfa</code> cookie value and send it as <code>cms_session</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> All three answer <code>401</code> <code>{"ok":false,"error":"unauthorized"}</code>. Step 2 is N/A when Customer accounts is off.</p>
+      <p class="ref">Ref: <code>src/cms/modules/auth/session.ts</code> (audience <code>cms-admin</code>) · <code>src/cms/modules/customers/token.ts</code> (HKDF key) · <code>src/cms/modules/auth/mfa-challenge.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-2fa">
+    <h2>Two-factor authentication</h2>
+    <p class="intro">Every signed-in user manages their own second factor on <strong>Your account</strong> (<code>/admin/account</code>). A missing <code>CMS_TOKEN_ENCRYPTION_KEY</code> is SET-007. Use <code>qa-viewer@example.com</code> unless a case says otherwise. The authenticator entry is named after the site.</p>
+
+    <article class="tc" id="AUTH-016" data-priority="P1">
+      <h3>Set up an authenticator app</h3>
+      <ol class="steps">
+        <li>Signed in as <code>qa-viewer@example.com</code>, open <strong>Your account</strong>.</li>
+        <li>Click <strong>Set up two-factor authentication</strong>, then <strong>Use an authenticator app</strong>.</li>
+        <li>Scan the QR code with the phone app. Compare the key shown after <code>Cannot scan? Enter this key manually:</code> with the entry in the app.</li>
+        <li>Type the six-digit code from the app into <strong>Code from your app or email</strong> and click <strong>Turn on two-factor</strong>.</li>
+        <li>Click <strong>Copy codes</strong>, then <strong>Download .txt</strong>, and open the downloaded file.</li>
+        <li>Click <strong>I have saved them</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 2 shows <code>Scan this with your authenticator app, then enter the six-digit code it shows.</code>, a QR image and a key of A–Z and 2–7 characters.</li>
+        <li>Step 4 shows an amber box starting <strong>Save these recovery codes now.</strong> <code>Each one works once, and this is the only time they are shown.</code> and ten codes of the form <code>XXXX-XXXX</code>.</li>
+        <li>Copy says <code>Copied 10 recovery codes to the clipboard.</code> (or, over plain HTTP without a clipboard, <code>Could not reach the clipboard. Use Download, or select the codes above and copy them.</code>). Download says <code>Downloaded &lt;site-name&gt;-recovery-codes-YYYY-MM-DD.txt.</code> and the file names the site, the date and the ten codes.</li>
+        <li>After step 6: <code>Two-factor authentication is on.</code>, <strong>Method</strong> <code>Authenticator app</code>, <strong>Turned on</strong> today, <strong>Recovery codes left</strong> <code>10</code>, and the buttons <strong>New recovery codes</strong> and <strong>Turn off</strong>.</li>
+        <li>The audit log shows <em>Set up two-factor authentication</em> with Details <code>"method": "totp"</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/AccountSecurity.tsx</code> · <code>src/cms/admin/MfaEnrollPanel.tsx</code> · <code>src/cms/admin/RecoveryCodesPanel.tsx</code> · <code>src/cms/admin/recovery-codes-file.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-017" data-priority="P3">
+      <h3>A wrong code during setup, and Back</h3>
+      <ol class="steps">
+        <li>With 2FA off on an account, start authenticator setup and enter <code>000000</code>, then <strong>Turn on two-factor</strong>.</li>
+        <li>Click <strong>Back</strong>, choose <strong>Use an authenticator app</strong> again, and compare the new key with the first one.</li>
+        <li>Try to start a second setup on an account that already has 2FA: <code>curl -s -i -X POST "$BASE/api/cms/auth/2fa/enroll/start" -b "cms_session=$S" -H 'Content-Type: application/json' -d '{"method":"totp"}'</code></li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: <code>That code is not valid. Check the code and try again.</code>; 2FA stays off.</li>
+        <li>Step 2: a new key; the first one no longer works.</li>
+        <li>Step 3: <code>409</code> with message <code>Two-factor authentication is already set up. Turn it off first to change how it works.</code>; the working key is not replaced.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/routes/auth-mfa.ts</code> (<code>mfaEnrollStartRoute</code>, <code>mfaEnrollConfirmRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-018" data-priority="P1">
+      <h3>Sign in with an authenticator code</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> AUTH-016 done.</p>
+      <ol class="steps">
+        <li>Sign out, sign in as <code>qa-viewer@example.com</code> with the password.</li>
+        <li>Before typing a code, check developer tools → Cookies.</li>
+        <li>Type the current code from the app into <strong>Code</strong> and click <strong>Verify</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>After the password the card's caption changes to <strong>CMS · verify</strong> with <code>Enter the code from your authenticator app, or one of your recovery codes.</code></li>
+        <li>At this point there is a <code>cms_mfa</code> cookie (HttpOnly, about 10 minutes) and no <code>cms_session</code>.</li>
+        <li>After Verify you land on the dashboard; <code>cms_mfa</code> is gone and <code>cms_session</code> is set.</li>
+        <li>The audit log shows, oldest first, <em>Asked for a two-factor code</em>, <em>Passed two-factor</em> (Details <code>"via": "totp"</code>) and <em>Signed in</em>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/LoginForm.tsx</code> · <code>src/cms/core/routes/auth-mfa.ts</code> (<code>mfaVerifyRoute</code>) · <code>src/cms/modules/auth/mfa-challenge.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-019" data-priority="P2">
+      <h3>A wrong code is refused</h3>
+      <ol class="steps">
+        <li>At the code prompt enter <code>123456</code> (or any code not on the app) and click <strong>Verify</strong>.</li>
+        <li>Enter the correct code.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1 shows <code>That code is not valid. Check the code and try again.</code>, the Code box is emptied and you stay on <strong>CMS · verify</strong>. Step 2 signs in. The audit log has a <em>Failed two-factor code</em> row.</p>
+      <p class="ref">Ref: <code>src/cms/admin/login-error.ts</code> (<code>mfaErrorMessage</code>) · <code>src/cms/core/routes/auth-mfa.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-020" data-priority="P3">
+      <h3>A code cannot be used twice</h3>
+      <ol class="steps">
+        <li>Sign in with a code from the app. Within the same 30 seconds, sign out and sign in again with the same code.</li>
+        <li>Enrol a fresh account (for example <code>qa-usermgr@example.com</code>) and, within 30 seconds of clicking <strong>Turn on two-factor</strong>, sign out and try to sign in with that same enrolment code.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The repeated code is refused with <code>That code is not valid. Check the code and try again.</code> in both steps; the next code the app shows works.</p>
+      <p class="ref">Ref: <code>src/cms/modules/auth/mfa.ts</code> (<code>totp_last_step</code>, conditional update) · <code>src/cms/core/security/totp.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-021" data-priority="P3">
+      <h3>The code prompt expires after 10 minutes</h3>
+      <ol class="steps">
+        <li>Enter the password, then leave the code prompt untouched for 11 minutes.</li>
+        <li>Enter a current code and click <strong>Verify</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>This sign-in attempt has expired. Please sign in again.</code> Reloading shows the password step.</p>
+      <p class="ref">Ref: <code>src/cms/modules/auth/mfa-challenge.ts</code> (<code>MFA_CHALLENGE_TTL_SECONDS = 600</code>) · <code>src/cms/admin/login-error.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-022" data-priority="P3">
+      <h3>Guessing codes is throttled</h3>
+      <ol class="steps">
+        <li>At the code prompt enter eleven wrong codes in a row (restart the server first so the address budget is fresh).</li>
+        <li>Enter the correct code.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Attempts 1–10 show <code>That code is not valid. Check the code and try again.</code>; attempt 11 and the correct code in step 2 show <code>Too many attempts. Please wait and try again.</code> (10 per 10 minutes per address; separately, 10 failures per 15 minutes per account block the account with an audit row <em>Two-factor blocked (too many attempts)</em>). Restart the server or wait 10 minutes to continue.</p>
+      <p class="ref">Ref: <code>src/cms/core/routes/auth-mfa.ts</code> (<code>cms-2fa-verify</code>, <code>MFA_LOCKOUT_MAX_FAILURES</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-023" data-priority="P2">
+      <h3>Sign in with a recovery code, once</h3>
+      <ol class="steps">
+        <li>At the code prompt type the first recovery code in lower case and without the hyphen (for example <code>abcd2345</code> for <code>ABCD-2345</code>), click <strong>Verify</strong>.</li>
+        <li>Open <strong>Your account</strong>.</li>
+        <li>Sign out and try the same recovery code again.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1 signs in. <strong>Recovery codes left</strong> is <code>9</code>.</li>
+        <li>The audit log shows <em>Signed in with a recovery code</em> with Details <code>"remaining": 9</code>, plus <em>Passed two-factor</em> with <code>"via": "recovery"</code>.</li>
+        <li>Step 3: <code>That code is not valid. Check the code and try again.</code></li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/security/recovery-codes.ts</code> (<code>normalizeRecoveryCode</code>) · <code>src/cms/core/routes/auth-mfa.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-024" data-priority="P2">
+      <h3>Replace the recovery codes</h3>
+      <ol class="steps">
+        <li>On <strong>Your account</strong> click <strong>New recovery codes</strong>, type a wrong password, click <strong>Confirm</strong>.</li>
+        <li>Type the correct password and click <strong>Confirm</strong>.</li>
+        <li>Sign out and try one of the <em>old</em> codes, then one of the new ones.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1 is refused and nothing changes. The server answers <code>401</code> <code>That password is not correct.</code>; the screen should say the password is wrong. If it shows <code>This sign-in attempt has expired. Please sign in again.</code> instead, mark Fail (every 401 on this screen is mapped to the expired-sign-in text).</li>
+        <li>Step 2 shows <code>Your old recovery codes no longer work.</code>, a new amber box <strong>Save these new recovery codes now.</strong> with ten codes, and <strong>Recovery codes left</strong> <code>10</code>. Audit: <em>Generated new recovery codes</em>.</li>
+        <li>Step 3: the old code is refused, the new one signs in.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/AccountSecurity.tsx</code> · <code>src/cms/core/routes/auth-mfa.ts</code> (<code>requirePasswordReauth</code>, <code>mfaRecoveryCodesRoute</code>) · <code>src/cms/admin/login-error.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-025" data-priority="P3">
+      <h3>Warning when no recovery codes are left</h3>
+      <ol class="steps">
+        <li>Run:
+<pre><code>UPDATE admin_recovery_codes rc JOIN admin_users u ON u.id = rc.user_id
+SET rc.used_at = NOW() WHERE u.email = 'qa-viewer@example.com';</code></pre></li>
+        <li>Reload <strong>Your account</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <strong>Recovery codes left</strong> <code>0</code> and an amber alert: <code>You have no recovery codes left. Generate a new set now — without them, losing your device means asking another administrator to reset your access.</code> Generate a new set afterwards.</p>
+      <p class="ref">Ref: <code>src/cms/admin/AccountSecurity.tsx</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-026" data-priority="P2">
+      <h3>Turn two-factor off</h3>
+      <ol class="steps">
+        <li>With the Security setting on <strong>Optional — each administrator chooses</strong>, open <strong>Your account</strong>, click <strong>Turn off</strong>, enter the password, click <strong>Confirm</strong>.</li>
+        <li>Sign out and sign in again.</li>
+        <li>Run <code>SELECT mfa_method, totp_secret_encrypted, mfa_enrolled_at FROM admin_users WHERE email = 'qa-viewer@example.com';</code> and <code>SELECT COUNT(*) FROM admin_recovery_codes rc JOIN admin_users u ON u.id = rc.user_id WHERE u.email = 'qa-viewer@example.com';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>Two-factor authentication is off.</code> and the <strong>Set up two-factor authentication</strong> button. Sign-in needs only the password. All three columns are NULL and the count is 0. Audit: <em>Turned off two-factor authentication</em>.</p>
+      <p class="ref">Ref: <code>src/cms/core/routes/auth-mfa.ts</code> (<code>mfaDisableRoute</code>) · <code>src/cms/modules/auth/mfa.ts</code> (<code>clearMfa</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-027" data-priority="P2">
+      <h3>“Require two-factor authentication” forces setup at sign-in</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> <code>qa-usersonly@example.com</code> has no second factor. The superadmin you are using has one (or can enrol when asked).</p>
+      <ol class="steps">
+        <li>As superadmin open <code>/admin/settings?tab=Security</code>, set <strong>Require two-factor authentication</strong> to <strong>Required for all administrators</strong>, click <strong>Save settings</strong>.</li>
+        <li>In a private window sign in as <code>qa-usersonly@example.com</code>. Try <code>/admin</code> in a new tab of that window before finishing.</li>
+        <li>Complete setup with the authenticator app and click <strong>I have saved them</strong>.</li>
+        <li>Open <strong>Your account</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: <code>Settings saved.</code> Users who were already signed in stay signed in.</li>
+        <li>Step 2: the caption is <strong>CMS · set up 2FA</strong> with <code>This site requires two-factor authentication. Set it up now to finish signing in.</code> and the method buttons. The new tab shows the login page: no session exists yet.</li>
+        <li>Step 3 lands on the dashboard. Audit: <em>Required to set up two-factor</em>, <em>Set up two-factor authentication</em>, <em>Signed in</em>.</li>
+        <li>Step 4: <strong>Turn off</strong> is greyed out, with <code>This site requires two-factor authentication, so it cannot be turned off. An administrator can change that in Settings → Security.</code></li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/settings/schema.ts</code> (<code>SECURITY_REQUIRE_2FA_KEY</code>) · <code>src/cms/admin/LoginForm.tsx</code> (<code>enroll</code> step) · <code>src/cms/admin/AccountSecurity.tsx</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-028" data-priority="P3">
+      <h3>The requirement cannot be bypassed through the API</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> The requirement is on (AUTH-027).</p>
+      <ol class="steps">
+        <li>With a signed-in enrolled account, run <code>curl -s -i -X POST "$BASE/api/cms/auth/2fa/disable" -b "cms_session=$S" -H 'Content-Type: application/json' -d '{"password":"&lt;correct password&gt;"}'</code></li>
+        <li>Enter the password of an un-enrolled account so the enrolment step appears, copy the <code>cms_mfa</code> value, and run <code>curl -s -o /dev/null -w '%{http_code}\n' -b "cms_session=&lt;that value&gt;" "$BASE/api/cms/auth/me"</code>.</li>
+        <li>Set the setting back to <strong>Optional — each administrator chooses</strong> and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>403</code> with message <code>This site requires two-factor authentication. Ask an administrator to change the setting first.</code> and 2FA stays on. Step 2: <code>401</code>.</p>
+      <p class="ref">Ref: <code>src/cms/core/routes/auth-mfa.ts</code> (<code>mfaDisableRoute</code>, <code>requireEnroller</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-029" data-priority="P3">
+      <h3>Emailed codes: offered only when mail is configured</h3>
+      <ol class="steps">
+        <li>On an account without 2FA, open <strong>Your account</strong> → <strong>Set up two-factor authentication</strong>.</li>
+        <li>If <strong>Email me a code</strong> is available (Microsoft Graph mail configured): click it, enter the code from the email, turn it on; sign out and sign in; click <strong>Send a new code</strong> six times in a row.</li>
+      </ol>
+      <ul class="exp">
+        <li>Without mail: <strong>Email me a code</strong> is greyed and <code>Emailed codes are unavailable because this site has no mail configured.</code> is shown.</li>
+        <li>With mail: <code>We have sent a six-digit code to your email address. Enter it below to finish.</code>; at sign-in <code>We have sent a six-digit code to your email address.</code> and <code>Enter the code from your email, or one of your recovery codes.</code>; <strong>Send a new code</strong> shows <code>A new code is on its way.</code> until the address budget (5 per 10 minutes) answers <code>Too many attempts. Please wait and try again.</code> An emailed code works once and dies after 10 minutes.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/MfaEnrollPanel.tsx</code> · <code>src/cms/modules/auth/mfa.ts</code> (<code>issueEmailCode</code>) · <code>src/cms/modules/auth/mfa-email.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-030" data-priority="P2">
+      <h3>Recovery PIN: the hidden dialog signs in</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> <code>ADMIN_MFA_BYPASS_CODE=482913</code> in <code>.env.local</code>, server restarted. <code>qa-viewer@example.com</code> has 2FA on.</p>
+      <ol class="steps">
+        <li>On the password step press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>P</kbd>.</li>
+        <li>Enter the password to reach the code prompt. Type <code>482913</code> in the ordinary <strong>Code</strong> box and click <strong>Verify</strong>.</li>
+        <li>Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>P</kbd> (also try with a Greek keyboard layout active).</li>
+        <li>Press <kbd>Escape</kbd>, open it again, type <code>482913</code> in <strong>Recovery PIN</strong>, click <strong>Continue</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: nothing happens.</li>
+        <li>Step 2: <code>That code is not valid. Check the code and try again.</code> The PIN works only in its own dialog.</li>
+        <li>Step 3: a dialog <strong>Recovery access</strong> with <code>Enter the six-digit recovery PIN for this site.</code>, a <strong>Recovery PIN</strong> box (focused), <strong>Continue</strong> and <strong>Cancel</strong>; the layout does not matter. Escape closes it.</li>
+        <li>Step 4 lands on the dashboard. Audit: <em>Signed in with the recovery PIN</em> followed by <em>Signed in</em>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/MfaBypassDialog.tsx</code> · <code>src/cms/admin/mfa-bypass-hotkey.ts</code> · <code>src/cms/core/routes/auth-mfa.ts</code> (<code>mfaBypassRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-031" data-priority="P3">
+      <h3>Recovery PIN: five attempts per hour</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> As AUTH-030; server freshly restarted.</p>
+      <ol class="steps">
+        <li>At the code prompt open the dialog and enter wrong PINs <code>000001</code> to <code>000006</code>, one after another.</li>
+        <li>Enter the correct PIN.</li>
+        <li>As another superadmin open <strong>Audit log</strong>, search <code>bypass</code>, expand the rows.</li>
+      </ol>
+      <ul class="exp">
+        <li>Attempts 1–5: <code>That code is not valid. Check the code and try again.</code> Attempt 6 and the correct PIN: <code>Too many attempts. Please wait and try again.</code> (5 per hour per address and 5 failures per hour per account).</li>
+        <li>Five <em>Failed recovery PIN attempt</em> rows with Details <code>"reason": "mismatch"</code>. No row contains any submitted PIN.</li>
+        <li>The ordinary code from the app still works (its budget is separate).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/routes/auth-mfa.ts</code> (<code>cms-2fa-bypass</code>, <code>BYPASS_LOCKOUT_MAX_FAILURES</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-032" data-priority="P3">
+      <h3>Recovery PIN: off when unset or malformed, on in production when set</h3>
+      <ol class="steps">
+        <li>Set <code>ADMIN_MFA_BYPASS_CODE=12345</code> (five digits), restart, and try <code>12345</code> in the dialog. Check the server log.</li>
+        <li>Blank the variable, restart, and try <code>482913</code>.</li>
+        <li>With <code>ADMIN_MFA_BYPASS_CODE=482913</code>, run the production build (<code>npm run build</code> then <code>npm run start</code>, see SET-030) and try the PIN there.</li>
+        <li>On the enrolment step of AUTH-027 (forced setup) press the shortcut.</li>
+      </ol>
+      <ul class="exp">
+        <li>Steps 1 and 2: the same <code>That code is not valid. Check the code and try again.</code>; audit Details <code>"reason": "disabled"</code>. Step 1 logs one warning about a malformed value, without the value.</li>
+        <li>Step 3: the PIN signs in on the production build too. This is current behaviour, not a defect of this case: record it so the product owner can decide whether production should allow the PIN at all.</li>
+        <li>Step 4: no dialog opens; the PIN cannot skip a required setup.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/security/mfa-bypass.ts</code> (<code>readBypassCode</code>) · <code>.env.example</code> · docs/dev-guides/05-auth-users-security.md §7</p>
+    </article>
+
+    <article class="tc" id="AUTH-033" data-priority="P3">
+      <h3>Reset a lost second factor from the terminal</h3>
+      <ol class="steps">
+        <li>Run <code>npm run db:reset-mfa -- QA-Viewer@example.com</code> for an account with 2FA on.</li>
+        <li>Run it again.</li>
+        <li>Run <code>npm run db:reset-mfa -- nobody@example.com</code> and <code>npm run db:reset-mfa</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: <code>Cleared two-factor authentication for QA Viewer &lt;qa-viewer@example.com&gt; (was: totp).</code> and <code>They will be asked to set it up again the next time they sign in.</code></li>
+        <li>Step 2: <code>qa-viewer@example.com has no second factor set up. Nothing to do.</code></li>
+        <li>Step 3: <code>No admin account with the email nobody@example.com.</code> and <code>Usage: npm run db:reset-mfa -- &lt;email&gt;</code>, both with a non-zero exit code.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/db/seeds/cli/reset-mfa.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-users">
+    <h2>Users screen</h2>
+    <p class="intro">The screen is <code>/admin/users</code> and needs <strong>Manage users</strong>; creating an account or choosing its role also needs <strong>Manage roles</strong>. An account can only be changed by someone who holds every permission it holds. Sign-in as a no-access user is ADM-036.</p>
+
+    <article class="tc" id="AUTH-034" data-priority="P1">
+      <h3>Create a user; the email is stored in lower case</h3>
+      <ol class="steps">
+        <li>As superadmin, under <strong>Add a user</strong>, enter <strong>Name (required)</strong> <code>QA Mixed</code>, <strong>Email (required)</strong> <code>QA.Mixed@Example.COM</code>, <strong>Password (required)</strong> <code>Qa-Auth-Pass-2026!</code>, <strong>Role (required)</strong> <code>QA viewer</code>, click <strong>Add user</strong>.</li>
+        <li>Run <code>SELECT email FROM admin_users WHERE email LIKE 'qa.mixed%';</code></li>
+        <li>Sign in as <code>qa.mixed@example.com</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The form clears; the table shows <code>qa.mixed@example.com</code>, role <code>QA viewer</code>, Last login <code>—</code>, Status <code>active</code>. The SQL returns exactly <code>qa.mixed@example.com</code>. Sign-in works. The audit log shows <em>Created a user</em> with Subject <code>User #&lt;id&gt;</code>.</p>
+      <p class="ref">Ref: <code>src/cms/core/users/schema.ts</code> (<code>normalizeEmail</code>) · <code>src/cms/core/users/service.ts</code> (<code>createUser</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-035" data-priority="P2">
+      <h3>The create form explains each problem at its field</h3>
+      <ol class="steps">
+        <li>Click <strong>Add user</strong> with every field empty.</li>
+        <li>Enter name <code>QA Weak</code>, email <code>qa-weak@example.com</code>, password <code>password</code>, no role; click <strong>Add user</strong>.</li>
+        <li>Enter the email of an existing account (in upper case) with a valid password and role; click <strong>Add user</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: under the fields, <code>Enter a name.</code>, <code>Enter an email address.</code>, a <code>Password needs …</code> sentence and <code>Select a role.</code></li>
+        <li>Step 2: <code>Password needs at least 10 characters, an uppercase letter, a number, a symbol, not a common password.</code> and <code>Select a role.</code> Nothing is created.</li>
+        <li>Step 3: under the email field, <code>An account with this email address already exists.</code> The typed password stays in its box.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/users/schema.ts</code> (<code>newUserProblems</code>, <code>ROLE_REQUIRED</code>) · <code>src/cms/modules/auth/password-policy.ts</code> · <code>src/cms/admin/UsersManager.tsx</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-036" data-priority="P2">
+      <h3>Edit a user's name and role</h3>
+      <ol class="steps">
+        <li>Click <strong>Edit</strong> on QA Mixed. Change <strong>Name</strong> to <code>QA Mixed Renamed</code> and <strong>Role</strong> to <code>QA limited</code>, click <strong>Save</strong>.</li>
+        <li>Open Edit again, clear the role (<code>Choose a role…</code>) and click <strong>Save</strong>.</li>
+        <li>Press <kbd>Escape</kbd>.</li>
+      </ol>
+      <ul class="exp">
+        <li>The panel's heading is the account's email. In the role list each option reads like <code>QA limited (3 perms)</code>.</li>
+        <li>Step 1 closes the panel; the row shows the new name and role. Audit: <em>Edited a user</em>.</li>
+        <li>Step 2 is refused inside the panel with <code>Select a role.</code></li>
+        <li>Escape closes the panel without saving.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/UsersManager.tsx</code> (<code>EditUserPanel</code>) · <code>src/cms/core/routes/users.ts</code> (<code>userUpdateRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-037" data-priority="P2">
+      <h3>Reset another user's password</h3>
+      <ol class="steps">
+        <li>Edit QA Mixed Renamed. In <strong>Reset password</strong> type <code>Password1!</code>, click <strong>Save</strong>.</li>
+        <li>Type <code>Qa-Reset-Pass-2026#</code> and click <strong>Save</strong>.</li>
+        <li>Sign in as <code>qa.mixed@example.com</code> with the old password, then with the new one.</li>
+      </ol>
+      <ul class="exp">
+        <li>The field's help reads <code>Sets a new password for this account; leave it empty to keep the current one. No email is sent, so tell the person yourself.</code></li>
+        <li>Step 1 is refused under the field with <code>Password needs not a common password.</code></li>
+        <li>Step 2 saves; the old password gives <code>Invalid email or password.</code>, the new one signs in. No email reaches the user.</li>
+        <li>Audit: <em>Reset a user's password</em> (with IP) and <em>Edited a user</em>. Neither row contains the password.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/routes/users.ts</code> (<code>strongPasswordOrBlank</code>, <code>user.password.reset</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-038" data-priority="P2">
+      <h3>Disable and enable an account</h3>
+      <ol class="steps">
+        <li>Click <code>active</code> in QA Mixed Renamed's Status column. Read the dialog, click <strong>Disable account</strong>.</li>
+        <li>Try to sign in as <code>qa.mixed@example.com</code>.</li>
+        <li>Click <code>disabled</code> in the same cell.</li>
+      </ol>
+      <ul class="exp">
+        <li>The dialog is titled <code>Disable QA Mixed Renamed?</code> with <code>qa.mixed@example.com will lose access to the admin immediately. You can enable them again afterwards.</code></li>
+        <li>The cell reads <code>disabled</code> and the row has a grey background. Sign-in gives <code>Invalid email or password.</code></li>
+        <li>Enabling asks nothing and the cell reads <code>active</code>; sign-in works again. Two <em>Edited a user</em> rows are logged.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/UsersManager.tsx</code> (<code>toggleDisabled</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-039" data-priority="P2">
+      <h3>Delete an account</h3>
+      <ol class="steps">
+        <li>Sign in as <code>qa.mixed@example.com</code> once more (so it has audit rows), then as superadmin click <strong>Delete</strong> on its row and read the dialog. Click <strong>Delete account</strong>.</li>
+        <li>Open <strong>Audit log</strong>, find <em>Deleted a user</em> and expand <strong>Details</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Dialog: <code>Delete QA Mixed Renamed?</code> with <code>qa.mixed@example.com is removed permanently. Anything they wrote — documents, media, audit entries — stays, but stops being attributed to them, and this cannot be undone. Disable the account instead if you only want to take their access away.</code></li>
+        <li>The row disappears. <strong>Before</strong> shows <code>"email": "qa.mixed@example.com"</code>, <code>"name"</code> and <code>"roleNames"</code>. The account's older rows remain, with Actor now shown as <code>system</code> (their user link is cleared).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/routes/users.ts</code> (<code>userDeleteRoute</code>) · <code>src/cms/core/users/service.ts</code> (<code>deleteUser</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-040" data-priority="P2">
+      <h3>Reset another user's two-factor</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> <code>qa-viewer@example.com</code> has 2FA on; the Security setting is Optional.</p>
+      <ol class="steps">
+        <li>As superadmin find the <strong>Reset 2FA</strong> button: it shows only on rows of accounts with 2FA on. Click it on QA Viewer and confirm with <strong>Reset two-factor</strong>.</li>
+        <li>Sign in as <code>qa-viewer@example.com</code>.</li>
+        <li>Repeat with the Security setting on Required.</li>
+      </ol>
+      <ul class="exp">
+        <li>Dialog: <code>Reset two-factor for QA Viewer?</code> with <code>qa-viewer@example.com will be able to sign in with their password alone until they set it up again, and their recovery codes stop working. Only do this once you are sure who you are talking to.</code></li>
+        <li>The <strong>Reset 2FA</strong> button disappears from the row. Step 2 needs only the password. Step 3 goes to <strong>CMS · set up 2FA</strong> instead.</li>
+        <li>Audit: <em>Reset another user's two-factor</em> with Details <code>"email": "qa-viewer@example.com"</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/UsersManager.tsx</code> (<code>resetMfa</code>) · <code>src/cms/core/routes/users.ts</code> (<code>resetMfa</code>, <code>auth.2fa.admin_reset</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-041" data-priority="P1">
+      <h3>A user manager cannot change a more powerful account</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> <code>qa-admin2@example.com</code> (superadmin) has 2FA on, so its row has <strong>Reset 2FA</strong>.</p>
+      <ol class="steps">
+        <li>Sign in as <code>qa-usermgr@example.com</code> (Access, View content, Manage users, Manage roles) and open <strong>Users</strong>.</li>
+        <li>On QA Admin Two's row click <code>active</code> and confirm <strong>Disable account</strong>.</li>
+        <li>On the same row click <strong>Delete</strong> → <strong>Delete account</strong>, then <strong>Reset 2FA</strong> → <strong>Reset two-factor</strong>.</li>
+        <li>Reset its password through the API: <code>curl -s -i -X PATCH "$BASE/api/cms/users/&lt;id of qa-admin2&gt;" -b "cms_session=$S" -H 'Content-Type: application/json' -d '{"password":"Qa-Takeover-2026!"}'</code> (with the user manager's cookie).</li>
+      </ol>
+      <ul class="exp">
+        <li>Every attempt is refused above the table with <code>You cannot change this account — it holds a permission you do not hold yourself: Full access.</code></li>
+        <li>The curl answers <code>403</code> with the same message.</li>
+        <li>QA Admin Two is still active, still has 2FA, and its password is unchanged (sign-in with the old one works).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/roles/can-grant.ts</code> (<code>assertCanManageAccount</code>) · <code>src/cms/core/routes/users.ts</code> (<code>assertCanManageUser</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-042" data-priority="P2">
+      <h3>The refusal names the missing permissions</h3>
+      <ol class="steps">
+        <li>As <code>qa-usermgr@example.com</code>, click <code>active</code> on QA Editor's row and confirm.</li>
+        <li>Click <strong>Edit</strong> on QA Editor, change only the name, click <strong>Save</strong>.</li>
+        <li>Click <strong>Edit</strong> on QA Admin Two, click <strong>Save</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: <code>You cannot change this account — it holds a permission you do not hold yourself: Edit content, Publish content, View media, …</code> listing, by their screen names, every editor permission the manager lacks.</li>
+        <li>Step 2 (inside the panel): <code>You cannot assign the role "editor" — it grants a permission you do not hold yourself: Edit content, …</code> Step 3: <code>You cannot assign the role "superadmin" — it grants a permission you do not hold yourself: Full access.</code> (The panel always resends the role, so the role check answers first.) Nothing changes.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/roles/grants.ts</code> (<code>assertCanAssignRoles</code>) · <code>src/cms/modules/auth/permission-labels.ts</code> (<code>permissionLabel</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-043" data-priority="P2">
+      <h3>A user manager can change accounts within reach; a superadmin can change anyone</h3>
+      <ol class="steps">
+        <li>As <code>qa-usermgr@example.com</code>, on QA Viewer: reset the password, disable, enable, and (if on) <strong>Reset 2FA</strong>.</li>
+        <li>Open the Role list in <strong>Add a user</strong> and in QA Viewer's Edit panel.</li>
+        <li>As <code>qa-admin@example.com</code>, disable and enable QA User Manager and QA Admin Two, and reset QA Admin Two's password.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: all succeed (QA viewer holds only permissions the manager holds).</li>
+        <li>Step 2: <code>superadmin</code>, <code>editor</code> and <code>QA limited</code> are greyed with <code>— above your authority</code>; <code>QA viewer</code>, <code>QA no access</code>, <code>QA user manager</code> and <code>QA users only</code> can be chosen.</li>
+        <li>Step 3: all succeed.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/roles/grants.ts</code> (<code>assignableRoleIds</code>) · <code>src/cms/admin/UsersManager.tsx</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-044" data-priority="P3">
+      <h3>Manage users without Manage roles</h3>
+      <ol class="steps">
+        <li>Sign in as <code>qa-usersonly@example.com</code> (Access, Manage users) and open <strong>Users</strong>.</li>
+        <li>Try to add a user with role <code>QA viewer</code>.</li>
+        <li>Edit QA Viewer, change only the name, click <strong>Save</strong>.</li>
+        <li>Click <code>active</code> on QA Viewer's row and confirm.</li>
+      </ol>
+      <ul class="exp">
+        <li>Steps 2 and 3 are refused by the server (the API answers <code>403</code> with <code>"missing":"cms.roles.manage"</code>). On screen the message is only <code>forbidden</code>, and the role list offered the role as if it could be chosen. Mark Fail if a manager without Manage roles cannot even rename an account, and report the bare <code>forbidden</code> text as a usability defect.</li>
+        <li>Step 4 is refused with <code>You cannot change this account — it holds a permission you do not hold yourself: View content.</code> (QA viewer holds View content; this manager does not).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/routes/users.ts</code> (<code>requireRoleAssignment</code>) · <code>src/cms/admin/UsersManager.tsx</code> (Edit always sends <code>roleIds</code>) · <code>src/cms/admin/api-error-text.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-045" data-priority="P2">
+      <h3>Your own row: no delete, no disable</h3>
+      <ol class="steps">
+        <li>As <code>qa-admin@example.com</code> look at your own row.</li>
+        <li>Click your own <code>active</code> and confirm.</li>
+        <li>Edit your own name and save; reset your own password and sign in with it.</li>
+        <li>Run <code>curl -s -i -X DELETE "$BASE/api/cms/users/&lt;your id&gt;" -b "cms_session=$S"</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Your row has no <strong>Delete</strong> button.</li>
+        <li>Step 2: <code>You cannot disable your own account.</code></li>
+        <li>Step 3 works (the top bar shows the new name after a reload).</li>
+        <li>Step 4: <code>409</code> with <code>You cannot delete your own account.</code></li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/routes/users.ts</code> (<code>assertDisableAllowed</code>, <code>userDeleteRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-046" data-priority="P2">
+      <h3>The last enabled superadmin cannot be removed</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Disable every other account with Full access (<code>qa-admin2</code>, <code>qa-en</code>, and any other superadmin) so <code>qa-admin@example.com</code> is the only enabled one. Check with the SQL below.</p>
+<pre><code>SELECT u.email FROM admin_users u JOIN admin_user_roles ur ON ur.user_id = u.id
+JOIN admin_roles r ON r.id = ur.role_id
+WHERE JSON_CONTAINS(r.permissions, '"*"') AND u.disabled_at IS NULL;</code></pre>
+      <ol class="steps">
+        <li>As <code>qa-admin@example.com</code>, Edit your own row, change Role to <code>editor</code>, click <strong>Save</strong>.</li>
+        <li>Enable <code>qa-admin2@example.com</code>, then repeat step 1.</li>
+        <li>As <code>qa-admin2@example.com</code> give <code>qa-admin@example.com</code> the <code>superadmin</code> role back.</li>
+      </ol>
+      <ul class="exp">
+        <li>The SQL returns one row.</li>
+        <li>Step 1 is refused in the panel with <code>This is the last enabled superadmin — taking away its superadmin role would lock everyone out of the admin.</code></li>
+        <li>Step 2 succeeds (another superadmin exists); your next screen is limited to the editor's rights.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/users/service.ts</code> (<code>updateUser</code>, <code>deleteUser</code>, <code>FOR UPDATE</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-047" data-priority="P3">
+      <h3>Search the list, and an account with an older mixed-case email</h3>
+      <ol class="steps">
+        <li>Type <code>viewer</code> in <strong>Filter by name or email…</strong>, then <code>QA limited</code>, then <code>zzz</code>.</li>
+        <li>Run <code>UPDATE admin_users SET email = 'QA-Viewer@Example.com' WHERE email = 'qa-viewer@example.com';</code> and sign in as <code>qa-viewer@example.com</code>.</li>
+        <li>Put the email back in lower case.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1 shows matching rows with <code>1 of N accounts</code>; the role name also matches; <code>zzz</code> shows <code>No accounts match “zzz”.</code></li>
+        <li>Step 2 signs in (the database collation compares without case, which covers accounts created before emails were normalised).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/UsersManager.tsx</code> · docs/dev-guides/05-auth-users-security.md §10</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-roles">
+    <h2>Roles &amp; permissions</h2>
+    <p class="intro">The screen is <code>/admin/roles</code> and needs <strong>Manage roles</strong>. Nobody can grant, or delete a role carrying, a permission they do not hold. The sidebar per role is ADM-013 to ADM-016; a role change reaching the sidebar is ADM-015; the Access warning in the picker is ADM-001.</p>
+
+    <article class="tc" id="AUTH-048" data-priority="P1">
+      <h3>Create a role</h3>
+      <ol class="steps">
+        <li>As superadmin open <strong>Roles</strong>. Check that <strong>Add a role</strong> starts collapsed, then expand it.</li>
+        <li>Enter <strong>Role name</strong> <code>QA writer</code>. Keep <strong>Access</strong>, tick <strong>View content</strong>, <strong>Edit content</strong>, <strong>View media</strong>. Hover the “i” beside <strong>Edit content</strong>.</li>
+        <li>Click <strong>Add role</strong>, then click <code>4 permissions</code> in the new row.</li>
+      </ol>
+      <ul class="exp">
+        <li>The picker starts with <strong>Full access</strong> in a gold box (<code>everything, including anything added later.</code>), then groups ACCESS, CONTENT, MEDIA, SEO, FORM SUBMISSIONS, SETTINGS &amp; COOKIES, USERS, ROLES, API TOKENS, AUDIT LOG, SCRIPTS, NEWSLETTER, ORDERS, CUSTOMER ACCOUNTS, PRODUCT REVIEWS, BOOKINGS, BOOKING AVAILABILITY. <strong>Access</strong> is ticked by default.</li>
+        <li>The tip reads <code>Create and edit content, and import it in bulk. Needs View content to open the editor; making changes live needs Publish content.</code></li>
+        <li>The row shows name <code>QA writer</code>, <code>4 permissions</code> expanding to Access, View content, Edit content, View media, and Accounts <code>0</code>. Audit: <em>Created a role</em> with Details <code>"name"</code> and <code>"permissions"</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/RolesManager.tsx</code> (<code>PermissionPicker</code>) · <code>src/cms/modules/auth/permission-labels.ts</code> · <code>src/cms/core/routes/roles.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-049" data-priority="P2">
+      <h3>Edit a role; its holders get the change at once</h3>
+      <ol class="steps">
+        <li>Give <code>qa-viewer@example.com</code> the role <code>QA writer</code> and sign it in in a private window; copy its cookie into <code>V</code>.</li>
+        <li>Run <code>curl -s -o /dev/null -w '%{http_code}\n' -b "cms_session=$V" "$BASE/api/cms/media"</code>.</li>
+        <li>As superadmin click <strong>Edit</strong> on QA writer; the section <strong>Edit "QA writer"</strong> appears. Untick <strong>View media</strong>, rename to <code>QA writer 2</code>, click <strong>Save role</strong>.</li>
+        <li>Repeat the curl with <code>-i</code>. Reload the private window.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 2 prints <code>200</code>. Step 4 answers <code>403</code> <code>{"ok":false,"error":"forbidden","missing":"cms.media.read"}</code> without the viewer signing in again, and Media disappears from its sidebar.</li>
+        <li>Audit: <em>Edited a role</em> whose Details show the new name and permissions. There is no Before block, so the audit log cannot show which permission was removed; note this as a gap.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/routes/roles.ts</code> (<code>roleUpdateRoute</code>, <code>after: input</code>) · <code>src/cms/modules/auth/guards.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-050" data-priority="P2">
+      <h3>Delete a role: unused, and in use</h3>
+      <ol class="steps">
+        <li>Click <strong>Delete</strong> on QA writer 2 (held by QA Viewer) and read the dialog; click <strong>Delete role</strong>.</li>
+        <li>Move QA Viewer back to <code>QA viewer</code>, then delete QA writer 2 again.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1 dialog: <code>Delete the role "QA writer 2"?</code> with <code>1 account holds this role — the server will refuse until they are moved.</code> The server refuses with <code>1 account still has this role. Move them to another role first — deleting it would leave them signed in with no permissions at all.</code></li>
+        <li>Step 2 dialog: <code>No account holds this role, so nothing loses access.</code> The row disappears. Audit: <em>Deleted a role</em> (Subject <code>Role #&lt;id&gt;</code>, no Before block with the old name or permissions).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/RolesManager.tsx</code> (<code>removeRole</code>) · <code>src/cms/core/roles/service.ts</code> (<code>deleteRole</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-051" data-priority="P3">
+      <h3>Role names: duplicates and symbols</h3>
+      <ol class="steps">
+        <li>Add a role named <code>QA viewer</code> (already exists).</li>
+        <li>Add a role named <code>QA/writer</code>.</li>
+        <li>Add a role named <code>Συντάκτης</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: <code>A role named "QA viewer" already exists.</code></li>
+        <li>Step 2 is refused (the server's rule is <code>Use letters, numbers, spaces, hyphens or underscores.</code>). If the screen shows only <code>Validation failed.</code>, note it as a minor defect: the reason is not passed on.</li>
+        <li>Step 3 is accepted (Greek letters are letters). Delete it afterwards.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/routes/roles.ts</code> (<code>nameField</code>) · <code>src/cms/admin/RolesManager.tsx</code> (<code>run</code> shows <code>err.message</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-052" data-priority="P1">
+      <h3>The picker greys out what you cannot grant, and stays greyed after saving</h3>
+      <ol class="steps">
+        <li>Sign in as <code>qa-usermgr@example.com</code> and open <strong>Roles</strong>. Expand <strong>Add a role</strong>.</li>
+        <li>Hover a greyed permission.</li>
+        <li>Create <code>QA mgr made</code> with Access and View content. After the list refreshes, look at the picker again, then click <strong>Edit</strong> on the new role.</li>
+      </ol>
+      <ul class="exp">
+        <li><strong>Full access</strong> and every permission except Access, View content, Manage users and Manage roles are greyed, cannot be ticked, and read <code>— above your authority</code>.</li>
+        <li>Hovering shows <code>You do not hold this permission yourself, so you cannot grant it.</code></li>
+        <li>After saving, the same boxes are still greyed in both the add form and the edit section (they must not become tickable after the first save).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/RolesManager.tsx</code> (<code>OUT_OF_REACH</code>, <code>mergeRolesData</code>) · <code>test/cms/roles-manager-refresh.test.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-053" data-priority="P2">
+      <h3>The server refuses a grant beyond your own</h3>
+      <ol class="steps">
+        <li>With the user manager's cookie in <code>S</code>, run:
+<pre><code>curl -s -i -X POST "$BASE/api/cms/roles" -b "cms_session=$S" -H 'Content-Type: application/json' \
+  -d '{"name":"QA sneaky","permissions":["cms.access","cms.media.read"]}'
+curl -s -i -X PATCH "$BASE/api/cms/roles/&lt;id of QA mgr made&gt;" -b "cms_session=$S" -H 'Content-Type: application/json' \
+  -d '{"permissions":["*"]}'
+curl -s -i -X DELETE "$BASE/api/cms/roles/&lt;id of an unused role with View media, e.g. a new copy of QA writer&gt;" -b "cms_session=$S"</code></pre></li>
+        <li>Also try <code>"permissions":["cms.nonsense"]</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>The first three answer <code>403</code> with <code>You cannot grant a permission you do not hold yourself: View media.</code>, <code>… Full access.</code> and the delete one naming the role's permissions the manager lacks. Nothing is created, changed or deleted.</li>
+        <li>The unknown key answers <code>422</code> <code>Validation failed.</code> with the issue <code>Unknown permission key.</code></li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/roles/can-grant.ts</code> (<code>assertCanGrant</code>) · <code>src/cms/core/roles/service.ts</code> (<code>deleteRole</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-054" data-priority="P2">
+      <h3>The only full-access role cannot lose Full access</h3>
+      <ol class="steps">
+        <li>As superadmin click <strong>Edit</strong> on <code>superadmin</code>, untick <strong>Full access</strong> (the picker drops to Access only), click <strong>Save role</strong>.</li>
+        <li>Click <strong>Delete</strong> on <code>superadmin</code> and confirm.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: <code>"superadmin" is the only role granting full access to an enabled account — removing full access from it would lock everyone out of the admin.</code> The role keeps <strong>Full access</strong>.</li>
+        <li>Step 2 is refused with <code>"superadmin" is the only role granting full access to an enabled account — deleting it would lock everyone out of the admin.</code> The role and its holders are unchanged.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/roles/service.ts</code> (<code>assertNotLastWildcard</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-055" data-priority="P2">
+      <h3>Every permission opens its screen and API, and nothing else</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Every module on (ADM-002). A role <code>QA probe</code> held by one account, signed in in a private window with its cookie in <code>P</code>.</p>
+      <ol class="steps">
+        <li>For each row below: as superadmin set <code>QA probe</code> to <strong>Access</strong> plus only that permission (plus the listed “also” permission where given), then in the private window open the screen and run the API check <code>curl -s -o /dev/null -w '%{http_code}\n' -b "cms_session=$P" "$BASE&lt;API&gt;"</code>. For a write permission use the write check with <code>-X POST</code> (or the given method), <code>-H 'Content-Type: application/json' -d '{}'</code>.</li>
+        <li>Remove the permission again and repeat the screen and the check.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>OK</th><th>Label on the Roles screen</th><th>Key</th><th>Screen</th><th>API check (with → without)</th></tr></thead>
+          <tbody>
+          <tr><td><input type="checkbox" aria-label="Access checked"></td><td>Access</td><td><code>cms.access</code></td><td>any screen (see AUTH-056)</td><td><code>GET /api/cms/auth/me</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="View content checked"></td><td>View content</td><td><code>cms.content.read</code></td><td><code>/admin/page</code></td><td><code>GET /api/cms/page</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Edit content checked"></td><td>Edit content (also View content)</td><td><code>cms.content.write</code></td><td><strong>+ New</strong> and Save on a page</td><td><code>POST /api/cms/page</code> <code>{}</code>: 422 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Publish content checked"></td><td>Publish content (also View, Edit content)</td><td><code>cms.content.publish</code></td><td>status <code>published</code> offered and saved (CON cases in 03)</td><td>screen only</td></tr>
+          <tr><td><input type="checkbox" aria-label="View media checked"></td><td>View media</td><td><code>cms.media.read</code></td><td><code>/admin/media</code></td><td><code>GET /api/cms/media</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Edit media checked"></td><td>Edit media (also View media)</td><td><code>cms.media.write</code></td><td>upload and delete offered</td><td><code>POST /api/cms/media/upload</code> <code>{}</code>: not 403 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="View seo checked"></td><td>View seo</td><td><code>cms.seo.read</code></td><td><code>/admin/seo</code></td><td><code>GET /api/cms/seo/redirects</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Edit seo checked"></td><td>Edit seo (also View seo)</td><td><code>cms.seo.write</code></td><td>add a redirect</td><td><code>POST /api/cms/seo/redirects</code> <code>{}</code>: 422 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="View form submissions checked"></td><td>View form submissions</td><td><code>cms.forms.read</code></td><td><code>/admin/submissions</code></td><td><code>GET /api/cms/forms</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Edit form submissions checked"></td><td>Edit form submissions (also View)</td><td><code>cms.forms.write</code></td><td>change a submission's status</td><td><code>PATCH /api/cms/forms/1</code> <code>{}</code>: not 403 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="View settings checked"></td><td>View settings &amp; cookies</td><td><code>cms.settings.read</code></td><td><code>/admin/settings</code>, <code>/admin/cookies</code></td><td><code>GET /api/cms/settings</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Edit settings checked"></td><td>Edit settings &amp; cookies (also View)</td><td><code>cms.settings.write</code></td><td><strong>Save settings</strong> works</td><td><code>POST /api/cms/cookies/categories</code> <code>{}</code>: 422 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Manage users checked"></td><td>Manage users</td><td><code>cms.users.manage</code></td><td><code>/admin/users</code></td><td><code>GET /api/cms/users</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Manage roles checked"></td><td>Manage roles</td><td><code>cms.roles.manage</code></td><td><code>/admin/roles</code></td><td><code>GET /api/cms/roles</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Manage api tokens checked"></td><td>Manage api tokens (also View settings)</td><td><code>cms.tokens.manage</code></td><td>Settings tab <strong>Connect to Praion.ai</strong></td><td><code>GET /api/cms/api-tokens</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="View audit log checked"></td><td>View audit log</td><td><code>cms.audit.read</code></td><td><code>/admin/audit</code></td><td><code>GET /api/cms/audit</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Manage scripts checked"></td><td>Manage scripts</td><td><code>cms.scripts.manage</code></td><td><code>/admin/scripts</code></td><td><code>GET /api/cms/scripts</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="View orders checked"></td><td>View orders</td><td><code>cms.commerce.orders.read</code></td><td><code>/admin/orders</code>, <code>/admin/gift-cards</code>, <code>/admin/abandoned</code></td><td><code>GET /api/cms/orders</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Edit orders checked"></td><td>Edit orders (also View)</td><td><code>cms.commerce.orders.write</code></td><td>order status change offered</td><td><code>POST /api/cms/orders</code> <code>{}</code>: not 403 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="View customer accounts checked"></td><td>View customer accounts</td><td><code>cms.commerce.customers.read</code></td><td><code>/admin/customers</code></td><td><code>GET /api/cms/customers</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Edit customer accounts checked"></td><td>Edit customer accounts (also View)</td><td><code>cms.commerce.customers.write</code></td><td>disable / re-send offered</td><td>screen only</td></tr>
+          <tr><td><input type="checkbox" aria-label="View product reviews checked"></td><td>View product reviews</td><td><code>cms.commerce.reviews.read</code></td><td><code>/admin/reviews</code></td><td><code>GET /api/cms/reviews</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Edit product reviews checked"></td><td>Edit product reviews (also View)</td><td><code>cms.commerce.reviews.write</code></td><td>approve / reject offered</td><td>screen only</td></tr>
+          <tr><td><input type="checkbox" aria-label="View bookings checked"></td><td>View bookings</td><td><code>cms.booking.reservations.read</code></td><td><code>/admin/reservations</code></td><td><code>GET /api/cms/reservations</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Edit bookings checked"></td><td>Edit bookings (also View)</td><td><code>cms.booking.reservations.write</code></td><td>accept / decline offered</td><td>screen only</td></tr>
+          <tr><td><input type="checkbox" aria-label="View booking availability checked"></td><td>View booking availability</td><td><code>cms.booking.schedule.read</code></td><td><code>/admin/availability</code></td><td><code>GET /api/cms/booking/schedule</code>: not 403 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Edit booking availability checked"></td><td>Edit booking availability (also View)</td><td><code>cms.booking.schedule.write</code></td><td>places / closed dates editable</td><td>screen only</td></tr>
+          <tr><td><input type="checkbox" aria-label="View newsletter checked"></td><td>View newsletter</td><td><code>cms.newsletter.read</code></td><td><code>/admin/newsletter</code></td><td><code>GET /api/cms/newsletter</code>: 200 → 403</td></tr>
+          <tr><td><input type="checkbox" aria-label="Edit newsletter checked"></td><td>Edit newsletter (also View)</td><td><code>cms.newsletter.write</code></td><td>unsubscribe / delete offered</td><td>screen only</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul class="exp">
+        <li>With the permission: the screen opens and the check gives the “with” result. Without it: the screen goes to <strong>403 — Forbidden</strong> and the API answers <code>403</code> <code>{"ok":false,"error":"forbidden","missing":"&lt;key&gt;"}</code> naming exactly that key.</li>
+        <li>A write permission without its view permission does not open the screen (the screen needs the view key).</li>
+        <li>The Roles screen lists exactly these 29 permissions plus <strong>Full access</strong>; none is missing and none is extra.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/auth/permissions.ts</code> · <code>src/cms/modules/auth/permission-labels.ts</code> · <code>src/app/admin/(shell)/*/page.tsx</code> (<code>requirePerm</code>) · docs/dev-guides/05-auth-users-security.md §5</p>
+    </article>
+
+    <article class="tc" id="AUTH-056" data-priority="P2">
+      <h3>Without Access, the API refuses too, but sign-out works</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> <code>qa-noaccess@example.com</code> (role <code>QA no access</code>: View content, no Access). The screens side is ADM-036.</p>
+      <ol class="steps">
+        <li>Sign in as <code>qa-noaccess@example.com</code> and copy its cookie into <code>N</code>.</li>
+        <li>Run:
+<pre><code>curl -s -i -b "cms_session=$N" "$BASE/api/cms/page"
+curl -s -i -b "cms_session=$N" "$BASE/api/cms/auth/me"
+curl -s -i -X POST -b "cms_session=$N" -H 'Content-Type: application/json' -d '{}' "$BASE/api/cms/auth/logout"
+curl -s -o /dev/null -w '%{http_code}\n' -b "cms_session=$N" "$BASE/api/cms/page"</code></pre></li>
+      </ol>
+      <ul class="exp">
+        <li>The first two answer <code>403</code> with <code>{"ok":false,"error":"forbidden","missing":"cms.access"}</code>, although the role holds View content.</li>
+        <li>Logout answers <code>200</code> <code>{"ok":true,"data":{"ok":true}}</code> with a <code>Set-Cookie</code> that clears <code>cms_session</code>. The audit log shows <em>Signed out</em> for this account.</li>
+        <li>The last line prints <code>403</code> again (see AUTH-013: the copied cookie is not revoked on the server).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/auth/guards.ts</code> (<code>adminApiAccessDenied</code>, <code>allowWithoutAccess</code>) · <code>test/cms/api-access.test.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-tokens">
+    <h2>Product Manager API keys</h2>
+    <p class="intro">The CMS never creates a key: Product Manager creates it and shows it once, and it is pasted into Settings → <strong>Connect to Praion.ai</strong> (visible with the <strong>Praion.ai connection</strong> module on and <strong>Manage api tokens</strong>). To test without Product Manager, make a key yourself. The secret is stored encrypted, because each request is signed with it (HMAC-SHA256) rather than sent.</p>
+
+    <article class="tc" id="AUTH-057" data-priority="P2">
+      <h3>Connect a key</h3>
+      <ol class="steps">
+        <li>In a terminal make a key and keep the terminal open:
+<pre><code>KEY_ID=$(openssl rand -hex 6)
+SECRET=$(openssl rand -base64 48 | tr '+/' '-_' | tr -d '=\n')
+echo "pmk_${KEY_ID}_${SECRET}"</code></pre></li>
+        <li>As superadmin open <code>/admin/api-tokens</code>.</li>
+        <li>Paste the printed value into <strong>Setup string</strong>, enter <strong>Name</strong> <code>QA key</code>, leave <strong>Permissions</strong> as they are, leave <strong>Expires</strong> empty, click <strong>Connect</strong>.</li>
+        <li>Run <code>SELECT name, key_id, scopes, CAST(secret_encrypted AS CHAR) AS stored, revoked_at FROM cms_api_tokens;</code></li>
+      </ol>
+      <ul class="exp">
+        <li>Step 2 redirects to <code>/admin/settings?tab=Connect%20to%20Praion.ai</code>. <strong>Read content</strong> and <strong>Write SEO fields</strong> are ticked; <strong>Write compiled head payloads</strong> and <strong>Write image alt text</strong> are not.</li>
+        <li>Under <strong>Connected keys</strong> a row shows <code>QA key</code>, Key id equal to <code>$KEY_ID</code>, badges <code>pm:read</code> <code>pm:write</code>, Last used <code>—</code>, Expires <code>—</code>, Status <code>Active</code> and a <strong>Revoke</strong> button. The secret is shown nowhere, and reloading does not show it.</li>
+        <li>The SQL <code>stored</code> value is base64 text that does not contain <code>$SECRET</code>. Audit: a row for <code>api_token.import</code> with Details key id, name and scopes (its label reads <em>Api token import</em>: no friendly label exists).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/ApiTokensManager.tsx</code> · <code>src/cms/core/routes/api-tokens.ts</code> · <code>src/cms/core/tokens/credential.ts</code> · <code>src/app/admin/(shell)/api-tokens/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-058" data-priority="P2">
+      <h3>A signed request succeeds; replaying it fails</h3>
+      <ol class="steps">
+        <li>In the same terminal (set <code>HOSTPORT</code> to the host and port exactly as in the address bar, lower case, no port for 443):
+<pre><code>HOSTPORT=localhost:3002; REQ=/api/cms/pm/v1/ping
+TS=$(date +%s); NONCE=$(openssl rand -hex 16)
+BODYHASH=$(printf '' | sha256sum | cut -d' ' -f1)
+SIG=$(printf 'PM-HMAC-SHA256\nGET\n%s\n%s\n%s\n%s\n%s' "$HOSTPORT" "$REQ" "$TS" "$NONCE" "$BODYHASH" \
+  | openssl dgst -sha256 -hmac "$SECRET" | sed 's/^.*= //')
+send() { curl -s -i "$BASE$REQ" -H "X-PM-Key-Id: $KEY_ID" -H "X-PM-Timestamp: $TS" \
+  -H "X-PM-Nonce: $NONCE" -H "X-PM-Signature: $SIG" -H 'X-Real-IP: 10.20.0.1'; }
+send</code></pre></li>
+        <li>Run <code>send</code> again (same nonce and signature).</li>
+        <li>Reload the Connected keys list.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: <code>200</code> with JSON starting <code>{"ok":true,"plugin_version":"1.0.0",…</code> and a <code>capabilities</code> object.</li>
+        <li>Step 2: <code>401</code> <code>{"ok":false,"error":"unauthorized"}</code>; the server log says <code>[cms/pm] replayed nonce for key id</code> followed by the key id.</li>
+        <li>Step 3: Last used shows the time of step 1 and the address <code>10.20.0.1</code>.</li>
+        <li>If step 1 gives 401 with <code>signature mismatch</code> in the log on a proxied environment, the host the server sees differs from <code>HOSTPORT</code>: record the host and mark Blocked, not Fail.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/tokens/signature.ts</code> (<code>canonicalString</code>) · <code>src/cms/core/tokens/guard.ts</code> · <code>src/cms/core/tokens/replay.ts</code> · <code>src/cms/modules/pm/routes.ts</code> (<code>pmPingRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-059" data-priority="P3">
+      <h3>Bad signatures, old timestamps and missing scopes</h3>
+      <ol class="steps">
+        <li>Make a fresh nonce and signature (repeat the <code>TS=</code>…<code>SIG=</code> lines), then change the last character of <code>SIG</code> and run <code>send</code>.</li>
+        <li>Set <code>TS=$(( $(date +%s) - 400 ))</code>, a fresh nonce, recompute <code>SIG</code>, run <code>send</code>.</li>
+        <li>Connect a second key (new <code>KEY_ID</code> and <code>SECRET</code>) with only <strong>Write image alt text</strong> ticked, sign a fresh ping with it and run <code>send</code>.</li>
+        <li>Send the ping with no <code>X-PM-*</code> headers and no cookie.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Steps 1, 2 and 4 answer <code>401</code> with the identical body <code>{"ok":false,"error":"unauthorized"}</code> (for steps 1 and 2 the log says which check failed: <code>signature mismatch</code>, <code>timestamp outside the accepted window</code>). Step 3 answers <code>403</code> <code>{"ok":false,"error":"forbidden","missing":"pm:read"}</code>.</p>
+      <p class="ref">Ref: <code>src/cms/core/tokens/guard.ts</code> (<code>verifySigned</code>) · <code>src/cms/core/tokens/signature.ts</code> (<code>CLOCK_SKEW_SECONDS = 300</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-060" data-priority="P2">
+      <h3>Revoke a key</h3>
+      <ol class="steps">
+        <li>Click <strong>Revoke</strong> on QA key, read the dialog, confirm with <strong>Revoke</strong>.</li>
+        <li>Sign a fresh ping with that key and run <code>send</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Dialog <code>Revoke "QA key"?</code> with <code>Product Manager will lose access immediately and any sync in progress will fail. To reconnect, generate a new key in Product Manager and paste it here.</code> The row shows Status <code>Revoked</code> and no Revoke button; it is not deleted. The request answers <code>401</code>. Audit: <code>api_token.revoke</code> (label <em>Api token revoke</em>).</p>
+      <p class="ref">Ref: <code>src/cms/core/routes/api-tokens.ts</code> (<code>apiTokenRevokeRoute</code>) · <code>src/cms/core/tokens/service.ts</code> (<code>findActiveToken</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-061" data-priority="P3">
+      <h3>An expired key is refused</h3>
+      <ol class="steps">
+        <li>Connect a third key. Run <code>UPDATE cms_api_tokens SET expires_at = NOW() - INTERVAL 1 MINUTE WHERE key_id = '&lt;its key id&gt;';</code></li>
+        <li>Reload the list; sign a fresh ping with it and run <code>send</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Status <code>Expired</code> (amber), Expires shows the date. The request answers <code>401</code> and the log says <code>no active token for key id</code>.</p>
+      <p class="ref">Ref: <code>src/cms/admin/ApiTokensManager.tsx</code> (<code>statusOf</code>) · <code>src/cms/core/tokens/service.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-062" data-priority="P3">
+      <h3>Pasting a wrong value is refused with a reason</h3>
+      <ol class="steps">
+        <li>Paste <code>pmk_abc</code>, name it, click <strong>Connect</strong>.</li>
+        <li>Paste <code>hello</code>.</li>
+        <li>Paste a setup string for another site: the output of <code>printf '{"key_id":"%s","secret":"%s","site_url":"https://other.example"}' "$(openssl rand -hex 6)" "$SECRET" | base64 -w0 | tr '+/' '-_' | tr -d '='</code></li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: <code>That looks like a Praion API key but it is not complete. Copy the whole value, including the "pmk_" prefix and everything after it.</code></li>
+        <li>Step 2: <code>That is not a valid setup string from Product Manager.</code></li>
+        <li>Step 3: <code>That setup string was issued for https://other.example, but this site is http://localhost:3002. Check which connection you copied it from.</code></li>
+        <li>No row is added in any step.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/tokens/credential.ts</code> (<code>parseCredential</code>) · <code>src/cms/core/routes/api-tokens.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-audit">
+    <h2>Audit log</h2>
+    <p class="intro">The screen is <code>/admin/audit</code> and needs <strong>View audit log</strong>. Times are UTC. Each row with extra data has a <strong>Details</strong> expander showing <strong>Browser</strong>, <strong>Before</strong> and <strong>Details</strong> (the “after” data).</p>
+
+    <article class="tc" id="AUTH-063" data-priority="P1">
+      <h3>Security events appear with readable labels</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> The earlier suites of this checklist have been run today.</p>
+      <ol class="steps">
+        <li>Open <strong>Audit log</strong>, set <strong>Activity</strong> to <strong>Sign-ins &amp; security</strong>, click <strong>Filter</strong>.</li>
+        <li>Tick each label below that appears at least once. Hover an Action cell.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>OK</th><th>Action label</th><th>From case</th></tr></thead>
+          <tbody>
+          <tr><td><input type="checkbox" aria-label="Signed in seen"></td><td>Signed in</td><td>AUTH-002</td></tr>
+          <tr><td><input type="checkbox" aria-label="Failed sign-in attempt seen"></td><td>Failed sign-in attempt</td><td>AUTH-003</td></tr>
+          <tr><td><input type="checkbox" aria-label="Sign-in blocked seen"></td><td>Sign-in blocked (too many attempts)</td><td>AUTH-006</td></tr>
+          <tr><td><input type="checkbox" aria-label="Signed out seen"></td><td>Signed out</td><td>AUTH-013</td></tr>
+          <tr><td><input type="checkbox" aria-label="Asked for a code seen"></td><td>Asked for a two-factor code</td><td>AUTH-018</td></tr>
+          <tr><td><input type="checkbox" aria-label="Passed two-factor seen"></td><td>Passed two-factor</td><td>AUTH-018</td></tr>
+          <tr><td><input type="checkbox" aria-label="Failed two-factor code seen"></td><td>Failed two-factor code</td><td>AUTH-019</td></tr>
+          <tr><td><input type="checkbox" aria-label="Set up two-factor seen"></td><td>Set up two-factor authentication</td><td>AUTH-016</td></tr>
+          <tr><td><input type="checkbox" aria-label="Required to set up seen"></td><td>Required to set up two-factor</td><td>AUTH-027</td></tr>
+          <tr><td><input type="checkbox" aria-label="Turned off two-factor seen"></td><td>Turned off two-factor authentication</td><td>AUTH-026</td></tr>
+          <tr><td><input type="checkbox" aria-label="Recovery code sign-in seen"></td><td>Signed in with a recovery code</td><td>AUTH-023</td></tr>
+          <tr><td><input type="checkbox" aria-label="New recovery codes seen"></td><td>Generated new recovery codes</td><td>AUTH-024</td></tr>
+          <tr><td><input type="checkbox" aria-label="Admin reset seen"></td><td>Reset another user's two-factor</td><td>AUTH-040</td></tr>
+          <tr><td><input type="checkbox" aria-label="Recovery PIN sign-in seen"></td><td>Signed in with the recovery PIN</td><td>AUTH-030</td></tr>
+          <tr><td><input type="checkbox" aria-label="Failed recovery PIN seen"></td><td>Failed recovery PIN attempt</td><td>AUTH-031</td></tr>
+          <tr><td><input type="checkbox" aria-label="Password reset seen"></td><td>Reset a user's password</td><td>AUTH-037</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul class="exp">
+        <li>Every label above is present. The Action cell's tooltip shows the technical name (for example <code>auth.login.fail</code>).</li>
+        <li>Columns are <strong>When (UTC)</strong>, <strong>Actor</strong>, <strong>Action</strong>, <strong>Subject</strong>, <strong>IP</strong>; no user-management rows (Created a user, Edited a role) appear under this filter, but <em>Reset a user's password</em> does.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/audit-labels.ts</code> · <code>src/cms/core/audit-groups.ts</code> · <code>src/app/admin/(shell)/audit/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-064" data-priority="P2">
+      <h3>User, role and settings changes, with what the Details show</h3>
+      <ol class="steps">
+        <li>Set <strong>Activity</strong> to <strong>Users, roles &amp; tokens</strong>, click <strong>Filter</strong>, expand rows.</li>
+        <li>Set <strong>Activity</strong> to <strong>Site configuration</strong> and expand the <em>Changed settings</em> row from AUTH-027.</li>
+        <li>Delete a page in <strong>Pages</strong>, then set <strong>Activity</strong> to <strong>Content &amp; media</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1 lists <em>Created a user</em>, <em>Edited a user</em>, <em>Deleted a user</em> (Before: email, name, roleNames), <em>Created a role</em> and <em>Edited a role</em> (Details: name, permissions), <em>Deleted a role</em>, and the <code>api_token</code> rows.</li>
+        <li>Step 2 shows Details <code>{"changed": ["security.require2fa"]}</code>: which setting changed, not its old or new value.</li>
+        <li>Step 3 shows <em>Deleted content</em> for the page.</li>
+        <li>Record as gaps, not failures: <em>Edited a user</em>, <em>Created a user</em> and <em>Deleted a role</em> carry no Before/Details at all, and no row shows a before value for a role or setting change.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/routes/users.ts</code> · <code>src/cms/core/routes/roles.ts</code> · <code>src/cms/core/routes/settings.ts</code> (<code>after: { changed }</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-065" data-priority="P2">
+      <h3>Search, Affected, Clear and paging</h3>
+      <ol class="steps">
+        <li>Type <code>auth.login.fail</code> in <strong>Search</strong> (placeholder <code>Action, person or subject id</code>), click <strong>Filter</strong>.</li>
+        <li>Search <code>qa-viewer@example.com</code>; then choose <strong>Affected</strong> <code>User</code> with an empty search.</li>
+        <li>Click <strong>Clear</strong>. Scroll to the bottom.</li>
+        <li>Search <code>zzzz</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1 lists only <em>Failed sign-in attempt</em> rows. Step 2 lists rows for that address, then only rows with Subject <code>User #…</code>. Clear returns to all rows and removes the filter from the address. The footer reads <code>Showing 1–N of TOTAL</code> with page links when there are more. Step 4 shows <code>No entries match this filter.</code></p>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/audit/page.tsx</code> · <code>src/cms/core/audit.ts</code> (<code>listAuditLogs</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-066" data-priority="P3">
+      <h3>The audit log holds no secrets and records the real address</h3>
+      <ol class="steps">
+        <li>Run:
+<pre><code>SELECT COUNT(*) FROM audit_logs
+WHERE CONCAT(IFNULL(CAST(`before` AS CHAR), ''), IFNULL(CAST(`after` AS CHAR), ''))
+      REGEXP 'Qa-Auth-Pass|Qa-Reset-Pass|Qa-Takeover|482913|000001|pmk_';</code></pre></li>
+        <li>On the test environment behind nginx, sign in from your own machine and look at the IP column of the new <em>Signed in</em> row.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The count is <code>0</code>: no password, PIN, code or key was written. On the test environment the IP is your public address (not <code>unknown</code>, not <code>127.0.0.1</code>). On localhost it may be <code>::1</code>, <code>unknown</code> or the <code>X-Real-IP</code> value curl sent.</p>
+      <p class="ref">Ref: <code>src/cms/core/audit.ts</code> (<code>logAudit</code>) · <code>src/cms/core/rate-limit.ts</code> (<code>clientIpLabel</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-067" data-priority="P3">
+      <h3>Only audit readers can read it</h3>
+      <ol class="steps">
+        <li>As <code>qa-viewer@example.com</code> open <code>/admin/audit</code>, then run <code>curl -s -i -b "cms_session=$V" "$BASE/api/cms/audit?pageSize=500"</code>.</li>
+        <li>As <code>qa-limited@example.com</code> (has View audit log) run the same with its cookie.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: 403 page, and <code>403</code> <code>{"ok":false,"error":"forbidden","missing":"cms.audit.read"}</code>. Step 2: the screen opens; the API answers <code>422</code> for <code>pageSize=500</code> (the maximum is 200) and <code>200</code> for <code>pageSize=200</code>.</p>
+      <p class="ref">Ref: <code>src/cms/core/routes/audit.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-web">
+    <h2>Cross-origin check &amp; security headers</h2>
+    <p class="intro">A wrong <code>NEXT_PUBLIC_SITE_URL</code> rejecting every write is SET-008. The admin and public header sets are SET-073 to SET-075 and the moved admin SET-057; only what they do not cover is here.</p>
+
+    <article class="tc" id="AUTH-068" data-priority="P1">
+      <h3>A write from another origin is rejected</h3>
+      <ol class="steps">
+        <li>Signed in, with the cookie in <code>S</code>, run:
+<pre><code>curl -s -i -X POST "$BASE/api/cms/auth/logout" -b "cms_session=$S" -H 'Origin: https://evil.example' \
+  -H 'Content-Type: application/json' -d '{}'
+curl -s -i -X PATCH "$BASE/api/cms/users/&lt;id of qa-viewer&gt;" -b "cms_session=$S" -H 'Origin: https://evil.example' \
+  -H 'Content-Type: application/json' -d '{"disabled":true}'
+curl -s -o /dev/null -w '%{http_code}\n' "$BASE/api/cms/auth/me" -b "cms_session=$S" -H 'Origin: https://evil.example'</code></pre></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both writes answer <code>403</code> with <code>{"ok":false,"error":"forbidden","message":"Cross-origin request rejected."}</code>; the session is still valid and QA Viewer is still active. The GET prints <code>200</code> (reads are not origin-checked).</p>
+      <p class="ref">Ref: <code>src/cms/core/api/same-origin.ts</code> (<code>isSameOrigin</code>) · <code>src/cms/core/api/handler.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-069" data-priority="P3">
+      <h3>A page on another site cannot act with your session</h3>
+      <ol class="steps">
+        <li>Signed in to the admin, open any other website in a new tab (for example <code>https://example.com</code>), open its developer tools Console and run <code>fetch('http://localhost:3002/api/cms/auth/logout', {method: 'POST', credentials: 'include', headers: {'Content-Type': 'application/json'}, body: '{}'}).then(r =&gt; r.status).catch(e =&gt; e.message)</code> (use the test environment's address).</li>
+        <li>Go back to the admin tab and click a link.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The call fails (a CORS error in the console, and in the Network tab either no cookie was sent because of <code>SameSite=Lax</code> or the server answered <code>403</code>). You are still signed in in the admin tab.</p>
+      <p class="ref">Ref: <code>src/cms/modules/auth/session.ts</code> (<code>sameSite: 'lax'</code>) · <code>src/cms/core/api/same-origin.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-070" data-priority="P2">
+      <h3>Headers on the HTTPS test environment, API responses included</h3>
+      <ol class="steps">
+        <li>Run <code>curl -s -I https://&lt;test host&gt;/</code>, <code>curl -s -I https://&lt;test host&gt;/admin/login</code> and <code>curl -s -D - -o /dev/null https://&lt;test host&gt;/api/cms/auth/me</code>.</li>
+        <li>Run <code>curl -s -I http://&lt;test host&gt;/</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>All three HTTPS responses carry <code>X-Frame-Options: DENY</code>, <code>X-Content-Type-Options: nosniff</code>, <code>Referrer-Policy: strict-origin-when-cross-origin</code>, <code>X-DNS-Prefetch-Control: on</code> and a <code>Content-Security-Policy</code> with <code>frame-ancestors 'none'</code> and <code>upgrade-insecure-requests</code>. The admin page has <code>Cross-Origin-Embedder-Policy: unsafe-none</code>; the home page and the API have <code>credentialless</code>.</li>
+        <li><code>Strict-Transport-Security</code> is present with <code>max-age</code> of at least <code>15552000</code> (nginx sets it; the app does not). If it is missing, mark Fail against the server setup.</li>
+        <li>Plain HTTP redirects (<code>301</code> or <code>308</code>) to HTTPS.</li>
+      </ul>
+      <p class="ref">Ref: <code>next.config.ts</code> (<code>baseSecurityHeaders</code>, <code>PRODUCTION_CSP</code>, <code>ADMIN_CSP</code>) · docs/dev-guides/05-auth-users-security.md §3.13 (“HSTS is left to nginx”) · docs/STAGING-SETUP.md</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-public">
+    <h2>Public endpoint rate limits</h2>
+    <p class="intro">The contact form and cookie-consent endpoints use the same per-address limiter as the admin. The commands below send invalid bodies, so no email is sent and nothing is stored; the limit is counted before the body is read.</p>
+
+    <article class="tc" id="AUTH-071" data-priority="P2">
+      <h3>Contact form: 5 per minute per address</h3>
+      <ol class="steps">
+        <li>Run:
+<pre><code>for i in $(seq 1 6); do
+  curl -s -o /dev/null -D - -X POST "$BASE/api/contact" -H 'Content-Type: application/json' \
+    -H 'X-Real-IP: 10.30.0.1' -d '{"kind":"contact"}' | grep -iE '^HTTP|^retry-after|^x-ratelimit'
+done</code></pre></li>
+        <li>Run once with <code>-H 'X-Real-IP: 10.30.0.2'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Requests 1–5 answer <code>400</code> (body <code>{"ok":false,"error":"invalid_payload"}</code>). Request 6 answers <code>429</code> <code>{"ok":false,"error":"rate_limited"}</code> with <code>Retry-After</code> (60 or less), <code>X-RateLimit-Limit: 5</code>, <code>X-RateLimit-Remaining: 0</code> and <code>X-RateLimit-Reset</code>. The other address gets <code>400</code>.</p>
+      <p class="ref">Ref: <code>src/app/api/contact/route.ts</code> (<code>RATE_LIMIT</code>) · <code>test/lib/public-rate-limit.test.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-072" data-priority="P2">
+      <h3>Cookie consent: 20 per minute per address</h3>
+      <ol class="steps">
+        <li>Run:
+<pre><code>for i in $(seq 1 21); do
+  curl -s -o /dev/null -w '%{http_code} ' -X POST "$BASE/api/cookies/consent" -H 'Content-Type: application/json' \
+    -H 'X-Real-IP: 10.31.0.1' -d 'not json'
+done; echo</code></pre></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Twenty <code>400</code> (<code>invalid_json</code>) followed by one <code>429</code>. <code>GET /api/cookies/consent</code> is not limited and still answers <code>200</code>.</p>
+      <p class="ref">Ref: <code>src/app/api/cookies/consent/route.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-073" data-priority="P3">
+      <h3>Production without X-Real-IP refuses; foreign origins are refused</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> The production build on port 3000 reached directly (SET-030), no proxy.</p>
+      <ol class="steps">
+        <li>Run the first request of AUTH-071 and AUTH-072 against <code>http://localhost:3000</code> without any <code>X-Real-IP</code> header.</li>
+        <li>Run <code>curl -s -i -X POST http://localhost:3000/api/contact -H 'Content-Type: application/json' -H 'X-Real-IP: 10.32.0.1' -H 'Origin: https://evil.example' -d '{"kind":"contact"}'</code>.</li>
+        <li>On the dev server, send the contact request six times without <code>X-Real-IP</code>, then once with a new <code>X-Real-IP</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: both answer <code>429</code> on the very first request; the log shows <code>[cms] No X-Real-IP on an incoming request</code> once.</li>
+        <li>Step 2: <code>403</code> <code>{"ok":false,"error":"forbidden"}</code>.</li>
+        <li>Step 3 (development only): header-less requests share one bucket and the sixth is <code>429</code>; the request with its own address is not affected.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/rate-limit.ts</code> (<code>checkRateLimit</code>) · <code>src/lib/public-origin.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-secrets">
+    <h2>Stored secrets</h2>
+    <p class="intro">One key, <code>CMS_TOKEN_ENCRYPTION_KEY</code>, encrypts authenticator secrets, API key secrets (AUTH-057) and integration credentials. Passwords and recovery codes are hashed, not encrypted.</p>
+
+    <article class="tc" id="AUTH-074" data-priority="P2">
+      <h3>Authenticator secrets are stored encrypted</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> An account enrolled with the authenticator app; you noted the manual key shown during setup.</p>
+      <ol class="steps">
+        <li>Run:
+<pre><code>SELECT email, mfa_method, CAST(totp_secret_encrypted AS CHAR) AS stored, LENGTH(totp_secret_encrypted) AS len
+FROM admin_users WHERE mfa_method = 'totp';</code></pre></li>
+        <li>Run <code>SELECT COUNT(*) FROM admin_users WHERE CAST(totp_secret_encrypted AS CHAR) LIKE '%&lt;manual key&gt;%';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>stored</code> is base64 text (letters, digits, <code>+</code>, <code>/</code>, <code>=</code>) about 64 characters long, different for every account and different from the manual key. The count is <code>0</code>.</p>
+      <p class="ref">Ref: <code>src/cms/core/tokens/crypto.ts</code> (<code>encryptSecret</code>, AES-256-GCM) · <code>src/cms/modules/auth/mfa.ts</code> (<code>startTotpEnrollment</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-075" data-priority="P2">
+      <h3>Integration credentials are write-only and encrypted</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Commerce on.</p>
+      <ol class="steps">
+        <li>Open Settings → <strong>Ecommerce</strong> → <strong>Shipping</strong>, scroll to <strong>Couriers</strong>. In <strong>BoxNow client secret</strong> type <code>qa-boxnow-secret-9876</code>, click <strong>Save</strong>.</li>
+        <li>Reload. Run <code>curl -s -b "cms_session=$S" "$BASE/api/cms/shipping/couriers"</code>.</li>
+        <li>Run <code>SELECT `key`, hint, CAST(ciphertext AS CHAR) AS stored FROM integration_secrets;</code></li>
+        <li>Click <strong>Clear</strong> on it and confirm.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: <code>Saved.</code> After reload the box is empty with placeholder <code>••••9876</code> and the note <code>Set · ••••9876 — type a new value to replace it</code>.</li>
+        <li>The API response and the page source never contain <code>qa-boxnow-secret</code>; only <code>"masked"</code> <code>••••9876</code> and <code>"set": true</code>.</li>
+        <li>SQL: key <code>courier.boxnow.clientSecret</code>, hint <code>9876</code>, and <code>stored</code> is base64 that does not contain the secret.</li>
+        <li>Audit (Site configuration): <em>Saved an integration credential</em> and <em>Removed an integration credential</em>, with the key name only.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/secrets/service.ts</code> · <code>src/cms/admin/CourierCredentials.tsx</code> · <code>src/cms/modules/commerce/shipping-methods.ts</code> (<code>COURIER_SECRET_DEFS</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-076" data-priority="P3">
+      <h3>Passwords and recovery codes are hashed</h3>
+      <ol class="steps">
+        <li>Run <code>SELECT email, password_hash FROM admin_users LIMIT 3;</code></li>
+        <li>Run <code>SELECT code_hash, used_at FROM admin_recovery_codes LIMIT 3;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Every value is a 60-character bcrypt hash starting <code>$2</code> with cost <code>12</code> (for example <code>$2a$12$…</code> or <code>$2b$12$…</code>). No plain password or <code>XXXX-XXXX</code> code appears.</p>
+      <p class="ref">Ref: <code>src/cms/modules/auth/password.ts</code> · <code>src/cms/core/security/recovery-codes.ts</code> (<code>padForHash</code>)</p>
+    </article>
+
+    <article class="tc" id="AUTH-077" data-priority="P3">
+      <h3>Changing the encryption key fails closed</h3>
+      <ol class="steps">
+        <li>Replace <code>CMS_TOKEN_ENCRYPTION_KEY</code> with a new 64-character value and restart.</li>
+        <li>Sign in as an authenticator-enrolled account with a current app code; then with a recovery code.</li>
+        <li>Send a signed ping with a connected key (AUTH-058).</li>
+        <li>Restore the original key and restart.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The app code is refused (<code>That code is not valid. Check the code and try again.</code>) and the log reports a secret that cannot be decrypted; the recovery code still signs in. The ping answers <code>401</code>. Nothing crashes. After restoring the key everything works again.</p>
+      <p class="ref">Ref: <code>src/cms/core/tokens/crypto.ts</code> (<code>decryptSecret</code> throws) · docs/dev-guides/05-auth-users-security.md §3.10</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-seeds">
+    <h2>Seeds, recovery &amp; known gaps</h2>
+    <p class="intro">Promoting an existing editor with <code>db:seed-admin</code> is SET-016; re-running <code>db:seed-roles</code> leaving a customised editor alone is SET-017; the weak-password refusal is SET-014.</p>
+
+    <article class="tc" id="AUTH-078" data-priority="P3">
+      <h3>Requests without an Origin header pass the origin check</h3>
+      <ol class="steps">
+        <li>Run <code>curl -s -i -X PATCH "$BASE/api/cms/users/&lt;id of qa-viewer&gt;" -b "cms_session=$S" -H 'Content-Type: application/json' -d '{"name":"QA Viewer"}'</code> (no <code>Origin</code>).</li>
+        <li>Run it again without the cookie.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> With the cookie: <code>200</code> (a non-browser client; the cookie is what authenticates it). Without: <code>401</code> <code>{"ok":false,"error":"unauthorized"}</code>. This is the documented design: no CSRF token, a same-site cookie plus the Origin check.</p>
+      <p class="ref">Ref: <code>src/cms/core/api/same-origin.ts</code> (“No Origin header → non-browser client”)</p>
+    </article>
+
+    <article class="tc" id="AUTH-079" data-priority="P3">
+      <h3>db:seed-roles puts Full access back on superadmin</h3>
+      <ol class="steps">
+        <li>Run <code>UPDATE admin_roles SET permissions = '["cms.access"]' WHERE name = 'superadmin';</code></li>
+        <li>Run <code>npm run db:seed-roles</code>.</li>
+        <li>Run <code>SELECT name, permissions FROM admin_roles WHERE name IN ('superadmin','editor');</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Output <code>Roles seeded (created 0, updated 1, left as configured 1).</code> <code>superadmin</code> is <code>["*"]</code> again; <code>editor</code> is unchanged from before step 1.</p>
+      <p class="ref">Ref: <code>src/cms/db/seeds/roles.ts</code> (<code>planRoleSeed</code>, <code>sync: true</code>) · <code>src/cms/db/seeds/cli/seed-roles.ts</code></p>
+    </article>
+
+    <article class="tc" id="AUTH-080" data-priority="P3">
+      <h3>Known gap: no admin “forgot password” and no “change my password”</h3>
+      <ol class="steps">
+        <li>Look for a “Forgot password” link on <code>/admin/login</code>.</li>
+        <li>Look for a password section on <strong>Your account</strong>.</li>
+        <li>Run <code>curl -s -o /dev/null -w '%{http_code}\n' -X POST "$BASE/api/cms/auth/password" -b "cms_session=$S"</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected (known gap):</span> No link, no section, and <code>404</code>. An admin password is changed only by a holder of <strong>Manage users</strong> (AUTH-037) or with <code>npm run db:seed-admin</code> (SET-016). The customer forgot/reset routes under <code>/api/cms/customer/</code> belong to the shop (checklist 08). Mark Pass if the behaviour matches, and keep the gap on the open-items list.</p>
+      <p class="ref">Ref: docs/dev-guides/05-auth-users-security.md §3.6 · docs/user-guides/src/06-rythmiseis-xristes.md (Users)</p>
+    </article>
+
+    <article class="tc" id="AUTH-081" data-priority="P3">
+      <h3>Restore the test environment</h3>
+      <ol class="steps">
+        <li>Restore <code>RECAPTCHA_SITE_KEY</code>, <code>RECAPTCHA_SECRET_KEY</code>, <code>ADMIN_SESSION_IDLE_MINUTES=60</code>, <code>ADMIN_SESSION_TTL_HOURS=8</code>, blank <code>ADMIN_MFA_BYPASS_CODE=</code>, and the original <code>CMS_TOKEN_ENCRYPTION_KEY</code>; restart.</li>
+        <li>Set Security back to <strong>Optional — each administrator chooses</strong>, enable every disabled QA superadmin, and make sure <code>qa-admin@example.com</code> holds <code>superadmin</code>.</li>
+        <li>Revoke the remaining QA keys and delete the QA roles and users no other checklist needs.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The login page shows the captcha box again, <code>qa-admin@example.com</code> signs in, and the SQL of AUTH-046 lists every intended superadmin.</p>
+      <p class="ref">Ref: <code>.env.example</code></p>
+    </article>
+  </section>
+
+</main>
+<footer class="page">Checklist 05 of 12. Results are saved in this browser only; use Export before clearing browser data. Afterwards restore the environment file and the Security setting (AUTH-081), and delete the QA accounts, roles and API keys if other checklists expect none.</footer>
+</body>
+</html>

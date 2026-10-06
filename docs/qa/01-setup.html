@@ -1,0 +1,977 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Setup &amp; configuration</title>
+<link rel="stylesheet" href="qa.css">
+<script src="qa.js" defer></script>
+</head>
+<body>
+<nav class="crumbs"><a href="index.html">CMS manual QA</a></nav>
+<header class="page">
+  <h1>01 · Setup, install &amp; configuration</h1>
+  <p class="scope">Installing the CMS from a clean checkout, configuring the environment file, running migrations and seeds, first sign-in, module switches, languages, a moved admin path, the edit-lock relay, the CMS updater, security headers, robots.txt and the shipped user guides. You need a terminal on the test machine, an empty MariaDB/MySQL database you may drop, database client access, and two browsers (or one normal and one private window).</p>
+</header>
+<main>
+
+  <section class="suite" id="suite-env">
+    <h2>Prerequisites &amp; environment file</h2>
+    <p class="intro">Run these in the project folder of a fresh checkout. Commands are typed in a terminal; the file <code>.env.local</code> sits in the project root.</p>
+
+    <article class="tc" id="SET-001" data-priority="P2">
+      <h3>Check Node and npm versions</h3>
+      <ol class="steps">
+        <li>Run <code>node -v</code> and <code>npm -v</code>.</li>
+        <li>Open <code>.nvmrc</code> and the <code>engines</code> block of <code>package.json</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>.nvmrc</code> says <code>20.18.0</code>. Node is at least 20.9.0 and below 25; npm is at least 10 and below 12. If <code>nvm</code> is installed, <code>nvm use</code> switches to 20.18.0.</p>
+      <p class="ref">Ref: <code>.nvmrc</code> · <code>package.json</code> · docs/LOCAL_SETUP.md §1</p>
+    </article>
+
+    <article class="tc" id="SET-002" data-priority="P1">
+      <h3>Install dependencies with npm ci</h3>
+      <ol class="steps">
+        <li>Run <code>npm ci</code>.</li>
+        <li>Run <code>npm audit --omit=dev</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>npm ci</code> finishes without an error and creates <code>node_modules</code>. <code>npm audit --omit=dev</code> reports 0 vulnerabilities. (A plain <code>npm audit</code> may report 4 moderate esbuild advisories from <code>drizzle-kit</code>; that is known and accepted. Do not run <code>npm audit fix</code>.)</p>
+      <p class="ref">Ref: <code>package.json</code> (<code>//audit-esbuild</code> note) · docs/LOCAL_SETUP.md §2</p>
+    </article>
+
+    <article class="tc" id="SET-003" data-priority="P1">
+      <h3>Create .env.local with the required values</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> An empty database created with <code>CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci</code> and a user granted on <code>'user'@'%'</code> (see docs/LOCAL_SETUP.md §3).</p>
+      <ol class="steps">
+        <li>Run <code>cp .env.example .env.local</code>.</li>
+        <li>Fill <code>DB_HOST=127.0.0.1</code>, <code>DB_PORT</code>, <code>DB_USER</code>, <code>DB_PASSWORD</code>, <code>DB_NAME</code> for the test database.</li>
+        <li>Run <code>openssl rand -base64 48</code> twice and paste the two outputs into <code>ADMIN_SESSION_SECRET</code> and <code>CMS_TOKEN_ENCRYPTION_KEY</code>.</li>
+        <li>Leave <code>NEXT_PUBLIC_SITE_URL=http://localhost:3002</code> as shipped (or set it to the exact origin of the test environment).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Each secret is 64 characters long (at least 32 is required). <code>.env.example</code> already ships <code>NEXT_PUBLIC_SITE_URL=http://localhost:3002</code> and <code>ADMIN_PATH=admin</code>. No other value is needed to start the app.</p>
+      <p class="ref">Ref: <code>.env.example</code> · docs/LOCAL_SETUP.md §4 · docs/dev-guides/01-architecture.md §7.1</p>
+    </article>
+
+    <article class="tc" id="SET-004" data-priority="P3">
+      <h3>Review .env.example for unsafe defaults</h3>
+      <ol class="steps">
+        <li>Open <code>.env.example</code> and read every line.</li>
+      </ol>
+      <ul class="exp">
+        <li>Every secret (<code>ADMIN_SESSION_SECRET</code>, <code>CMS_TOKEN_ENCRYPTION_KEY</code>, <code>CMS_GIFTCARD_PEPPER</code>, <code>CMS_CRON_SECRET</code>, <code>CMS_LOCK_INTERNAL_SECRET</code>, payment keys, Azure keys) is blank.</li>
+        <li><code>ADMIN_MFA_BYPASS_CODE</code> is blank, with a comment warning it works in every environment.</li>
+        <li>The only filled-in keys are the two reCAPTCHA keys, commented as Google's public test keys, plus non-secret defaults (ports, session hours, <code>PAYPAL_ENV=sandbox</code>, <code>VIVA_ENV=demo</code>).</li>
+      </ul>
+      <p class="exp"><span class="exp-label">Expected:</span> All three points hold.</p>
+      <p class="ref">Ref: <code>.env.example</code></p>
+    </article>
+
+    <article class="tc" id="SET-005" data-priority="P3">
+      <h3>Missing database settings stop the CLI with a clear message</h3>
+      <ol class="steps">
+        <li>Temporarily rename <code>.env.local</code> to <code>.env.local.bak</code> (make sure no <code>.env</code> file exists).</li>
+        <li>Run <code>npm run db:migrate</code>.</li>
+        <li>Rename the file back.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The command exits with an error that starts <code>Database connection is not configured. Set either DATABASE_URL or</code> … No tables are created.</p>
+      <p class="ref">Ref: <code>src/cms/db/adapters/mysql/client.ts</code> · <code>src/cms/db/adapters/mysql/load-env.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-006" data-priority="P3">
+      <h3>Short session secret makes sign-in fail and is logged</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Migrations and admin user done (suite below). App running with <code>npm run dev</code>.</p>
+      <ol class="steps">
+        <li>Set <code>ADMIN_SESSION_SECRET=tooshort</code> in <code>.env.local</code> and restart <code>npm run dev</code>.</li>
+        <li>Go to <code>/admin/login</code>, tick the reCAPTCHA box, enter the admin email and correct password, click <strong>Sign in</strong>.</li>
+        <li>Look at the terminal running the server.</li>
+        <li>Restore the real secret and restart.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Sign-in does not succeed (the form shows an error and stays on the login page). The server terminal shows <code>ADMIN_SESSION_SECRET is missing or shorter than 32 characters.</code> After restoring the secret, sign-in works. Note in the result if the on-screen message is the misleading <em>Invalid email or password.</em></p>
+      <p class="ref">Ref: <code>src/cms/modules/auth/session.ts</code> · <code>src/cms/admin/login-error.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-007" data-priority="P3">
+      <h3>Missing encryption key blocks authenticator-app setup only</h3>
+      <ol class="steps">
+        <li>Blank <code>CMS_TOKEN_ENCRYPTION_KEY=</code> in <code>.env.local</code> and restart the app.</li>
+        <li>Sign in, open <strong>Your account</strong> in the sidebar, start two-factor setup and choose <strong>Use an authenticator app</strong>.</li>
+        <li>Open any page in <strong>Pages</strong> and save it.</li>
+        <li>Restore the key and restart.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The authenticator setup shows an error and no QR code; the server log contains <code>CMS_TOKEN_ENCRYPTION_KEY is missing or shorter than 32 characters.</code> Browsing and saving content still work. After restoring the key the QR code appears.</p>
+      <p class="ref">Ref: <code>src/cms/core/tokens/crypto.ts</code> · <code>src/cms/core/security/totp.ts</code> · <code>src/cms/admin/MfaEnrollPanel.tsx</code></p>
+    </article>
+
+    <article class="tc" id="SET-008" data-priority="P3">
+      <h3>Wrong NEXT_PUBLIC_SITE_URL port rejects admin writes</h3>
+      <ol class="steps">
+        <li>Set <code>NEXT_PUBLIC_SITE_URL=http://localhost:3000</code> in <code>.env.local</code> and restart <code>npm run dev</code> (still serving on 3002).</li>
+        <li>Open browser developer tools, Network tab. Go to <code>http://localhost:3002/admin/login</code> and try to sign in.</li>
+        <li>Inspect the <code>/api/cms/auth/login</code> request.</li>
+        <li>Put the value back to <code>http://localhost:3002</code> and restart.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The login page itself loads, but the POST answers <strong>403</strong> with body <code>{"ok":false,"error":"forbidden","message":"Cross-origin request rejected."}</code>, so sign-in fails. After fixing the value, sign-in works. (If you are already signed in, every save fails the same way.)</p>
+      <p class="ref">Ref: <code>src/cms/core/api/same-origin.ts</code> · <code>src/cms/core/api/handler.ts</code> · docs/LOCAL_SETUP.md §4</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-db">
+    <h2>Migrations &amp; seeds</h2>
+    <p class="intro">Use an empty database. The SQL checks can be run in any MySQL client connected to it.</p>
+
+    <article class="tc" id="SET-009" data-priority="P1">
+      <h3>Apply all migrations to an empty database</h3>
+      <ol class="steps">
+        <li>Run <code>npm run db:migrate</code>.</li>
+        <li>Run the SQL below.</li>
+      </ol>
+<pre><code>SELECT COUNT(*) FROM __drizzle_migrations;</code></pre>
+      <p class="exp"><span class="exp-label">Expected:</span> The command prints <code>✓ migrations applied</code> and exits normally. The count is <strong>25</strong> (files <code>0000</code> to <code>0024</code>). Tables such as <code>documents</code>, <code>admin_users</code>, <code>site_settings</code> exist.</p>
+      <p class="ref">Ref: <code>src/cms/db/migrate.ts</code> · <code>src/cms/db/adapters/mysql/migrations/</code> · docs/dev-guides/02-database.md</p>
+    </article>
+
+    <article class="tc" id="SET-010" data-priority="P2">
+      <h3>Re-running migrations is harmless</h3>
+      <ol class="steps">
+        <li>Run <code>npm run db:migrate</code> a second time.</li>
+        <li>Repeat the count query from the previous case.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>✓ migrations applied</code> again, no error, and the count is still 25.</p>
+      <p class="ref">Ref: <code>src/cms/db/migrate.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-011" data-priority="P3">
+      <h3>Wrong database password fails loudly</h3>
+      <ol class="steps">
+        <li>Change <code>DB_PASSWORD</code> in <code>.env.local</code> to a wrong value.</li>
+        <li>Run <code>npm run db:migrate</code>, then run <code>echo $?</code>.</li>
+        <li>Restore the correct password.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> An <code>Access denied for user</code> error is printed, <code>✓ migrations applied</code> is not, and the exit code is <code>1</code>.</p>
+      <p class="ref">Ref: <code>src/cms/db/migrate.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-012" data-priority="P1">
+      <h3>Create the first superadmin with db:seed-admin</h3>
+      <ol class="steps">
+        <li>Run <code>npm run db:seed-admin -- qa-admin@example.com 'Qa-Setup-Pass-2026!' 'QA Admin'</code> (keep the single quotes).</li>
+        <li>Run the SQL below.</li>
+      </ol>
+<pre><code>SELECT u.email, u.name, u.disabled_at, r.name AS role
+FROM admin_users u
+JOIN admin_user_roles ur ON ur.user_id = u.id
+JOIN admin_roles r ON r.id = ur.role_id
+WHERE u.email = 'qa-admin@example.com';</code></pre>
+      <ul class="exp">
+        <li>Output includes <code>Roles seeded (created 2, updated 0, left as configured 0).</code>, <code>Created user qa-admin@example.com (id …).</code>, <code>Granted superadmin role.</code> and <code>Done. You can now sign in to the admin.</code></li>
+        <li>The query returns one row: name <code>QA Admin</code>, <code>disabled_at</code> NULL, role <code>superadmin</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/db/seeds/cli/create-admin.ts</code> · <code>src/cms/db/seeds/roles.ts</code> · docs/LOCAL_SETUP.md §6</p>
+    </article>
+
+    <article class="tc" id="SET-013" data-priority="P2">
+      <h3>Default roles are superadmin and editor</h3>
+      <ol class="steps">
+        <li>Run: <code>SELECT name, permissions FROM admin_roles ORDER BY name;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Two rows. <code>superadmin</code> has <code>["*"]</code>. <code>editor</code> has content, media, SEO, forms read, newsletter read, orders, reviews, reservations and schedule permissions, and no settings, users, roles or scripts permission.</p>
+      <p class="ref">Ref: <code>src/cms/db/seeds/roles.ts</code> (<code>DEFAULT_ROLES</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-014" data-priority="P2">
+      <h3>Weak password is refused by db:seed-admin</h3>
+      <ol class="steps">
+        <li>Run <code>npm run db:seed-admin -- weak@example.com 'password' 'Weak'</code>.</li>
+        <li>Run <code>npm run db:seed-admin -- weak@example.com 'Password1!' 'Weak'</code>.</li>
+        <li>Run <code>SELECT COUNT(*) FROM admin_users WHERE email = 'weak@example.com';</code></li>
+      </ol>
+      <ul class="exp">
+        <li>First command prints <code>Password needs at least 10 characters, an uppercase letter, a number, a symbol, not a common password.</code> and exits with an error.</li>
+        <li>Second command prints <code>Password needs not a common password.</code> and exits with an error.</li>
+        <li>The count is 0.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/auth/password-policy.ts</code> · <code>src/cms/db/seeds/cli/create-admin.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-015" data-priority="P3">
+      <h3>Missing arguments and a bad --locale are refused</h3>
+      <ol class="steps">
+        <li>Run <code>npm run db:seed-admin</code> with no arguments.</li>
+        <li>Run <code>npm run db:seed-admin -- x@example.com 'Qa-Setup-Pass-2026!' 'X' --locale greek</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>First: <code>Usage: npm run db:seed-admin -- &lt;email&gt; &lt;password&gt; [name] [--locale &lt;code&gt;]</code>, non-zero exit.</li>
+        <li>Second: <code>--locale needs a language code such as "en" (got "greek").</code>, non-zero exit, no user <code>x@example.com</code> created.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/db/seeds/admin-args.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-016" data-priority="P2">
+      <h3>Re-running db:seed-admin resets an existing account</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> A second user <code>qa-editor@example.com</code> with role <strong>editor</strong> exists (create it on the <strong>Users</strong> screen), and it is disabled there.</p>
+      <ol class="steps">
+        <li>Run <code>npm run db:seed-admin -- qa-editor@example.com 'Qa-Editor-Reset-2026!'</code>.</li>
+        <li>Sign in as <code>qa-editor@example.com</code> with the new password.</li>
+        <li>Run the role SQL from the “Create the first superadmin” case for this email.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Output says <code>Updated existing user qa-editor@example.com (id …).</code> and <code>Replaced the previous role with superadmin.</code> Sign-in works (account re-enabled). The query shows exactly one role, <code>superadmin</code>. Afterwards set the account back to editor on the Users screen if other checklists need it.</p>
+      <p class="ref">Ref: <code>src/cms/db/seeds/cli/create-admin.ts</code> · <code>src/cms/db/seeds/admin-args.ts</code> (<code>superadminGrant</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-017" data-priority="P2">
+      <h3>Seeding roles does not overwrite a customised editor role</h3>
+      <ol class="steps">
+        <li>In the admin open <strong>Roles</strong>, edit <strong>editor</strong>, untick one permission (for example the reviews write permission) and save.</li>
+        <li>Run <code>npm run db:seed-roles</code>.</li>
+        <li>Reopen the editor role.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Output is <code>Roles seeded (created 0, updated 1, left as configured 1).</code> (superadmin re-synced, editor kept). The permission you removed is still unticked.</p>
+      <p class="ref">Ref: <code>src/cms/db/seeds/roles.ts</code> (<code>planRoleSeed</code>) · <code>src/cms/db/seeds/cli/seed-roles.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-018" data-priority="P2">
+      <h3>Seed the cookie catalogue</h3>
+      <ol class="steps">
+        <li>Run <code>npm run db:seed-cookies</code>.</li>
+        <li>Run <code>SELECT `key`, required, sort_order FROM cookie_categories ORDER BY sort_order;</code></li>
+        <li>Run <code>npm run db:seed-cookies</code> again.</li>
+        <li>In the admin open <strong>Cookies</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> First run prints <code>Cookie catalogue seeded (created 3, skipped 0, services …).</code> The table has <code>necessary</code> (required = 1), <code>analytics</code> and <code>marketing</code>. Second run prints <code>created 0, skipped 3</code>. The Cookies screen lists Necessary, Analytics and Marketing.</p>
+      <p class="ref">Ref: <code>src/cms/db/seeds/cookies.ts</code> · <code>src/cms/core/cookies/defaults.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-019" data-priority="P2">
+      <h3>Seed site settings and placeholder pages as drafts</h3>
+      <ol class="steps">
+        <li>Run <code>npm run db:seed-site</code>.</li>
+        <li>Run <code>SELECT slug, locale, status FROM documents WHERE type = 'page' ORDER BY slug, locale;</code></li>
+        <li>In the admin open <strong>Pages</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Output: <code>✓ 11 settings written</code>, <code>✓ brand written (…)</code>, <code>✓ Site content (drafts) seeded (created 10, updated 0, skipped 0)</code>.</li>
+        <li>SQL returns 10 rows: <code>about</code>, <code>contact</code>, <code>home</code>, <code>privacy</code>, <code>terms</code>, each in <code>el</code> and <code>en</code>, all <code>draft</code>.</li>
+        <li>The Pages list shows the five pages as drafts.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/site-seed/cli.ts</code> · <code>src/site-seed/data.ts</code> · docs/LOCAL_SETUP.md §7</p>
+    </article>
+
+    <article class="tc" id="SET-020" data-priority="P2">
+      <h3>Re-running the site seed leaves edited content alone</h3>
+      <ol class="steps">
+        <li>In <strong>Pages</strong> open <strong>About</strong>, change the EL title to <code>QA edited title</code>, click <strong>Save EL</strong>.</li>
+        <li>Run <code>npm run db:seed-site</code> again.</li>
+        <li>Reopen About.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Output shows <code>created 0, updated 0, skipped 10</code> followed by <code>10 already in the database and left untouched. Re-run with --force to overwrite them.</code> and <code>✓ brand already set — left alone</code>. The title is still <code>QA edited title</code>.</p>
+      <p class="ref">Ref: <code>src/cms/db/seeds/seed-mode.ts</code> · <code>src/site-seed/cli.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-021" data-priority="P3">
+      <h3>Publish the sample pages with --force --publish-samples</h3>
+      <ol class="steps">
+        <li>Run <code>npm run db:seed-site -- --publish-samples</code> (on a database already seeded with drafts).</li>
+        <li>Run <code>npm run db:seed-site -- --force --publish-samples</code>.</li>
+        <li>Repeat the page SQL from the drafts case. Open <code>/about</code> and <code>/en/about</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1 skips all 10 (create-only), and the pages stay drafts. Step 2 reports <code>Site content (published) seeded</code> with 10 updated, SQL shows <code>published</code>, and both URLs render the About page. Note: <code>--force</code> also overwrites the title edited in the previous case.</p>
+      <p class="ref">Ref: <code>src/site-seed/cli.ts</code> · <code>src/cms/db/seeds/seed-mode.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-022" data-priority="P3">
+      <h3>The site seed resets module switches</h3>
+      <ol class="steps">
+        <li>In <strong>Settings</strong> → <strong>Modules</strong> tick <strong>Newsletter</strong> and click <strong>Save settings</strong>.</li>
+        <li>Run <code>npm run db:seed-site</code>.</li>
+        <li>Reload <strong>Settings</strong> → <strong>Modules</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Newsletter is unticked again: settings in <code>src/site-seed/data.ts</code> (including every <code>module.*</code> flag) are always upserted. Record this so nobody runs the site seed on an environment whose modules were switched on by hand.</p>
+      <p class="ref">Ref: <code>src/site-seed/cli.ts</code> (<code>seedSettings</code>) · <code>src/site-seed/data.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-023" data-priority="P3">
+      <h3>db:seed-content refuses to run on a fresh clone</h3>
+      <ol class="steps">
+        <li>Run <code>npm run db:seed-content</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> It prints <code>No content snapshot found at …/src/cms/db/seeds/data/content.json.</code> and <code>npm run db:snapshot-content</code> as the fix, exits with an error, and writes nothing.</p>
+      <p class="ref">Ref: <code>src/cms/db/seeds/cli/seed-content.ts</code> · docs/LOCAL_SETUP.md §7</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-start">
+    <h2>Build, start &amp; first sign-in</h2>
+
+    <article class="tc" id="SET-024" data-priority="P1">
+      <h3>Start the dev server and run the health check</h3>
+      <ol class="steps">
+        <li>Run <code>npm run dev</code> and wait for the ready message.</li>
+        <li>In a second terminal run <code>curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3002/api/cms/auth/me</code>.</li>
+        <li>Open <code>http://localhost:3002</code> in the browser.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The server listens on port 3002. The curl prints <code>401</code> (app and auth are up). The public home page renders in Greek. A 404 in the first seconds after start is a known dev-mode compile delay; retry before failing.</p>
+      <p class="ref">Ref: <code>package.json</code> (<code>dev</code>) · docs/LOCAL_SETUP.md §8–9</p>
+    </article>
+
+    <article class="tc" id="SET-025" data-priority="P1">
+      <h3>First sign-in lands on the dashboard</h3>
+      <ol class="steps">
+        <li>Open <code>/admin</code>.</li>
+        <li>On the login page tick the reCAPTCHA box, enter <code>qa-admin@example.com</code> and <code>Qa-Setup-Pass-2026!</code>, click <strong>Sign in</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>/admin</code> redirects to <code>/admin/login</code>, which shows the site name and <strong>CMS · sign in</strong>. After signing in you land on the dashboard at <code>/admin</code> with the site name as heading, the sidebar (<strong>Back to site</strong>, <strong>Dashboard</strong>, <strong>Pages</strong>, … <strong>Settings</strong>) and <strong>Sign out</strong> in the top bar.</p>
+      <p class="ref">Ref: <code>src/app/admin/login/page.tsx</code> · <code>src/cms/admin/LoginForm.tsx</code> · <code>src/app/admin/(shell)/layout.tsx</code></p>
+    </article>
+
+    <article class="tc" id="SET-026" data-priority="P1">
+      <h3>A first content save succeeds</h3>
+      <ol class="steps">
+        <li>Open <strong>Pages</strong>, open <strong>Home</strong>.</li>
+        <li>Add a word to the EL title and click <strong>Save EL</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The message <code>EL saved.</code> appears, and the change is still there after a reload. This proves the database, session secret and same-origin check are all set correctly.</p>
+      <p class="ref">Ref: <code>src/cms/admin/DocumentForm.tsx</code> · docs/LOCAL_SETUP.md §9</p>
+    </article>
+
+    <article class="tc" id="SET-027" data-priority="P2">
+      <h3>Login errors: no captcha tick, wrong password</h3>
+      <ol class="steps">
+        <li>Sign out. On the login page, enter the correct email and password but do not tick the reCAPTCHA box; click <strong>Sign in</strong>.</li>
+        <li>Tick the box, enter a wrong password, click <strong>Sign in</strong>.</li>
+        <li>Tick the box, enter an email that does not exist, click <strong>Sign in</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: <code>Please confirm you are not a robot.</code></li>
+        <li>Steps 2 and 3: the same message, <code>Invalid email or password.</code> (no hint whether the account exists).</li>
+        <li>With the shipped test keys, the reCAPTCHA widget shows Google's “for testing purposes only” notice.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/LoginForm.tsx</code> · <code>src/cms/admin/login-error.ts</code> · <code>.env.example</code> (RECAPTCHA_*)</p>
+    </article>
+
+    <article class="tc" id="SET-028" data-priority="P2">
+      <h3>A deep link survives the sign-in</h3>
+      <ol class="steps">
+        <li>Sign out. Type <code>/admin/settings?tab=Languages</code> into the address bar.</li>
+        <li>Sign in.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> You are sent to <code>/admin/login?next=…</code> with the requested path encoded in <code>next</code>. After sign-in you land on Settings with the Languages tab open, not on the dashboard.</p>
+      <p class="ref">Ref: <code>src/proxy.ts</code> · <code>src/cms/modules/auth/guards.ts</code> · <code>src/cms/admin/safe-next.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-029" data-priority="P3">
+      <h3>The next parameter cannot redirect off-site</h3>
+      <ol class="steps">
+        <li>Sign out. Open <code>/admin/login?next=//evil.example</code> and sign in.</li>
+        <li>Sign out. Open <code>/admin/login?next=/%5Cevil.example</code> and sign in.</li>
+        <li>Sign out. Open <code>/admin/login?next=/adminevil</code> and sign in.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Every time you land on the admin dashboard (<code>/admin</code>) on the test host. The browser never goes to another domain.</p>
+      <p class="ref">Ref: <code>src/cms/admin/safe-next.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-030" data-priority="P2">
+      <h3>Production build and start</h3>
+      <ol class="steps">
+        <li>Stop the dev server. Set <code>NEXT_PUBLIC_SITE_URL=http://localhost:3000</code> in <code>.env.local</code> (production <code>next start</code> serves on 3000).</li>
+        <li>Run <code>npm run build</code>, then <code>npm run start</code>.</li>
+        <li>Run <code>curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3000/api/cms/auth/me</code> and open <code>http://localhost:3000</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The build finishes without errors (a <code>ConfigError</code> or type error fails it). The server starts on port 3000, curl prints <code>401</code>, and the home page renders. Set the URL back to 3002 before returning to <code>npm run dev</code>.</p>
+      <p class="ref">Ref: <code>package.json</code> · <code>next.config.ts</code> · docs/dev-guides/10-settings-cron-operations.md §7.1</p>
+    </article>
+
+    <article class="tc" id="SET-031" data-priority="P3">
+      <h3>Production refuses sign-in without X-Real-IP</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> The production build from the previous case, reached directly on port 3000 with no reverse proxy.</p>
+      <ol class="steps">
+        <li>Open <code>http://localhost:3000/admin/login</code>, tick the box and sign in with correct details.</li>
+        <li>Check the server terminal.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Sign-in is refused with <code>Too many attempts. Please wait and try again.</code> and the log shows <code>[cms] No X-Real-IP on an incoming request</code>. This is by design: production must sit behind a proxy that sets <code>X-Real-IP</code>. On the real test environment (behind Nginx) sign-in works.</p>
+      <p class="ref">Ref: <code>src/cms/core/rate-limit.ts</code> · docs/dev-guides/01-architecture.md §4.8</p>
+    </article>
+
+    <article class="tc" id="SET-032" data-priority="P3">
+      <h3>Automated checks pass on the checkout</h3>
+      <ol class="steps">
+        <li>Run <code>npm run type-check</code>, <code>npm run lint</code> and <code>npm test</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> All three finish with exit code 0. <code>npm test</code> needs no database and reports about 3000 passing tests (2979 at the time of writing) and 0 failures.</p>
+      <p class="ref">Ref: <code>package.json</code> · docs/dev-guides/01-architecture.md §9</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-modules">
+    <h2>Module switches</h2>
+    <p class="intro">Switches live in <strong>Settings</strong> → <strong>Modules</strong> (<code>/admin/settings?tab=Modules</code>) and are stored in <code>site_settings</code> as <code>module.&lt;name&gt;</code>. Use the superadmin. Cases that call an API URL in the browser need you signed in in that browser.</p>
+
+    <article class="tc" id="SET-033" data-priority="P2">
+      <h3>Modules tab lists every switch with its off-note</h3>
+      <ol class="steps">
+        <li>Open <strong>Settings</strong>, click the <strong>Modules</strong> tab.</li>
+        <li>Run <code>SELECT `key`, value FROM site_settings WHERE `key` LIKE 'module.%' ORDER BY `key`;</code></li>
+      </ol>
+      <ul class="exp">
+        <li>Ten checkboxes: <strong>Commerce</strong>, <strong>Booking</strong>, <strong>Forms</strong>, <strong>Seo</strong>, <strong>Newsletter</strong>, <strong>Customer accounts</strong>, <strong>Google reviews &amp; testimonials</strong>, <strong>Popups</strong>, <strong>Media</strong>, <strong>Praion.ai connection</strong>.</li>
+        <li>After the site seed only Forms, Seo and Media are ticked. Commerce, Booking, Newsletter, Customer accounts, Google reviews, Popups and Praion.ai each show a grey line starting <code>Off:</code> explaining what switching them off does.</li>
+        <li>The SQL shows the same values (<code>true</code>/<code>false</code>).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/SettingsForm.tsx</code> · <code>src/cms/core/settings/schema.ts</code> (<code>MODULE_LABELS</code>) · <code>src/site.config.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-034" data-priority="P1">
+      <h3>Commerce off: shop hidden in admin and on the site</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Commerce unticked and saved.</p>
+      <ol class="steps">
+        <li>Look at the admin sidebar.</li>
+        <li>Open the public site <code>/</code> and look at the header navigation; open <code>/shop</code> and <code>/en/shop</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Sidebar has no <strong>Products</strong>, <strong>Tags</strong>, <strong>Size charts</strong>, shop <strong>Categories</strong>, and no <strong>Orders</strong>, <strong>Gift cards</strong>, <strong>Reviews</strong>, <strong>Abandoned carts</strong>.</li>
+        <li>Header shows only Αρχική, Σχετικά, Επικοινωνία (no Κατάστημα) and no cart.</li>
+        <li><code>/shop</code> and <code>/en/shop</code> show the site's not-found page.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/layout.tsx</code> · <code>src/cms/admin/shared.ts</code> (<code>visibleAdminCollections</code>) · <code>src/lib/nav.ts</code> · <code>src/app/[locale]/shop/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="SET-035" data-priority="P2">
+      <h3>Commerce off: admin screens and APIs answer 404</h3>
+      <ol class="steps">
+        <li>In the signed-in browser open <code>/admin/orders</code>, <code>/admin/gift-cards</code>, <code>/admin/abandoned</code>.</li>
+        <li>Open <code>/api/cms/orders</code>, <code>/api/cms/product</code> and <code>/api/cms/commerce/search?q=test</code>.</li>
+        <li>In a terminal run <code>curl -s -o /dev/null -w '%{http_code}\n' 'http://localhost:3002/api/cms/commerce/search?q=test'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The three admin URLs show a “Page not found” page. The APIs answer 404: orders and search with <code>{"ok":false,"error":"not_found"}</code>, product with <code>not_found</code> and <code>Unknown collection "product".</code> The curl prints <code>404</code>.</p>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/orders/page.tsx</code> · <code>src/app/api/cms/orders/route.ts</code> · <code>src/cms/core/routes/collections.ts</code> (<code>assertCollection</code>) · <code>src/app/api/cms/commerce/search/route.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-036" data-priority="P3">
+      <h3>Commerce off: product list URL is not reachable in the admin</h3>
+      <ol class="steps">
+        <li>With Commerce off, type <code>/admin/product</code> and <code>/admin/product/new</code> into the address bar.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both show “Page not found”, like the Orders screen does. If a product list or a create form renders instead, mark Fail: the sidebar hides the collection but the page itself is not gated (the API behind it is).</p>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/[collection]/page.tsx</code> · <code>src/lib/cms/collection-route.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-037" data-priority="P2">
+      <h3>Commerce on: shop appears, content is kept</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Commerce was on earlier with at least one product created (or create one now after step 1).</p>
+      <ol class="steps">
+        <li>Tick <strong>Commerce</strong>, click <strong>Save settings</strong>.</li>
+        <li>Reload the admin and the public home page.</li>
+        <li>Switch Commerce off, save, then on again, save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>Settings saved.</code> appears. Sidebar gains Products, Categories, Tags, Size charts and the Orders / Gift cards / Reviews / Abandoned carts group. The public header gains Κατάστημα, <code>/shop</code> renders, and <code>/api/cms/orders</code> no longer returns 404. After off/on the same products are still listed. <code>SELECT value FROM site_settings WHERE `key`='module.commerce';</code> returns <code>true</code>.</p>
+      <p class="ref">Ref: <code>src/cms/core/settings/modules.ts</code> · <code>src/app/api/cms/settings/route.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-038" data-priority="P2">
+      <h3>Booking off and on</h3>
+      <ol class="steps">
+        <li>With Booking off: check the sidebar, open <code>/admin/reservations</code>, <code>/admin/availability</code>, <code>/booking</code>, <code>/api/cms/booking/availability</code>.</li>
+        <li>Tick <strong>Booking</strong>, save, and repeat.</li>
+      </ol>
+      <ul class="exp">
+        <li>Off: no <strong>Experiences</strong>, booking <strong>Categories</strong>, <strong>Types</strong>, <strong>Locations</strong>, <strong>Reservations</strong> or <strong>Availability</strong> in the sidebar; admin URLs show “Page not found”; <code>/booking</code> shows the site's not-found page; the API returns 404 <code>not_found</code>; the header has no Κρατήσεις.</li>
+        <li>On: all of the above appear; the API answers something other than 404.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/layout.tsx</code> · <code>src/app/[locale]/booking/page.tsx</code> · <code>src/app/api/cms/booking/availability/route.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-039" data-priority="P2">
+      <h3>Newsletter off and on</h3>
+      <ol class="steps">
+        <li>With Newsletter off: check the sidebar, open <code>/admin/newsletter</code>, open <code>/about</code> and scroll to the footer.</li>
+        <li>Run <code>curl -s -X POST -H 'Content-Type: application/json' -d '{"email":"qa@example.com"}' http://localhost:3002/api/newsletter -w '\n%{http_code}\n'</code>.</li>
+        <li>Tick <strong>Newsletter</strong>, save, repeat steps 1–2.</li>
+      </ol>
+      <ul class="exp">
+        <li>Off: no <strong>Newsletter</strong> in the sidebar, the admin URL shows “Page not found”, no signup band in the footer, curl ends with <code>404</code>.</li>
+        <li>On: <strong>Newsletter</strong> appears in the sidebar, the page opens, the footer signup band shows on <code>/about</code> (not on the home page), and curl no longer returns 404.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/api/newsletter/route.ts</code> · <code>src/components/layout/Footer.tsx</code> · <code>src/app/admin/(shell)/newsletter/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="SET-040" data-priority="P3">
+      <h3>Customer accounts, Popups and Praion.ai switches gate their surfaces</h3>
+      <ol class="steps">
+        <li>With Customer accounts off, open <code>/api/cms/customer/me</code>.</li>
+        <li>With Popups off, check the sidebar for <strong>Popups</strong>.</li>
+        <li>With Praion.ai connection off, open <code>/api/cms/pm/v1/ping</code> in the signed-in browser.</li>
+        <li>Switch each on, save, and repeat.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Off: the customer and ping APIs return 404, and Popups is not in the sidebar. On: the customer API no longer returns 404 (401 when not signed in as a customer is fine), Popups appears, and ping returns JSON with <code>"ok":true</code> and a <code>bridge_version</code>.</p>
+      <p class="ref">Ref: <code>src/app/api/cms/customer/me/route.ts</code> · <code>src/cms/modules/pm/routes.ts</code> (<code>bridgeRoute</code>) · <code>src/cms/modules/popups/collection.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-041" data-priority="P3">
+      <h3>Forms, Seo and Media switches change nothing</h3>
+      <ol class="steps">
+        <li>Untick <strong>Forms</strong>, <strong>Seo</strong> and <strong>Media</strong>, save.</li>
+        <li>Reload the admin and check the sidebar; open <code>/admin/submissions</code>, <code>/admin/seo</code>, <code>/admin/media</code>.</li>
+        <li>Tick all three again and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Per the current code these three are always on: Submissions, SEO and Media stay in the sidebar and open normally. Note in the result that the switches are shown but do nothing (a UX issue to raise, not a blocker).</p>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/layout.tsx</code> · docs/dev-guides/01-architecture.md §10</p>
+    </article>
+
+    <article class="tc" id="SET-042" data-priority="P3">
+      <h3>Scheduled jobs of a disabled module answer 404</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> <code>CMS_CRON_SECRET</code> set to a 32+ character value in <code>.env.local</code>, app restarted; Commerce off.</p>
+      <ol class="steps">
+        <li>Run <code>curl -s -X POST -H "x-cron-secret: &lt;your secret&gt;" http://localhost:3002/api/cms/cron/commerce-stale-orders -w '\n%{http_code}\n'</code>.</li>
+        <li>Run the same for <code>content-publish-scheduled</code>.</li>
+        <li>Run the first command with a wrong secret.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>404</code>. Step 2: <code>200</code> with <code>"status":"ran"</code> (or <code>"skipped"</code> if another run is in progress). Step 3: <code>401</code>.</p>
+      <p class="ref">Ref: <code>src/app/api/cms/cron/[job]/route.ts</code> · <code>src/cms/core/cron/service.ts</code> · docs/dev-guides/10-settings-cron-operations.md §3.4</p>
+    </article>
+
+    <article class="tc" id="SET-043" data-priority="P2">
+      <h3>Only settings holders can change modules</h3>
+      <ol class="steps">
+        <li>Sign in as a user with the <strong>editor</strong> role.</li>
+        <li>Look for <strong>Settings</strong> in the sidebar, then type <code>/admin/settings</code> into the address bar.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> No Settings or Cookies entry in the sidebar. The URL redirects to <code>/admin/403</code>, which shows <strong>403 — Forbidden</strong>.</p>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/settings/page.tsx</code> · <code>src/cms/modules/auth/guards.ts</code> · <code>src/app/admin/403/page.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-lang">
+    <h2>Languages</h2>
+    <p class="intro">The site ships Greek (<code>el</code>, main, no URL prefix) and English (<code>en</code>, under <code>/en</code>). Which ones are editable and public is set in <strong>Settings</strong> → <strong>Languages</strong>. Pages must be published (see the <code>--force --publish-samples</code> case).</p>
+
+    <article class="tc" id="SET-044" data-priority="P1">
+      <h3>Greek is the unprefixed default, English lives under /en</h3>
+      <ol class="steps">
+        <li>Open <code>/</code> and <code>/about</code>; view the page source and find the <code>&lt;html</code> tag.</li>
+        <li>Open <code>/en</code> and <code>/en/about</code>; check the <code>&lt;html</code> tag.</li>
+        <li>Open <code>/el/about</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>/</code> and <code>/about</code> are Greek with <code>lang="el"</code> (menu Αρχική, Σχετικά, Επικοινωνία). <code>/en/…</code> is English with <code>lang="en"</code> (Home, About, Contact). <code>/el/about</code> redirects to <code>/about</code>.</p>
+      <p class="ref">Ref: <code>src/lib/i18n/config.ts</code> · <code>src/lib/i18n/routing.ts</code> · <code>src/app/[locale]/layout.tsx</code></p>
+    </article>
+
+    <article class="tc" id="SET-045" data-priority="P3">
+      <h3>Browser language does not switch the site</h3>
+      <ol class="steps">
+        <li>Run <code>curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' -H 'Accept-Language: en-US,en;q=0.9' http://localhost:3002/</code>.</li>
+        <li>Open <code>/home</code> and <code>/en/home</code> in the browser.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1 prints <code>200</code> with no redirect (the Greek home is served; no Accept-Language detection). <code>/home</code> redirects to <code>/</code> and <code>/en/home</code> to <code>/en</code>.</p>
+      <p class="ref">Ref: <code>src/lib/i18n/routing.ts</code> (<code>localeDetection: false</code>) · <code>next.config.ts</code> (<code>redirects</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-046" data-priority="P2">
+      <h3>Languages tab shows the main language locked</h3>
+      <ol class="steps">
+        <li>Open <strong>Settings</strong> → <strong>Languages</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Two rows in this order: <code>EL — Ελληνικά</code> with a green <strong>Main</strong> badge and <strong>Editing</strong> and <strong>Public</strong> both ticked and greyed out; <code>EN — English</code> with Editing and Public both ticked and changeable (on a fresh install, when nothing is stored yet).</p>
+      <p class="ref">Ref: <code>src/cms/admin/SettingsForm.tsx</code> · <code>src/cms/core/settings/locales.ts</code> · docs/user-guides/src/06-rythmiseis-xristes.md</p>
+    </article>
+
+    <article class="tc" id="SET-047" data-priority="P2">
+      <h3>Taking English off the public site</h3>
+      <ol class="steps">
+        <li>On the Languages tab untick <strong>Public</strong> for EN, click <strong>Save settings</strong>.</li>
+        <li>Open <code>/en</code> and <code>/en/about</code>. Open <code>/</code> and look for the language switcher in the header (and in the mobile menu at phone width).</li>
+        <li>Open any page in the admin editor.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>/en</code> URLs show the not-found page. The Greek site has no language switcher (it hides itself with fewer than two public languages). The editor still shows both <strong>EL</strong> and <strong>EN</strong> tabs, so English can be translated before going live.</p>
+      <p class="ref">Ref: <code>src/app/[locale]/layout.tsx</code> (<code>localeSettings.public</code>) · <code>src/components/layout/Header.tsx</code> · LanguageSwitcher</p>
+    </article>
+
+    <article class="tc" id="SET-048" data-priority="P2">
+      <h3>Turning English editing off</h3>
+      <ol class="steps">
+        <li>Untick <strong>Editing</strong> for EN, save.</li>
+        <li>Check the EN <strong>Public</strong> box, then create a new page in <strong>Pages</strong>.</li>
+        <li>Open an existing page that already has an English version.</li>
+        <li>Run <code>SELECT value FROM site_settings WHERE `key` = 'i18n.locales';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> EN Public is unticked and greyed out. A new page shows only the <strong>EL</strong> tab. An existing page with English content still shows its EN tab (content is never stranded). The SQL value is <code>{"editing":["el"],"public":["el"]}</code>.</p>
+      <p class="ref">Ref: <code>src/cms/core/settings/schema.ts</code> (<code>resolveLocaleSet</code>) · <code>src/app/admin/(shell)/[collection]/[id]/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="SET-049" data-priority="P2">
+      <h3>Re-enable English</h3>
+      <ol class="steps">
+        <li>Tick EN <strong>Editing</strong> and <strong>Public</strong>, save.</li>
+        <li>Open <code>/en/about</code> and the Greek home page.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>/en/about</code> renders again, the language switcher is back in the header, and new pages show EL and EN tabs. SQL value is <code>{"editing":["el","en"],"public":["el","en"]}</code>.</p>
+      <p class="ref">Ref: <code>src/cms/admin/SettingsForm.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-adminpath">
+    <h2>Custom admin path</h2>
+    <p class="intro">Set <code>ADMIN_PATH=studio</code> in <code>.env.local</code> and restart the server before this suite (the value is read at startup for the security headers). Put it back to <code>admin</code> and restart at the end.</p>
+
+    <article class="tc" id="SET-050" data-priority="P2">
+      <h3>Admin is served at /studio</h3>
+      <ol class="steps">
+        <li>Open <code>/studio</code> while signed out.</li>
+        <li>Sign in.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>/studio</code> redirects to <code>/studio/login</code> (with a <code>next</code> parameter). After sign-in the dashboard is at <code>/studio</code>. The address bar never shows <code>/admin</code>.</p>
+      <p class="ref">Ref: <code>src/proxy.ts</code> · <code>src/cms/admin/admin-path.ts</code> · <code>src/cms/core/paths.ts</code> (<code>getAdminPath</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-051" data-priority="P2">
+      <h3>/admin returns a plain 404 once the admin has moved</h3>
+      <ol class="steps">
+        <li>Run <code>curl -s -i http://localhost:3002/admin</code>, then the same for <code>/admin/login</code> and <code>/admin/settings</code>.</li>
+        <li>Open <code>/admin/login</code> in the signed-in browser.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> All three answer <code>HTTP/1.1 404</code> with an empty body: no login form, no redirect, and no redirect to <code>/el/admin</code> or <code>/en/admin</code>. The browser shows its blank 404, not the admin.</p>
+      <p class="ref">Ref: <code>src/proxy.ts</code> (<code>kind: 'hidden'</code>) · <code>src/cms/admin/admin-path.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-052" data-priority="P2">
+      <h3>Every admin link uses the new path</h3>
+      <ol class="steps">
+        <li>Hover or click every sidebar entry (Dashboard, each collection, Submissions, SEO, Media, Users, Roles, Audit log, Your account, Cookies, Settings, Scripts) and the top-bar items.</li>
+        <li>Open a page in Pages, go back to the list with the browser Back button and the in-page links.</li>
+        <li>Click <strong>Sign out</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Every link starts with <code>/studio/</code>; none go to <code>/admin</code> or end on a 404. Sign out lands on <code>/studio/login</code>.</p>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/layout.tsx</code> · <code>src/cms/admin/TopBar.tsx</code> · <code>src/cms/admin/Sidebar.tsx</code></p>
+    </article>
+
+    <article class="tc" id="SET-053" data-priority="P2">
+      <h3>A deep link on the moved path returns there after sign-in</h3>
+      <ol class="steps">
+        <li>Signed out, open <code>/studio/settings?tab=Modules</code>.</li>
+        <li>Sign in.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Redirect to <code>/studio/login?next=%2Fstudio%2Fsettings%3Ftab%3DModules</code> (or equivalent encoding); after sign-in, Settings opens on the Modules tab at <code>/studio/settings</code>.</p>
+      <p class="ref">Ref: <code>src/cms/core/admin-deep-link.ts</code> · <code>src/cms/admin/safe-next.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-054" data-priority="P2">
+      <h3>Idle sign-out warns, signs out and uses the moved path</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> <code>ADMIN_SESSION_IDLE_MINUTES=2</code> in <code>.env.local</code>, server restarted, signed in at <code>/studio</code>.</p>
+      <ol class="steps">
+        <li>Open the dashboard and do not click, type, scroll or touch the page (moving the mouse is fine).</li>
+        <li>Wait about one minute and watch the bottom-right corner.</li>
+        <li>Keep waiting until about two minutes have passed.</li>
+        <li>Sign in again and open <strong>Audit log</strong>.</li>
+        <li>Set <code>ADMIN_SESSION_IDLE_MINUTES=60</code> again and restart.</li>
+      </ol>
+      <ul class="exp">
+        <li>After about a minute a box appears: <strong>You are about to be signed out</strong> with <strong>Stay signed in</strong> and <strong>Sign out now</strong>.</li>
+        <li>At about two minutes the browser goes to <code>/studio/login?timeout=1</code>, which shows <code>You were signed out because you had been inactive. Please sign in again.</code></li>
+        <li>The audit log has an entry <em>Signed out automatically (inactive)</em> for the user.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/IdleLogout.tsx</code> · <code>src/cms/modules/auth/session-idle.ts</code> · <code>src/cms/core/audit-labels.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-055" data-priority="P3">
+      <h3>Stay signed in, and activity in another tab, keep the session</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> As the previous case (2-minute idle window).</p>
+      <ol class="steps">
+        <li>Wait for the warning, then click <strong>Stay signed in</strong>. Wait another 90 seconds, then click something.</li>
+        <li>Open the admin in two tabs. Stay idle in tab A; click around in tab B for 3 minutes.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: the warning disappears and you are still signed in 90 seconds later. Step 2: tab A is not signed out while you work in tab B (activity is shared between tabs).</p>
+      <p class="ref">Ref: <code>src/cms/admin/IdleLogout.tsx</code> (cross-tab <code>cms:last-activity</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-056" data-priority="P3">
+      <h3>Public admin bar links to the moved admin</h3>
+      <ol class="steps">
+        <li>Signed in as superadmin, open a published page on the public site, e.g. <code>/about</code>.</li>
+        <li>Check the dark bar at the top of the page.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The bar shows <strong>Διαχείριση</strong> (or <strong>Admin</strong> for an English-locale user) linking to <code>/studio</code>, and <strong>Επεξεργασία</strong>/<strong>Edit</strong> linking to <code>/studio/page/&lt;id&gt;?locale=el</code>. Both open the right admin screen.</p>
+      <p class="ref">Ref: <code>src/lib/admin-bar.ts</code> · <code>src/components/admin-bar/AdminBar.tsx</code> · <code>src/components/admin-bar/AdminEditTarget.tsx</code></p>
+    </article>
+
+    <article class="tc" id="SET-057" data-priority="P3">
+      <h3>Moved admin keeps its security headers</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> A production build (<code>npm run build</code> then <code>npm run start</code>) with <code>ADMIN_PATH=studio</code> set before the build and start.</p>
+      <ol class="steps">
+        <li>Run <code>curl -s -I http://localhost:3000/studio/login</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>Content-Security-Policy</code> contains <code>https://www.google.com https://www.gstatic.com</code> in <code>script-src</code> and a <code>frame-src 'self' https://www.google.com</code> directive; <code>Cross-Origin-Embedder-Policy: unsafe-none</code>.</p>
+      <p class="ref">Ref: <code>next.config.ts</code> (<code>ADMIN_SEGMENT</code>, <code>adminSecurityHeaders</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-058" data-priority="P3">
+      <h3>An invalid ADMIN_PATH falls back to /admin</h3>
+      <ol class="steps">
+        <li>Set <code>ADMIN_PATH=cms/panel</code>, restart, open <code>/admin</code> and <code>/cms/panel</code>.</li>
+        <li>Check the server terminal.</li>
+        <li>Set <code>ADMIN_PATH=admin</code> and restart.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The admin is served at <code>/admin</code>; <code>/cms/panel</code> is a public not-found page. The log shows <code>[cms] ADMIN_PATH "cms/panel" is not a plain URL slug ([A-Za-z0-9_-]) — falling back to "admin".</code></p>
+      <p class="ref">Ref: <code>src/cms/core/paths.ts</code> (<code>ADMIN_SEGMENT_PATTERN</code>) · <code>next.config.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-locks">
+    <h2>Realtime edit-lock relay</h2>
+    <p class="intro">For local runs set <code>CMS_LOCK_INTERNAL_SECRET</code> (32+ characters, e.g. <code>openssl rand -hex 32</code>) and <code>NEXT_PUBLIC_CMS_LOCK_WS_URL=ws://localhost:8081</code> in <code>.env.local</code>, use <code>npm run dev</code>, and open the admin at exactly <code>http://localhost:3002</code>. You need a second superadmin: <code>npm run db:seed-admin -- qa2@example.com 'Qa-Second-2026!' 'QA Second'</code>.</p>
+
+    <article class="tc" id="SET-059" data-priority="P3">
+      <h3>Relay refuses to start without a proper secret</h3>
+      <ol class="steps">
+        <li>With <code>CMS_LOCK_INTERNAL_SECRET</code> blank, run <code>npm run locks</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> It prints <code>[locks] CMS_LOCK_INTERNAL_SECRET missing or under 32 chars — refusing to start.</code> and exits.</p>
+      <p class="ref">Ref: <code>src/cms/realtime/lock-server.mjs</code></p>
+    </article>
+
+    <article class="tc" id="SET-060" data-priority="P2">
+      <h3>Start the relay</h3>
+      <ol class="steps">
+        <li>With the secret set, restart <code>npm run dev</code>, then run <code>npm run locks</code> in a second terminal.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> It stays running and prints <code>[locks] ws://127.0.0.1:8081/_ws/locks → app http://127.0.0.1:3002, origin http://localhost:3002, ttl 60s</code>.</p>
+      <p class="ref">Ref: <code>src/cms/realtime/lock-server.mjs</code> · <code>package.json</code> (<code>locks</code>) · docs/dev-guides/10-settings-cron-operations.md §3.6</p>
+    </article>
+
+    <article class="tc" id="SET-061" data-priority="P2">
+      <h3>Two editors on one document see the lock</h3>
+      <ol class="steps">
+        <li>Browser A: sign in as <code>qa-admin@example.com</code>, open <strong>Pages</strong> → <strong>About</strong>.</li>
+        <li>Browser B (other browser or private window): sign in as <code>qa2@example.com</code>, open the same page.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Browser B shows an amber banner starting <code>QA Admin is editing this</code> (followed by when they started) with a <strong>Take over editing</strong> button. Browser A shows no banner. Closing browser A's tab clears the banner in B within about a minute.</p>
+      <p class="ref">Ref: <code>src/cms/admin/locks/EditLockBanner.tsx</code> · <code>src/cms/admin/locks/EditLockProvider.tsx</code></p>
+    </article>
+
+    <article class="tc" id="SET-062" data-priority="P2">
+      <h3>Relay down: editing still works</h3>
+      <ol class="steps">
+        <li>Stop <code>npm run locks</code> (Ctrl+C), keep the app running with the secret set.</li>
+        <li>Reload a page editor, change the title, click <strong>Save EL</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> A grey note reads <code>Live editing status is unavailable, so this page cannot tell you if someone else has this open. You can still edit and save as normal.</code> The save succeeds (<code>EL saved.</code>).</p>
+      <p class="ref">Ref: <code>src/cms/admin/locks/EditLockBanner.tsx</code> · <code>src/cms/core/locks/config.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-063" data-priority="P3">
+      <h3>Locking switched off entirely</h3>
+      <ol class="steps">
+        <li>Blank <code>CMS_LOCK_INTERNAL_SECRET</code>, restart the app.</li>
+        <li>Open the same page in browsers A and B and save in both.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> No lock banner and no “unavailable” note in either browser; both saves work (the second may warn about a newer version, which is the concurrency check, not a lock).</p>
+      <p class="ref">Ref: <code>src/cms/core/locks/config.ts</code> (<code>locksEnabled</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-064" data-priority="P3">
+      <h3>Relay rejects a foreign origin</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Relay running.</p>
+      <ol class="steps">
+        <li>Run <code>curl -s -i -H 'Origin: https://evil.example' -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' http://127.0.0.1:8081/_ws/locks</code>.</li>
+        <li>Repeat with <code>Origin: http://localhost:3002</code> and no cookie.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>403 Forbidden</code>. Step 2: <code>401 Unauthorized</code>. Neither upgrades to <code>101 Switching Protocols</code>.</p>
+      <p class="ref">Ref: <code>src/cms/realtime/lock-server.mjs</code> (<code>verifyClient</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-065" data-priority="P3">
+      <h3>dev:all starts app and relay together</h3>
+      <ol class="steps">
+        <li>Stop both processes. Run <code>npm run dev:all</code>.</li>
+        <li>Stop it with Ctrl+C and check nothing still listens: <code>curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3002/api/cms/auth/me</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both the Next dev server and the <code>[locks]</code> start line appear. After Ctrl+C the curl fails to connect (prints <code>000</code>): no orphan server keeps port 3002.</p>
+      <p class="ref">Ref: <code>scripts/dev-all.mjs</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-update">
+    <h2>CMS version &amp; updater</h2>
+    <p class="intro">Run in a clean git checkout of the <code>CMS</code> branch (no local changes). These cases only build a package and do a dry run; never add <code>--apply</code> on a shared checkout, and never use <code>--bump</code> (it commits and tags).</p>
+
+    <article class="tc" id="SET-066" data-priority="P2">
+      <h3>The checkout records its CMS version</h3>
+      <ol class="steps">
+        <li>Open <code>src/cms/version.json</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> It contains only <code>{"version": "1.0.0"}</code> (or the version stated in the release notes you are testing).</p>
+      <p class="ref">Ref: <code>src/cms/version.json</code> · docs/dev-guides/01-architecture.md §2</p>
+    </article>
+
+    <article class="tc" id="SET-067" data-priority="P2">
+      <h3>Build an update package without committing</h3>
+      <ol class="steps">
+        <li>Run <code>npm run cms:release -- --out /tmp/cms-qa</code>.</li>
+        <li>Run <code>git status</code> and <code>git log -1 --oneline</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> It prints <code>Built /tmp/cms-qa/cms-update-1.0.0.zip</code>, the version, the short commit and a <code>sha256</code>, plus the two install commands. <code>git status</code> is clean and the last commit is unchanged (no bump without <code>--bump</code>).</p>
+      <p class="ref">Ref: <code>scripts/cms-release.mjs</code></p>
+    </article>
+
+    <article class="tc" id="SET-068" data-priority="P2">
+      <h3>Dry run on the same version reports up to date</h3>
+      <ol class="steps">
+        <li>Run <code>npm run cms:update -- /tmp/cms-qa/cms-update-1.0.0.zip</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Output: <code>CMS update 1.0.0 (commit …, built …)</code>, <code>This site runs 1.0.0.</code>, then <code>This site already runs 1.0.0. Pass --reinstall to install it again.</code> Nothing is written (<code>git status</code> clean).</p>
+      <p class="ref">Ref: <code>src/cms/update/cli.mjs</code> · <code>src/cms/update/plan.mjs</code> · <code>src/cms/update/install.mjs</code></p>
+    </article>
+
+    <article class="tc" id="SET-069" data-priority="P2">
+      <h3>Dry-run plan with --reinstall writes nothing</h3>
+      <ol class="steps">
+        <li>Run <code>npm run cms:update -- /tmp/cms-qa/cms-update-1.0.0.zip --reinstall</code>.</li>
+        <li>Run <code>git status</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> A plan with the lines <code>Core            N file(s) to write, 0 to delete</code>, <code>Core tests</code>, <code>New storefront</code>, <code>Unchanged</code>, and ending <code>Dry run — nothing was written. Add --apply to install.</code> <code>git status</code> is still clean and <code>src/cms/version.json</code> is unchanged.</p>
+      <p class="ref">Ref: <code>src/cms/update/install.mjs</code> (<code>report</code>, <code>runInstall</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-070" data-priority="P3">
+      <h3>Updater rejects bad input</h3>
+      <ol class="steps">
+        <li>Run <code>npm run cms:update</code> with no file, then <code>echo $?</code>.</li>
+        <li>Run <code>npm run cms:update -- /tmp/cms-qa/cms-update-1.0.0.zip --yes</code>.</li>
+        <li>Run <code>echo hello &gt; /tmp/cms-qa/fake.zip</code> then <code>npm run cms:update -- /tmp/cms-qa/fake.zip</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: <code>Usage: npm run cms:update -- &lt;update.zip&gt; [--apply] …</code>, exit code 2.</li>
+        <li>Step 2: <code>Unknown option(s): --yes</code> plus the usage, non-zero exit.</li>
+        <li>Step 3: an error beginning <code>Not a valid update archive</code> (or <code>Not a CMS update</code>), non-zero exit, nothing written.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/update/cli.mjs</code> · <code>src/cms/update/zip.mjs</code> · <code>src/cms/update/manifest.mjs</code></p>
+    </article>
+
+    <article class="tc" id="SET-071" data-priority="P3">
+      <h3>--apply refuses a dirty checkout</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> A throw-away copy of the checkout (for example <code>git worktree add /tmp/cms-qa-wt CMS</code>), never your working copy.</p>
+      <ol class="steps">
+        <li>In the copy, create an untracked file: <code>echo x &gt; qa-dirty.txt</code>.</li>
+        <li>Run <code>npm run cms:update -- /tmp/cms-qa/cms-update-1.0.0.zip --reinstall --apply</code> from inside the copy.</li>
+        <li>Delete the copy afterwards (<code>git worktree remove --force /tmp/cms-qa-wt</code>).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> It prints the plan, then fails with <code>… is not a clean git checkout. Commit or stash first, …</code>. No core file changes (<code>git status</code> shows only <code>qa-dirty.txt</code>), and no migration runs.</p>
+      <p class="ref">Ref: <code>src/cms/update/install.mjs</code> (<code>isCleanGit</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-072" data-priority="P3">
+      <h3>Release refuses a dirty tree</h3>
+      <ol class="steps">
+        <li>In the working copy create an untracked file <code>qa-dirty.txt</code>.</li>
+        <li>Run <code>npm run cms:release -- --out /tmp/cms-qa</code>.</li>
+        <li>Delete <code>qa-dirty.txt</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>The working tree has uncommitted changes. A release must be exactly a commit — commit or stash first.</code> and a non-zero exit; no zip is written.</p>
+      <p class="ref">Ref: <code>scripts/cms-release.mjs</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-headers">
+    <h2>Security headers &amp; robots.txt</h2>
+    <p class="intro">The Content-Security-Policy is only sent by a production build (<code>npm run build</code> + <code>npm run start</code>, port 3000) or on the test environment. The other headers are sent in dev too.</p>
+
+    <article class="tc" id="SET-073" data-priority="P1">
+      <h3>Admin responses carry the security headers</h3>
+      <ol class="steps">
+        <li>Against the production build or the test environment run <code>curl -s -I http://localhost:3000/admin/login</code> (use the environment's URL and admin path).</li>
+      </ol>
+      <ul class="exp">
+        <li>Present: <code>X-Content-Type-Options: nosniff</code>, <code>X-Frame-Options: DENY</code>, <code>Referrer-Policy: strict-origin-when-cross-origin</code>, <code>Cross-Origin-Opener-Policy: same-origin</code>, <code>Cross-Origin-Resource-Policy: same-site</code>, <code>Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(), usb=(), interest-cohort=()</code>.</li>
+        <li><code>Cross-Origin-Embedder-Policy: unsafe-none</code> (admin only, so reCAPTCHA works).</li>
+        <li><code>Content-Security-Policy</code> includes <code>default-src 'self'</code>, <code>frame-ancestors 'none'</code>, <code>object-src 'none'</code>, the Google reCAPTCHA hosts and <code>frame-src 'self' https://www.google.com</code>.</li>
+        <li>No <code>X-Powered-By</code> header.</li>
+      </ul>
+      <p class="ref">Ref: <code>next.config.ts</code> (<code>baseSecurityHeaders</code>, <code>ADMIN_CSP</code>, <code>poweredByHeader</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-074" data-priority="P2">
+      <h3>Public pages use the stricter site policy</h3>
+      <ol class="steps">
+        <li>Run <code>curl -s -I http://localhost:3000/about</code> on the production build.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Same base headers as the admin, but <code>Cross-Origin-Embedder-Policy: credentialless</code>, and a <code>Content-Security-Policy</code> with no <code>www.gstatic.com</code> and no <code>frame-src</code> directive. No <code>X-Powered-By</code>.</p>
+      <p class="ref">Ref: <code>next.config.ts</code> (<code>PRODUCTION_CSP</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-075" data-priority="P3">
+      <h3>Dev server sends headers but no CSP; API responses are covered</h3>
+      <ol class="steps">
+        <li>With <code>npm run dev</code>, run <code>curl -s -I http://localhost:3002/admin/login</code>.</li>
+        <li>Run <code>curl -s -D - -o /dev/null http://localhost:3002/api/cms/auth/me</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>X-Frame-Options: DENY</code> and the other base headers, but no <code>Content-Security-Policy</code> (dev-only by design). Step 2: status 401 and the same base headers (<code>X-Content-Type-Options</code>, <code>X-Frame-Options</code>, …) on the API response.</p>
+      <p class="ref">Ref: <code>next.config.ts</code> (<code>IS_DEV</code>, <code>source: '/:path*'</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-076" data-priority="P1">
+      <h3>robots.txt blocks everything on a non-production origin</h3>
+      <ol class="steps">
+        <li>On the dev server or the test environment open <code>/robots.txt</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Exactly one rule group: <code>User-Agent: *</code> with <code>Disallow: /</code>, plus a <code>Host:</code> line with this environment's origin. No <code>Sitemap:</code> line and no <code>Allow: /</code>.</p>
+      <p class="ref">Ref: <code>src/app/robots.ts</code> · <code>src/cms/core/paths.ts</code> (<code>isProductionHost</code>) · docs/STAGING-SETUP.md §1</p>
+    </article>
+
+    <article class="tc" id="SET-077" data-priority="P3">
+      <h3>robots.txt on a production-origin build</h3>
+      <ol class="steps">
+        <li>Build with the production origin: <code>NEXT_PUBLIC_SITE_URL=https://example.com npm run build</code> (the value of <code>url</code> in <code>src/site.brand.ts</code>), then <code>npm run start</code>.</li>
+        <li>Run <code>curl -s http://localhost:3000/robots.txt</code>.</li>
+        <li>Rebuild with the normal value afterwards.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>User-Agent: *</code> with <code>Allow: /</code>, <code>Disallow: /api/</code> and <code>Disallow: /admin/</code>, the same rules repeated for GPTBot, ChatGPT-User, OAI-SearchBot, ClaudeBot, anthropic-ai, PerplexityBot and Google-Extended, and <code>Sitemap: https://example.com/sitemap.xml</code>.</p>
+      <p class="ref">Ref: <code>src/app/robots.ts</code> (<code>robotsRules</code>) · <code>src/site.config.ts</code> (<code>productionOrigin</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-078" data-priority="P3">
+      <h3>A build without NEXT_PUBLIC_SITE_URL must not be indexable</h3>
+      <ol class="steps">
+        <li>Remove <code>NEXT_PUBLIC_SITE_URL</code> from <code>.env.local</code> and the shell, run <code>npm run build</code> and <code>npm run start</code>.</li>
+        <li>Run <code>curl -s http://localhost:3000/robots.txt</code>.</li>
+        <li>Restore the value and rebuild.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>Disallow: /</code> for all agents, because this build is not the live site. If the output instead has <code>Allow: /</code> and a production sitemap, mark Fail: the site URL falls back to the brand's production URL, which makes a misconfigured staging build indexable.</p>
+      <p class="ref">Ref: <code>src/lib/seo/schemas.ts</code> (<code>SITE_URL</code>) · <code>src/app/robots.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-docs">
+    <h2>Setup documentation &amp; user guides</h2>
+
+    <article class="tc" id="SET-079" data-priority="P2">
+      <h3>The six Greek user-guide PDFs are present and readable</h3>
+      <ol class="steps">
+        <li>List <code>docs/user-guides/</code>.</li>
+        <li>Open each PDF.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Six files: <code>01-vasika.pdf</code> (Τα βασικά), <code>02-periexomeno.pdf</code> (Περιεχόμενο), <code>03-katastima.pdf</code> (Ηλεκτρονικό κατάστημα), <code>04-kratiseis.pdf</code> (Κρατήσεις), <code>05-formes-seo-marketing.pdf</code> (Φόρμες, SEO &amp; marketing), <code>06-rythmiseis-xristes.pdf</code> (Ρυθμίσεις &amp; χρήστες). Each opens, Greek text is readable (no boxes or missing glyphs), and the title on page 1 matches the <code>title:</code> line of the matching file in <code>docs/user-guides/src/</code>.</p>
+      <p class="ref">Ref: <code>docs/user-guides/</code> · <code>docs/user-guides/_build/build.mjs</code></p>
+    </article>
+
+    <article class="tc" id="SET-080" data-priority="P3">
+      <h3>User guides describe the current Settings screens</h3>
+      <ol class="steps">
+        <li>Open <code>06-rythmiseis-xristes.pdf</code>, find the Modules and Languages sections.</li>
+        <li>Compare with <strong>Settings</strong> → <strong>Modules</strong> and <strong>Languages</strong> on screen.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The guide names the same tabs and controls as the screen (<strong>Modules</strong>, <strong>Languages</strong>, <strong>Editing</strong>, <strong>Public</strong>) and its description of Editing/Public matches the behaviour tested above. Note every label that differs.</p>
+      <p class="ref">Ref: <code>docs/user-guides/src/06-rythmiseis-xristes.md</code> · <code>src/cms/admin/SettingsForm.tsx</code></p>
+    </article>
+
+    <article class="tc" id="SET-081" data-priority="P3">
+      <h3>Every command in the setup guides exists</h3>
+      <ol class="steps">
+        <li>Collect every <code>npm run …</code> command in <code>docs/LOCAL_SETUP.md</code> and <code>docs/STAGING-SETUP.md</code>.</li>
+        <li>Run <code>npm run</code> (no arguments) to list the available scripts and compare.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Every command in both documents is listed by <code>npm run</code>. Record each one that is missing as a documentation defect.</p>
+      <p class="ref">Ref: <code>package.json</code> · docs/STAGING-SETUP.md (“First deployment”) · docs/dev-guides/10-settings-cron-operations.md §7.3</p>
+    </article>
+  </section>
+
+</main>
+<footer class="page">Checklist 01 of 12. Results are saved in this browser only; use Export before clearing browser data. Restore <code>.env.local</code> (ADMIN_PATH, idle minutes, secrets, site URL) after the suites that change it.</footer>
+</body>
+</html>

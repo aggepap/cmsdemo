@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Μεταφορά δεδομένων: εξαγωγή &amp; εισαγωγή</title>
+<link rel="stylesheet" href="../qa.css">
+<script src="../qa.js" defer></script>
+</head>
+<body>
+<nav class="crumbs"><a href="index.html">Χειροκίνητος έλεγχος CMS</a></nav>
+<header class="page">
+  <h1>12 · Μεταφορά δεδομένων: εξαγωγή &amp; εισαγωγή</h1>
+  <p class="scope">Μεταφορά περιεχομένου, αρχείων πολυμέσων και ρυθμίσεων από ένα site αυτού του CMS σε άλλο, μέσω της οθόνης <strong>Export / Import</strong>. Καλύπτονται: ποιος ανοίγει την οθόνη και ποιος μεταφέρει κάθε είδος δεδομένων, η επιλογή ολόκληρων ομάδων ή μεμονωμένων στοιχείων, οι εξαρτήσεις που προστίθενται και όσες αφήνετε έξω, η δημιουργία και λήψη πακέτου, τι περιέχει ένα πακέτο (και τι ποτέ), το ανέβασμα σε κομμάτια και η συνέχισή του, η απόρριψη κατεστραμμένων ή κακόβουλων πακέτων, οι γλώσσες, οι συγκρούσεις και η επιλογή ανά στοιχείο, η δοκιμαστική εκτέλεση, η εκτέλεση, η διακοπή και η συνέχιση μιας εισαγωγής, τι καταλήγει στο site (συνδέσεις που αντιστοιχίζονται ξανά, αντίγραφα, αντικαταστάσεις, πρόχειρα), η αναφορά, οι εγγραφές στο αρχείο ενεργειών και η εργασία καθαρισμού. Επίσης οι πίνακες ρυθμίσεων: scripts, κατηγορίες cookies, ζώνες μεταφορικών, τοποθεσίες κριτικών Google, ανακατευθύνσεις και ρυθμίσεις SEO ανά διεύθυνση. Επίσης πρόσωπα και συναλλαγές: πελάτες, εγγεγραμμένοι και αποκλεισμοί newsletter, κριτικές προϊόντων, παραγγελίες, κρατήσεις, διαθεσιμότητα, ρόλοι και χρήστες του admin — με τις προστασίες για προσωπικά δεδομένα και κωδικούς. Οι δωροκάρτες σκόπιμα δεν μεταφέρονται ποτέ. Χρειάζεστε: δύο δοκιμαστικά site σε αυτή την έκδοση (τα λέμε <strong>SOURCE</strong> και <strong>TARGET</strong>· για τις περισσότερες περιπτώσεις αρκεί και ένα site που εισάγει τη δική του εξαγωγή), ένα πρόγραμμα βάσης δεδομένων για το καθένα, τερματικό με <code>curl</code>, <code>unzip</code> και <code>sha256sum</code>, και δύο browsers (ή ένα κανονικό και ένα ιδιωτικό παράθυρο).</p>
+</header>
+<main>
+
+  <section class="suite" id="suite-prep">
+    <h2>Πριν ξεκινήσετε</h2>
+    <p class="intro">Η λίστα ελέγχου 01 πρέπει να έχει ολοκληρωθεί και στα δύο site. Συνδεθείτε ως superadmin <code>qa-admin@example.com</code>, εκτός αν η περίπτωση λέει κάτι άλλο. Πριν από τις ενότητες εισαγωγής πάρτε αντίγραφο ασφαλείας της βάσης του TARGET (<code>mysqldump --single-transaction</code>, βλ. λίστα 10)· η XFR-062 το επαναφέρει.</p>
+    <div class="callout">
+      <p><strong>Δοκιμαστικά δεδομένα στο SOURCE.</strong> Δημιουργήστε, και στις δύο γλώσσες: κατηγορία προϊόντων <code>qa-shoes</code> με γονική κατηγορία <code>qa-root</code> και εικόνα· πίνακα μεγεθών <code>qa-chart</code>· δύο προϊόντα <code>qa-red</code> και <code>qa-blue</code>, το καθένα στην <code>qa-shoes</code>, με τον πίνακα μεγεθών, gallery δύο εικόνων, και το καθένα να δηλώνει το άλλο ως συνοδευτικό/σχετικό προϊόν· σελίδα <code>qa-page</code> της οποίας το κείμενο περιέχει την παράγραφο <code>[popup id="N"]</code> για ένα υπάρχον popup N και σύνδεσμο σε μία από τις εικόνες· ένα δικό σας πεδίο προϊόντων που ισχύει μόνο για την <code>qa-shoes</code>· λογότυπο στο <strong>Settings</strong> → <strong>Branding</strong>.</p>
+      <p><strong>Τερματικό.</strong> <code>BASE=http://localhost:3002</code> και το cookie συνεδρίας του admin στο <code>S</code>, όπως περιγράφεται στη λίστα 05.</p>
+      <p><strong>Δεύτερος ρόλος.</strong> Σε κάθε site δημιουργήστε ρόλο <code>qa-content</code> με <em>Access</em>, <em>View content</em>, <em>Edit content</em>, <em>Export site data</em>, <em>Import site data</em> (χωρίς media, settings ή publish) και χρήστη <code>qa-content@example.com</code> με αυτόν.</p>
+    </div>
+  </section>
+
+  <section class="suite" id="suite-access">
+    <h2>Πρόσβαση και δικαιώματα</h2>
+
+    <article class="tc" id="XFR-001" data-priority="P1">
+      <h3>Η οθόνη εμφανίζεται στο μενού μόνο σε όποιον επιτρέπεται να τη χρησιμοποιήσει</h3>
+      <ol class="steps">
+        <li>Ως superadmin κοιτάξτε την ομάδα <strong>System</strong> της πλαϊνής μπάρας και ανοίξτε το <strong>Export / Import</strong>.</li>
+        <li>Συνδεθείτε με χρήστη του οποίου ο ρόλος έχει μόνο <em>Access</em> και <em>View content</em>. Κοιτάξτε την πλαϊνή μπάρα και μετά ανοίξτε απευθείας το <code>/admin/transfer</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: το στοιχείο υπάρχει με εικονίδιο δύο βελών· η σελίδα έχει τίτλο <strong>Export / Import</strong> και καρτέλες <strong>Export</strong> και <strong>Import</strong>.</li>
+        <li>Βήμα 2: δεν υπάρχει στο μενού· η απευθείας διεύθυνση δείχνει τη σελίδα 403.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/layout.tsx</code> · <code>src/app/admin/(shell)/transfer/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="XFR-002" data-priority="P1">
+      <h3>Τα δικαιώματα υπάρχουν και οι editors δεν τα παίρνουν</h3>
+      <ol class="steps">
+        <li>Ανοίξτε <strong>Roles</strong> → επεξεργασία του ρόλου <code>editor</code>. Βρείτε την περιοχή <strong>Site data</strong> και περάστε τον δείκτη από κάθε «i».</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τρία κουτάκια: <em>Export site data</em>, <em>Import site data</em>, <em>Move admin accounts in site data</em>, το καθένα με εξήγηση· κανένα δεν είναι τσεκαρισμένο για τον <code>editor</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/auth/permissions.ts</code> · <code>permission-labels.ts</code> · <code>src/cms/db/seeds/roles.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-003" data-priority="P1">
+      <h3>Κάθε είδος δεδομένων χρειάζεται και το δικό του δικαίωμα</h3>
+      <ol class="steps">
+        <li>Συνδεθείτε ως <code>qa-content@example.com</code> και ανοίξτε <strong>Export / Import</strong> → <strong>Export</strong>.</li>
+        <li>Με αυτή τη συνεδρία στο <code>S</code>: <code>curl -s -X POST "$BASE/api/cms/transfer/exports/preview" -b "cms_session=$S" -H 'Content-Type: application/json' -H "Origin: $BASE" -d '{"selection":{"groups":{"settings":"all"}}}' -w '\n%{http_code}\n'</code></li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: προσφέρονται μόνο οι συλλογές περιεχομένου· όχι τα <strong>Media files</strong> και <strong>Settings</strong>.</li>
+        <li>Βήμα 2: <code>403</code> με «You do not have permission to export this.»</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/groups.ts</code> (<code>canExportGroup</code>) · <code>routes.ts</code> (<code>assertExportable</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-004" data-priority="P2">
+      <h3>Η εργασία άλλου χρήστη μοιάζει με ανύπαρκτη</h3>
+      <ol class="steps">
+        <li>Ως superadmin ξεκινήστε ανέβασμα εισαγωγής (XFR-020 βήμα 1) και σημειώστε το id της από την καρτέλα δικτύου του browser.</li>
+        <li>Ως <code>qa-content@example.com</code>: <code>curl -s "$BASE/api/cms/transfer/imports/&lt;id&gt;" -b "cms_session=$S" -w '\n%{http_code}\n'</code>, και μετά το ίδιο με τυχαίο uuid.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και τα δύο απαντούν <code>404</code> με το ίδιο μήνυμα <code>No such transfer.</code></p>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/routes.ts</code> (<code>stagingToApiError</code>) · <code>staging.ts</code> (<code>meta</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-export">
+    <h2>Εξαγωγή</h2>
+
+    <article class="tc" id="XFR-010" data-priority="P1">
+      <h3>Επιλογή μεμονωμένων στοιχείων, με αναζήτηση και σελίδες</h3>
+      <ol class="steps">
+        <li>Στο SOURCE ανοίξτε <strong>Export</strong>. Για τα Products επιλέξτε <strong>Choose items…</strong>.</li>
+        <li>Αναζητήστε <code>qa-</code>, τσεκάρετε το <code>qa-red</code>. Αν η λίστα έχει πάνω από μία σελίδα, μετακινηθείτε στις σελίδες.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η αναζήτηση περιορίζει τη λίστα· κάθε γραμμή δείχνει γλώσσες και κατάσταση· δίπλα στο <strong>Choose items…</strong> εμφανίζεται «(1 chosen)»· το <strong>Review export</strong> γίνεται διαθέσιμο.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/transfer/ItemPicker.tsx</code> · <code>GET /api/cms/transfer/catalog</code></p>
+    </article>
+
+    <article class="tc" id="XFR-011" data-priority="P1">
+      <h3>Ό,τι χρειάζεται ένα προϊόν έρχεται μαζί</h3>
+      <ol class="steps">
+        <li>Συνεχίζοντας από την XFR-010: πατήστε <strong>Review export</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Στο «Added because your selection needs them» εμφανίζονται τα <code>qa-shoes</code>, <code>qa-root</code>, <code>qa-chart</code>, <code>qa-blue</code> (είναι συνοδευτικό του <code>qa-red</code>) και όλες οι εικόνες των δύο προϊόντων και της κατηγορίας. Η γραμμή συνόλων τα μετρά ανά ομάδα. Αν επιλέξετε μόνο μια <em>κατηγορία</em>, τα προϊόντα της <strong>δεν</strong> έρχονται.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/export/collect.ts</code> (<code>exportClosure</code>) · <code>refs.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-012" data-priority="P2">
+      <h3>Αφήστε μια εξάρτηση έξω</h3>
+      <ol class="steps">
+        <li>Στην ανασκόπηση ξετσεκάρετε το <code>qa-chart</code>.</li>
+        <li>Πατήστε <strong>Include it</strong> δίπλα του στο «Referenced but left out».</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: η προεπισκόπηση ανανεώνεται· το <code>qa-chart</code> μεταφέρεται στο «Referenced but left out» και το σύνολο μειώνεται κατά ένα. Βήμα 2: επιστρέφει στις εξαρτήσεις.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/transfer/ExportPanel.tsx</code> · <code>wizard-state.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-013" data-priority="P1">
+      <h3>Δημιουργία και λήψη</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>Build the package</strong>, περιμένετε τη μπάρα, μετά <strong>Download the package</strong>.</li>
+        <li><code>curl -sI "$BASE/api/cms/transfer/exports/&lt;id&gt;/download" -b "cms_session=$S"</code></li>
+        <li>Ανοίξτε <strong>Audit log</strong>, φίλτρο <strong>Site configuration</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Μια μπάρα προόδου μετρά τα στοιχεία· μετά κατεβαίνει το <code>&lt;όνομα-site&gt;-export-&lt;ημερομηνία&gt;.zip</code>.</li>
+        <li>Headers: <code>Content-Type: application/zip</code>, <code>Content-Disposition: attachment; …</code>, <code>Cache-Control: no-store</code>.</li>
+        <li>Το αρχείο ενεργειών δείχνει «Downloaded a site data export» με την επιλογή.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/export/build.ts</code> · <code>routes.ts</code> (<code>transferExportDownloadRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-014" data-priority="P1">
+      <h3>Τι περιέχει ένα πακέτο, και τι ποτέ</h3>
+      <ol class="steps">
+        <li><code>unzip -l export.zip</code>, μετά <code>unzip -p export.zip manifest.json</code>.</li>
+        <li>Εξαγάγετε και <strong>Settings</strong> → <strong>Everything</strong> και τρέξτε <code>unzip -p export.zip 'data/settings/*' | grep -c -i -E 'secret|baseline|oauthState|password'</code>.</li>
+        <li>Για ένα αρχείο δεδομένων του manifest: <code>unzip -p export.zip data/documents/product/0001.jsonl | sha256sum</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Περιεχόμενα: <code>manifest.json</code>, αρχεία <code>data/…/0001.jsonl</code>, <code>data/stubs.json</code>, <code>media/&lt;uuid&gt;</code> (και τα συνοδευτικά <code>.avif</code>).</li>
+        <li>Το manifest έχει <code>"format": "cms-transfer"</code>, <code>formatVersion</code>, <code>cmsVersion</code>, τις γλώσσες της πηγής, πλήθος ανά ομάδα και <code>sha256</code> ανά αρχείο· το βήμα 3 συμφωνεί.</li>
+        <li>Το βήμα 2 τυπώνει <code>0</code>: κανένας κωδικός υπηρεσίας, καμία βάση επεξεργασίας, καμία κατάσταση OAuth. Κλειδιά πληρωμών, tokens Google και κωδικοί πρόσβασης δεν μπαίνουν ποτέ σε πακέτο.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/format.ts</code> · <code>settings-refs.ts</code> · docs/dev-guides/10-settings-cron-operations.md §3.7</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-upload">
+    <h2>Ανέβασμα και έλεγχοι</h2>
+
+    <article class="tc" id="XFR-020" data-priority="P1">
+      <h3>Ανέβασμα πακέτου</h3>
+      <ol class="steps">
+        <li>Στο TARGET ανοίξτε <strong>Import</strong>. Διαβάστε την ειδοποίηση επάνω. Επιλέξτε το zip της XFR-013 και πατήστε <strong>Upload and check</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η ειδοποίηση ζητά πρώτα αντίγραφο ασφαλείας της βάσης. Μια μπάρα προόδου μετρά megabytes· μετά η σύνοψη του πακέτου δείχνει όνομα και διεύθυνση του site προέλευσης, ημερομηνία εξαγωγής και έκδοση CMS, την αντιστοίχιση γλωσσών και ένα πλαίσιο ανά ομάδα με «N in the package, M already here».</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/transfer/ImportPanel.tsx</code> · <code>chunked-upload.ts</code> · <code>import/analyze.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-021" data-priority="P2">
+      <h3>Ένα διακομμένο ανέβασμα συνεχίζει από εκεί που σταμάτησε</h3>
+      <ol class="steps">
+        <li>Χρησιμοποιήστε πακέτο πάνω από 20 MB (εξαγωγή όλων των media). Ξεκινήστε το ανέβασμα και ανανεώστε τη σελίδα στη μέση.</li>
+        <li>Στο <strong>Your recent imports</strong> πατήστε <strong>Open</strong>, επιλέξτε ξανά το ίδιο αρχείο και πατήστε <strong>Upload and check</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Στο βήμα 2 πρώτα ζητά να επιλέξετε ξανά το αρχείο· μετά η μπάρα ξεκινά από εκεί που σταμάτησε και όχι από το 0, και εμφανίζεται η σύνοψη.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/staging.ts</code> (<code>appendChunk</code>) · <code>PUT …/chunk?offset=N</code></p>
+    </article>
+
+    <article class="tc" id="XFR-022" data-priority="P1">
+      <h3>Κατεστραμμένα και κακόβουλα πακέτα απορρίπτονται</h3>
+      <ol class="steps">
+        <li>Ανεβάστε ένα τυχαίο <code>.zip</code> που δεν είναι εξαγωγή (π.χ. zip με ένα αρχείο κειμένου).</li>
+        <li>Αποσυμπιέστε μια εξαγωγή, αλλάξτε έναν χαρακτήρα σε αρχείο <code>data/…jsonl</code>, συμπιέστε το ξανά και ανεβάστε το.</li>
+        <li>Ανεβάστε zip με καταχώριση <code>../evil.txt</code> (<code>python3 -c "import zipfile;z=zipfile.ZipFile('slip.zip','w');z.writestr('../evil.txt','x')"</code>).</li>
+        <li>Ανεβάστε zip με ένα αρχείο 50 MB από μηδενικά (<code>head -c 50000000 /dev/zero &gt; z; zip bomb.zip z</code>).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Όλα απορρίπτονται με μήνυμα στο κόκκινο πλαίσιο και τίποτα δεν γράφεται στο site: 1 «This is not a site export package (no manifest).»· 2 «… does not match the manifest — the package is damaged.»· 3 «This is not a readable package: Unsafe entry name…»· 4 «… implausible compression ratio.» Κανένα αρχείο <code>evil.txt</code> δεν εμφανίζεται στον server.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/zip-file.ts</code> · <code>import/package.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-023" data-priority="P2">
+      <h3>Πακέτο πάνω από το όριο, ή κομμάτια εκτός σειράς, απορρίπτονται</h3>
+      <ol class="steps">
+        <li><code>curl -s -X POST "$BASE/api/cms/transfer/imports" -b "cms_session=$S" -H 'Content-Type: application/json' -H "Origin: $BASE" -d '{"filename":"big.zip","size":99999999999}' -w '\n%{http_code}\n'</code></li>
+        <li>Ανοίξτε κανονικό ανέβασμα (μέγεθος 20) και στείλτε <code>curl -s -X PUT "$BASE/api/cms/transfer/imports/&lt;id&gt;/chunk?offset=10" -b "cms_session=$S" -H "Origin: $BASE" --data-binary 'abc' -w '\n%{http_code}\n'</code>.</li>
+        <li>Το ίδιο αίτημα με <code>Origin: https://evil.example</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> 1: <code>422</code> «The package is too large (limit … MB).» 2: <code>409</code> με <code>"issues":{"offset":0}</code>. 3: <code>403</code> «Cross-origin request rejected.»</p>
+      <p class="ref">Αναφ.: <code>src/app/api/cms/transfer/imports/[id]/chunk/route.ts</code> · <code>runtime.ts</code> (<code>TRANSFER_LIMITS</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-024" data-priority="P2">
+      <h3>Διαφορετικές γλώσσες και εκδόσεις επισημαίνονται</h3>
+      <ol class="steps">
+        <li>Εισαγάγετε σε site με άλλες γλώσσες από της πηγής (π.χ. απενεργοποιήστε μια γλώσσα στο <strong>Settings</strong> → <strong>Languages</strong> σε αντίγραφο του TARGET, ή χρησιμοποιήστε site μόνο με <code>el</code>).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Μια γραμμή ονομάζει τις γλώσσες που δεν έχει αυτό το site. Στο <strong>Languages</strong> κάθε γλώσσα του πακέτου αντιστοιχίζεται στην ίδια εδώ ή στο <strong>Leave out</strong>. Γραμμές σε γλώσσα που αφέθηκε έξω δεν εισάγονται.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/format.ts</code> (<code>checkCompatibility</code>) · <code>locale-map.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-choose">
+    <h2>Επιλογή και συγκρούσεις</h2>
+
+    <article class="tc" id="XFR-030" data-priority="P1">
+      <h3>Όσα υπάρχουν ήδη εμφανίζονται με επιλογή για το καθένα</h3>
+      <ol class="steps">
+        <li>Στο TARGET βεβαιωθείτε ότι υπάρχει το <code>qa-red</code> (εισαγωγή μία φορά, ή δημιουργία προϊόντος με αυτό το slug). Ανεβάστε ξανά το πακέτο.</li>
+        <li>Για τα Products επιλέξτε <strong>Everything</strong>. Διαβάστε την ενότητα «… that already exist here».</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ένα γενικό select («Unless chosen otherwise below») με <strong>Skip — keep this site’s</strong>, <strong>Overwrite this site’s</strong>, <strong>Import as a copy</strong>· πίνακας με το <code>qa-red</code>, σήμα <strong>Exists here</strong>, με τι ταιριάζει (slug και γλώσσες) και δικό του select που ξεκινά από «Default: …». Οι ρυθμίσεις που υπάρχουν προσφέρουν επιπλέον <strong>Merge — add what is missing</strong>· ποτέ αντίγραφο.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/transfer/ConflictTable.tsx</code> · <code>src/cms/core/transfer/conflicts.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-031" data-priority="P2">
+      <h3>Μια διφορούμενη αντιστοίχιση δεν αντικαθίσταται, ούτε μέσω API</h3>
+      <ol class="steps">
+        <li>Στο TARGET δώστε στην ελληνική γραμμή ενός προϊόντος το slug του προϊόντος A και στην αγγλική γραμμή άλλου προϊόντος το ίδιο slug με την αγγλική του A, ώστε το A του πακέτου να ταιριάζει με δύο διαφορετικά προϊόντα. Ανεβάστε ξανά το πακέτο.</li>
+        <li>Δείτε το A στον πίνακα συγκρούσεων.</li>
+        <li>Στείλτε το plan με παράκαμψη: <code>curl -s -X POST "$BASE/api/cms/transfer/imports/&lt;id&gt;/plan" … -d '{"decisions":{"selection":{"groups":{"documents:product":["&lt;κλειδί A&gt;"]},"optOut":[]},"defaults":{},"overrides":{"&lt;κλειδί A&gt;":"overwrite"}},"options":{"localeMap":{"el":"el","en":"en"},"keepStatus":false,"copiesAsDrafts":true}}' -w '\n%{http_code}\n'</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 2: σήμα <strong>Matches more than one item</strong>· το select προσφέρει μόνο skip και copy. Βήμα 3: <code>422</code> που ονομάζει το στοιχείο: «"overwrite" is not possible for this item.»</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/conflicts.ts</code> (<code>actionsFor</code>, <code>resolveAction</code>) · <code>import/plan.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-032" data-priority="P1">
+      <h3>Η δοκιμαστική εκτέλεση δεν γράφει τίποτα και λέει τι θα γίνει</h3>
+      <ol class="steps">
+        <li>Με τις επιλογές έτοιμες πατήστε <strong>Preview the import</strong>. Στη βάση μετρήστε <code>documents</code>, <code>media_files</code> και <code>site_settings</code> πριν και μετά.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Πλήθη για created / overwritten / copied / merged / skipped· λίστες με όσα έρχονται μαζί, όσα αναφέρονται αλλά δεν εισάγονται («the link will be dropped» αν δεν αντιστοιχεί κάτι εδώ), εγγραφές που δεν εισάγονται, και προειδοποιήσεις (π.χ. για <code>i18n.locales</code> ή πάροχο πληρωμών). Τα πλήθη στη βάση δεν αλλάζουν.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/import/run.ts</code> (<code>planImport</code>) · <code>DryRunSummary.tsx</code></p>
+    </article>
+
+    <article class="tc" id="XFR-033" data-priority="P2">
+      <h3>Χωρίς τα σωστά δικαιώματα, οι ομάδες δεν επιλέγονται</h3>
+      <ol class="steps">
+        <li>Ως <code>qa-content@example.com</code> ανεβάστε πακέτο με ρυθμίσεις και media, επιλέξτε <strong>Settings</strong> → <strong>Everything</strong> και πατήστε <strong>Preview the import</strong>.</li>
+        <li>Επιλέξτε μόνο Products και ξανά προεπισκόπηση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: σφάλμα «You do not have permission to import settings.» Βήμα 2: δουλεύει· οι εικόνες των προϊόντων εμφανίζονται στο «Referenced but not imported» αντί να εισαχθούν.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/import/plan.ts</code> (<code>buildPlan</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-run">
+    <h2>Εκτέλεση εισαγωγής</h2>
+
+    <article class="tc" id="XFR-040" data-priority="P1">
+      <h3>Τα νέα στοιχεία έρχονται με τις συνδέσεις τους στα στοιχεία αυτού του site</h3>
+      <ol class="steps">
+        <li>Σε TARGET χωρίς τα δεδομένα QA εισαγάγετε το πακέτο της XFR-013 με όλα νέα. Εκτελέστε και επιβεβαιώστε.</li>
+        <li>Ανοίξτε το <code>qa-red</code> στο TARGET: κατηγορία, πίνακας μεγεθών, συνοδευτικό προϊόν και gallery. Σε SQL συγκρίνετε το <code>JSON_EXTRACT(data,'$.categories')</code> με το id της <code>qa-shoes</code> στο TARGET.</li>
+        <li>Ελέγξτε <code>SELECT * FROM document_relations WHERE from_id = &lt;id του qa-red&gt;</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Όλα δημιουργούνται· οι δύο γλώσσες κάθε προϊόντος είναι μία ομάδα μετάφρασης· τα προϊόντα είναι πρόχειρα, εκτός αν τσεκαρίστηκε το «Keep published content published» και έχετε <em>Publish content</em>.</li>
+        <li>Το id κατηγορίας στο <code>data</code> είναι το id της <code>qa-shoes</code> στο TARGET, όχι στο SOURCE· ο πίνακας μεγεθών, το <code>qa-blue</code> και κάθε εικόνα βρίσκονται· το <code>document_relations</code> έχει γραμμές για τα πεδία συσχέτισης.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/refs.ts</code> (<code>rewriteData</code>) · <code>import/run.ts</code> (<code>writeDocument</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-041" data-priority="P1">
+      <h3>Το Skip, το Overwrite και το Copy κάνουν αυτό που λένε</h3>
+      <ol class="steps">
+        <li>Στο TARGET αλλάξτε τον τίτλο του <code>qa-red</code>. Εισαγάγετε το ίδιο πακέτο τρεις φορές: πρώτα με <strong>Skip</strong>, μετά <strong>Overwrite</strong>, μετά <strong>Import as a copy</strong> για το <code>qa-red</code>.</li>
+        <li>Μετά την αντικατάσταση ανοίξτε το <code>qa-red</code> → ιστορικό εκδόσεων.</li>
+      </ol>
+      <ul class="exp">
+        <li>Skip: ο τίτλος του TARGET μένει ίδιος· η αναφορά λέει <strong>Skipped</strong>.</li>
+        <li>Overwrite: ο τίτλος είναι του SOURCE· ίδιο id εγγράφου· το ιστορικό έχει νέα έκδοση και η προηγούμενη επαναφέρεται· μια γλώσσα που δεν είχε το TARGET προστίθεται στην ίδια ομάδα.</li>
+        <li>Copy: νέο προϊόν <code>qa-red-2</code> και στις δύο γλώσσες, σε νέα ομάδα μετάφρασης, ως πρόχειρο· το αρχικό δεν αλλάζει.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/import/run.ts</code> · <code>conflicts.ts</code> (<code>nextFreeSlug</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-042" data-priority="P2">
+      <h3>Μια κράτηση που αντιγράφεται παίρνει δικό της ημερολόγιο διαθεσιμότητας</h3>
+      <ol class="steps">
+        <li>Με ενεργό το module κρατήσεων, εξαγάγετε μια εμπειρία με επιλογές και εισαγάγετέ την στο ίδιο site ως αντίγραφο.</li>
+        <li>Συγκρίνετε το <code>JSON_EXTRACT(data,'$.options[*].id')</code> του αρχικού και του αντιγράφου.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τα id επιλογών του αντιγράφου είναι όλα νέα uuid, ίδια σε όλες τις γλώσσες του· του αρχικού δεν αλλάζουν. Το κλείσιμο μιας ημερομηνίας για επιλογή του αντιγράφου δεν κλείνει το αρχικό.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/global-ids.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-043" data-priority="P2">
+      <h3>Τα media δεν διπλασιάζονται ποτέ</h3>
+      <ol class="steps">
+        <li>Εισαγάγετε το ίδιο πακέτο δύο φορές (προϊόντα: Skip τη δεύτερη). Μετρήστε <code>media_files</code> μετά από κάθε εκτέλεση.</li>
+        <li>Στην αναφορά της δεύτερης εκτέλεσης δείτε τις γραμμές των media.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το πλήθος αυξάνεται μόνο την πρώτη φορά. Η δεύτερη αναφέρει τα media ως <strong>Already here</strong>. Οι εικόνες κρατούν την ποιότητά τους (το μέγεθος του <code>/api/cms/media/file/&lt;uuid&gt;</code> είναι ίδιο με του SOURCE).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/media/service.ts</code> (<code>importMediaFile</code>) · <code>transfer/media-plan.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-044" data-priority="P2">
+      <h3>Το κείμενο, τα δικά σας πεδία και οι ρυθμίσεις ακολουθούν τα νέα id</h3>
+      <ol class="steps">
+        <li>Εισαγάγετε την <code>qa-page</code> μαζί με το popup που δείχνει, τις ρυθμίσεις δικών σας πεδίων και το branding (Settings → τα σχετικά κλειδιά → Overwrite).</li>
+        <li>Ανοίξτε την <code>qa-page</code> στο δημόσιο site· ανοίξτε <strong>Settings</strong> → <strong>Fields</strong> για τα προϊόντα· δείτε το λογότυπο.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η σελίδα δείχνει το αντίγραφο του popup στο TARGET (το id στο <code>[popup id="…"]</code> είναι του TARGET) και η συνδεδεμένη εικόνα ανοίγει. Το δικό σας πεδίο ισχύει για την <code>qa-shoes</code> του TARGET. Το λογότυπο εμφανίζεται. Αν αφήσετε το popup έξω, αφαιρείται το id του shortcode, ώστε να μην εμφανιστεί ξένο popup.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/richtext.ts</code> · <code>settings-refs.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-045" data-priority="P2">
+      <h3>Οι συνδέσεις που λείπουν αφαιρούνται και αναφέρονται, ποτέ δεν δείχνουν αλλού</h3>
+      <ol class="steps">
+        <li>Εξαγάγετε το <code>qa-red</code> αφήνοντας έξω το <code>qa-chart</code> (XFR-012). Εισαγάγετε σε TARGET που δεν έχει <code>qa-chart</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το <code>qa-red</code> δημιουργείται με κενό πίνακα μεγεθών· η γραμμή της αναφοράς λέει «1 link(s) had nothing to point to here and were removed.» Αν το TARGET <em>έχει</em> πίνακα μεγεθών <code>qa-chart</code>, το προϊόν συνδέεται με αυτόν.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/import/plan.ts</code> (<code>makeResolver</code>) · <code>run.ts</code> (<code>resolveExisting</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-046" data-priority="P2">
+      <h3>Διακοπή, κλείσιμο καρτέλας, συνέχεια</h3>
+      <ol class="steps">
+        <li>Ξεκινήστε μια μεγάλη εισαγωγή και πατήστε <strong>Stop the import</strong> στη μέση.</li>
+        <li>Ξεκινήστε άλλη μεγάλη εισαγωγή και κλείστε την καρτέλα στη μέση. Ανοίξτε ξανά <strong>Import</strong> → <strong>Your recent imports</strong> → <strong>Open</strong>.</li>
+        <li>Ενώ τρέχει μία εισαγωγή, ξεκινήστε δεύτερη από άλλον browser.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> 1: σταματά μετά το τρέχον στοιχείο· η αναφορά δείχνει τι γράφτηκε και σημειώνει τα υπόλοιπα <strong>Not reached</strong>· το αρχείο ενεργειών έχει «Cancelled a site data import». 2: συνεχίζει από εκεί που σταμάτησε χωρίς να γραφτεί κάτι δύο φορές. 3: η δεύτερη απορρίπτεται με «Another import is running on this site.»</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/import/run.ts</code> (<code>importStep</code>) · <code>staging.ts</code> (<code>acquireLock</code>, <code>requestCancel</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-047" data-priority="P2">
+      <h3>Αναφορά, CSV και αρχείο ενεργειών</h3>
+      <ol class="steps">
+        <li>Στο τέλος μιας εισαγωγής διαβάστε την αναφορά, πατήστε <strong>Download the report (CSV)</strong> και ανοίξτε το σε λογιστικό φύλλο.</li>
+        <li>Ανοίξτε <strong>Audit log</strong> → <strong>Site configuration</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε στοιχείο έχει ομάδα, όνομα, αποτέλεσμα με λέξεις (Created, Overwritten, Copied, Skipped, Already here, Failed) και σημειώσεις. Ένας τίτλος που ξεκινά με <code>=</code> εμφανίζεται ως κείμενο στο λογιστικό φύλλο, όχι ως τύπος. Το αρχείο ενεργειών δείχνει «Started a site data import» και «Finished a site data import» με τα πλήθη.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/transfer/ImportReportView.tsx</code> · <code>src/cms/core/csv.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-048" data-priority="P3">
+      <h3>Η δημοσίευση χρειάζεται το δικαίωμα δημοσίευσης</h3>
+      <ol class="steps">
+        <li>Ως <code>qa-content@example.com</code> (χωρίς <em>Publish content</em>) εισαγάγετε δημοσιευμένα προϊόντα με τσεκαρισμένο το «Keep published content published».</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε προϊόν που εισάγεται είναι πρόχειρο.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/import/run.ts</code> (<code>statusFor</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-config">
+    <h2>Ρυθμίσεις του site</h2>
+    <p class="intro">Στο SOURCE δημιουργήστε: κατηγορία cookies <code>qa-analytics</code> με υπηρεσία <code>QA GA</code>· script <code>qa-chat</code> (inline) που περιμένει συγκατάθεση <code>qa-analytics</code>· ζώνη μεταφορικών <code>QA Zone</code> (GR, CY) με τρόπο <code>QA ACS</code>· τοποθεσία κριτικών Google <code>qa-athens</code> (ενεργοποιήστε πρώτα το module κριτικών Google)· σελίδα με κείμενο <code>[script name="qa-chat"]</code> και <code>[google-reviews location="qa-athens"]</code>· ανακατευθύνσεις <code>/qa-old → /qa-page</code> και μία regex· μετά αλλάξτε το slug της σελίδας ώστε να δημιουργηθεί αυτόματη ανακατεύθυνση· ρύθμιση meta για <code>/qa-meta</code> με εικόνα κοινοποίησης από τη βιβλιοθήκη.</p>
+
+    <article class="tc" id="XFR-050" data-priority="P1">
+      <h3>Μια σελίδα φέρνει το script, την κατηγορία cookies και την τοποθεσία κριτικών που χρησιμοποιούν τα shortcodes της</h3>
+      <ol class="steps">
+        <li>Στο SOURCE εξαγάγετε μόνο τη σελίδα με τα shortcodes και πατήστε <strong>Review export</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Προστίθενται: το script <code>qa-chat</code>, η κατηγορία cookies <code>qa-analytics</code> (τη χρειάζεται το script) και η τοποθεσία <code>qa-athens</code> με τις φωτογραφίες των κριτικών της.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/tables/rules.ts</code> (<code>tableDeps</code>) · <code>export/collect.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-051" data-priority="P1">
+      <h3>Κάθε πίνακας έρχεται με τις εγγραφές-παιδιά και τις συνδέσεις του</h3>
+      <ol class="steps">
+        <li>Εξαγάγετε όλες τις ομάδες ρυθμίσεων και εισαγάγετέ τες σε TARGET που δεν έχει καμία.</li>
+        <li>Ανοίξτε στο TARGET <strong>Cookies</strong>, <strong>Scripts</strong>, <strong>Settings</strong> → <strong>Ecommerce</strong> → <strong>Shipping</strong>, τις τοποθεσίες κριτικών Google και <strong>SEO</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η κατηγορία έχει την υπηρεσία της· το script περιμένει την <code>qa-analytics</code>· η ζώνη έχει τον τρόπο αποστολής της· η τοποθεσία έχει τις κριτικές της (οι κρυφές παραμένουν κρυφές, οι φωτογραφίες εμφανίζονται)· η ρύθμιση meta έχει την εικόνα της. Η αυτόματη ανακατεύθυνση της σελίδας που μετονομάστηκε δείχνει στο αντίγραφο της σελίδας στο TARGET (το <code>document_id</code> της είναι id του TARGET).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/tables/adapters.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-052" data-priority="P2">
+      <h3>Η αντικατάσταση ενημερώνει τα παιδιά ανά όνομα και κρατά όσα έχει μόνο αυτό το site</h3>
+      <ol class="steps">
+        <li>Στο SOURCE προσθέστε υπηρεσία <code>QA Hotjar</code> και αλλάξτε το κόστος του <code>QA ACS</code>. Στο TARGET προσθέστε υπηρεσία <code>Target-only</code> στην ίδια κατηγορία.</li>
+        <li>Εισαγάγετε ξανά με τις κατηγορίες cookies και τις ζώνες μεταφορικών σε <strong>Overwrite this site’s</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η κατηγορία έχει <code>QA GA</code>, <code>QA Hotjar</code> και <code>Target-only</code>· ο τρόπος αποστολής έχει το κόστος του SOURCE. Τίποτα στο TARGET δεν διαγράφηκε.</p>
+      <p class="ref">Αναφ.: <code>tables/rules.ts</code> (<code>planChildren</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-053" data-priority="P2">
+      <h3>Αντίγραφα εγγραφών με όνομα</h3>
+      <ol class="steps">
+        <li>Εισαγάγετε το script και την τοποθεσία κριτικών με <strong>Import as a copy</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Εμφανίζονται <code>qa-chat-2</code> και <code>qa-athens-2</code> (με τις κριτικές της)· η αναφορά λέει «Imported as …». Οι ανακατευθύνσεις, οι ρυθμίσεις SEO και οι κατηγορίες cookies δεν προσφέρουν αντίγραφο.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/groups.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-054" data-priority="P1">
+      <h3>Μια ανακατεύθυνση που θα απέρριπτε η οθόνη SEO απορρίπτεται</h3>
+      <ol class="steps">
+        <li>Στο TARGET διαγράψτε την <code>/qa-old</code> και προσθέστε <code>/qa-page → /qa-old</code>. Εισαγάγετε την <code>/qa-old → /qa-page</code> του SOURCE.</li>
+        <li>Εισαγάγετε πακέτο με regex ανακατεύθυνση <code>^/(a+)+$</code> (επεξεργαστείτε το αρχείο δεδομένων και το checksum του στο manifest).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και οι δύο γραμμές είναι <strong>Failed</strong> με τα λόγια της οθόνης SEO: «This would create a redirect loop…» και «A pattern like this can take seconds to match…». Όλα τα υπόλοιπα της εισαγωγής γράφονται.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/seo.ts</code> (<code>checkRedirect</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-055" data-priority="P2">
+      <h3>Modules και δικαιώματα</h3>
+      <ol class="steps">
+        <li>Απενεργοποιήστε το module κριτικών Google στο TARGET και ανεβάστε το πακέτο.</li>
+        <li>Ως χρήστης με <em>Import site data</em> και <em>Edit settings &amp; cookies</em> αλλά χωρίς <em>Manage scripts</em>, επιλέξτε Script snippets και προεπισκόπηση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> 1: οι τοποθεσίες κριτικών εμφανίζονται ως μη εισαγώγιμες («The googleReviews module is off on this site.»). 2: «You do not have permission to import scripts.» — κώδικας που τρέχει σε κάθε επισκέπτη χρειάζεται το δικαίωμα Scripts.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/import/analyze.ts</code> (<code>describeTables</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-people">
+    <h2>Πρόσωπα και συναλλαγές</h2>
+    <p class="intro">Στο SOURCE: πελάτης με διεύθυνση και λίστα επιθυμιών, εγγεγραμμένος newsletter, αποκλεισμός email, κριτική προϊόντος, πληρωμένη παραγγελία με αποστολή, επιβεβαιωμένη κράτηση σε επιλογή εμπειρίας, κλειστή ημέρα, ρόλος και χρήστης admin. Ενεργοποιήστε τα modules customers και newsletter και στα δύο site.</p>
+
+    <article class="tc" id="XFR-070" data-priority="P1">
+      <h3>Τα προσωπικά δεδομένα χρειάζονται ρητό «ναι», και στις δύο άκρες</h3>
+      <ol class="steps">
+        <li>Στο SOURCE επιλέξτε Customer accounts και Orders και πατήστε <strong>Review export</strong>· δοκιμάστε <strong>Build the package</strong>.</li>
+        <li>Τσεκάρετε την επιβεβαίωση και δημιουργήστε το πακέτο. Στο TARGET ανεβάστε το, επιλέξτε Orders και κάντε προεπισκόπηση χωρίς επιβεβαίωση· μετά τσεκάρετέ την.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: μια κίτρινη ειδοποίηση ονομάζει τις ομάδες («This includes personal data (Customer accounts, Orders)…») και το κουμπί μένει ανενεργό μέχρι να τσεκαριστεί· το API απαντά 422 χωρίς αυτήν. Βήμα 2: το manifest λέει <code>"containsPii": true</code>· η προεπισκόπηση απορρίπτεται με την ίδια φράση μέχρι την επιβεβαίωση.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/groups.ts</code> (<code>piiProblem</code>) · <code>admin/transfer/PiiConsent.tsx</code></p>
+    </article>
+
+    <article class="tc" id="XFR-071" data-priority="P1">
+      <h3>Μια παραγγελία έρχεται συνδεδεμένη με πελάτη, τρόπο αποστολής και προϊόντα αυτού του site</h3>
+      <ol class="steps">
+        <li>Εξαγάγετε παραγγελία της οποίας ο πελάτης, η ζώνη αποστολής και το προϊόν υπάρχουν στο SOURCE· εισαγάγετέ την (η ζώνη και το προϊόν έρχονται μαζί ή υπάρχουν ήδη στο TARGET).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η παραγγελία στο TARGET δείχνει τον πελάτη του TARGET, τον τρόπο αποστολής του TARGET, γραμμές με τα id προϊόντων του TARGET, την πληρωμή και την αποστολή της· το <code>metadata.importedFrom</code> ονομάζει το SOURCE. Πελάτης ή τρόπος που δεν υπάρχει στο TARGET αφήνει παραγγελία επισκέπτη / χωρίς τρόπο, και το λέει η αναφορά.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/tables/people-adapters.ts</code> (<code>orders</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-072" data-priority="P1">
+      <h3>Μια κράτηση κρατά τις θέσεις της</h3>
+      <ol class="steps">
+        <li>Εξαγάγετε επιβεβαιωμένη κράτηση σε επιλογή μιας εμπειρίας· εισαγάγετέ την μαζί με (ή μετά από) την εμπειρία.</li>
+        <li>Στο TARGET ανοίξτε <strong>Availability</strong> για εκείνη την ημερομηνία.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η κράτηση δείχνει στην εμπειρία του TARGET· η επιβεβαιωμένη δέσμευση θέσεων υπάρχει στο TARGET με το ίδιο κλειδί επιλογής, άρα η ημερομηνία δείχνει τις θέσεις ως κατειλημμένες. Το token πληρωμής δεν είναι στο πακέτο· οι αποδεσμευμένες θέσεις δεν μεταφέρονται. Μια κλειστή ημέρα ακολουθεί την ομάδα μετάφρασης της εμπειρίας.</p>
+      <p class="ref">Αναφ.: <code>tables/people.ts</code> (<code>mapSlotKey</code>) · <code>modules/booking/allocation.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-073" data-priority="P1">
+      <h3>Πελάτες: η συγχώνευση κρατά τις τιμές αυτού του site</h3>
+      <ol class="steps">
+        <li>Στο TARGET δώστε στον ίδιο πελάτη (ίδιο email) άλλο όνομα και κανένα τηλέφωνο. Εισαγάγετε με Customer accounts σε <strong>Merge — add what is missing</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το όνομα μένει του TARGET, το τηλέφωνο συμπληρώνεται από το SOURCE, η διεύθυνση του SOURCE προστίθεται δίπλα σε αυτή του TARGET, η λίστα επιθυμιών δείχνει σε προϊόντα του TARGET.</p>
+      <p class="ref">Αναφ.: <code>tables/people.ts</code> (<code>fillMissing</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-074" data-priority="P1">
+      <h3>Οι κωδικοί μεταφέρονται μόνο αν ζητηθεί, η διπλή επαλήθευση ποτέ</h3>
+      <ol class="steps">
+        <li>Εισαγάγετε χρήστες admin και πελάτες χωρίς <strong>Import password hashes</strong>.</li>
+        <li>Επαναλάβετε για νέο χρήστη με την επιλογή τσεκαρισμένη, ως χρήστης με «Move admin accounts».</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: η αναφορά λέει ότι στον χρήστη admin πρέπει να δοθεί κωδικός από το Users και ο πελάτης χρησιμοποιεί «ξέχασα τον κωδικό»· κανείς δεν μπαίνει με τον κωδικό του SOURCE. Βήμα 2: ο κωδικός του SOURCE δουλεύει. Η διπλή επαλήθευση δεν ορίζεται ποτέ σε λογαριασμό που εισάγεται.</p>
+      <p class="ref">Αναφ.: <code>tables/people-adapters.ts</code> (<code>users</code>, <code>customers</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-075" data-priority="P1">
+      <h3>Κανείς δεν δίνει με εισαγωγή ό,τι δεν έχει</h3>
+      <ol class="steps">
+        <li>Ως χρήστης με Manage roles, Manage users, Import site data και Move admin accounts αλλά χωρίς Edit content, εισαγάγετε τους ρόλους <code>superadmin</code> και <code>editor</code> και έναν λογαριασμό superadmin.</li>
+        <li>Ως superadmin, εισαγάγετε πακέτο που περιέχει τον δικό σας λογαριασμό.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: αυτές οι γραμμές είναι <strong>Failed</strong> — «grants what you do not hold yourself (…)» — ενώ οι μικρότεροι ρόλοι εισάγονται· άγνωστα δικαιώματα αφαιρούνται και αναφέρονται. Βήμα 2: «This is your own account; it is not changed by an import.»</p>
+      <p class="ref">Αναφ.: <code>tables/people.ts</code> (<code>checkGrantable</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-076" data-priority="P2">
+      <h3>Τι δεν μεταφέρεται ποτέ</h3>
+      <ol class="steps">
+        <li>Αποσυμπιέστε εξαγωγή πελατών, παραγγελιών, κρατήσεων και χρηστών και ψάξτε στα αρχεία δεδομένων.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κανένα token πελάτη, hash token πληρωμής, <code>tokenVersion</code>, <code>lastLoginAt</code>, μέθοδος MFA ή δεδομένα TOTP, id Mailchimp· δεν υπάρχει καν ομάδα για δωροκάρτες.</p>
+      <p class="ref">Αναφ.: docs/dev-guides/10-settings-cron-operations.md §3.7</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-housekeeping">
+    <h2>Καθαριότητα</h2>
+
+    <article class="tc" id="XFR-060" data-priority="P2">
+      <h3>Οι παλιές εργασίες αφαιρούνται από τον χρονοπρογραμματιστή</h3>
+      <ol class="steps">
+        <li>Δείτε τα περιεχόμενα του <code>.data/transfers/</code> (ή του <code>CMS_TRANSFER_DIR</code>). Ορίστε <code>CMS_TRANSFER_TTL_HOURS=0.001</code>, επανεκκινήστε, περιμένετε λίγα δευτερόλεπτα.</li>
+        <li><code>curl -s -X POST "$BASE/api/cms/cron/transfer-cleanup" -H "x-cron-secret: $CRON"</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η απάντηση είναι <code>{"ok":true,"data":{"status":"ran","result":{"removed":N}}}</code> και οι φάκελοι των εργασιών έχουν φύγει. Επαναφέρετε μετά το TTL.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/runtime.ts</code> (<code>cleanupTransfers</code>) · <code>src/app/api/cms/cron/[job]/route.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-061" data-priority="P3">
+      <h3>Διαγραφή εισαγωγής</h3>
+      <ol class="steps">
+        <li>Στο <strong>Your recent imports</strong> πατήστε <strong>Delete</strong> σε μια ολοκληρωμένη εισαγωγή.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Εξαφανίζεται από τη λίστα και ο φάκελός της στο <code>.data/transfers/</code> έχει φύγει. Μια εισαγωγή που τρέχει δεν διαγράφεται («This import is running. Cancel it first.»).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/transfer/routes.ts</code> (<code>transferImportDeleteRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-062" data-priority="P3">
+      <h3>Επαναφορά του TARGET</h3>
+      <ol class="steps">
+        <li>Επαναφέρετε το αντίγραφο ασφαλείας του «Πριν ξεκινήσετε», και τον φάκελο uploads αν εισήχθησαν media.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το TARGET είναι όπως πριν από τη λίστα ελέγχου.</p>
+      <p class="ref">Αναφ.: αυτή η λίστα ελέγχου</p>
+    </article>
+  </section>
+
+</main>
+<footer class="page">Λίστα ελέγχου 12 από 12. Τα αποτελέσματα αποθηκεύονται μόνο σε αυτόν τον browser· χρησιμοποιήστε την εξαγωγή πριν καθαρίσετε τα δεδομένα του browser. Στη συνέχεια επαναφέρετε το TARGET (XFR-062) και το <code>CMS_TRANSFER_TTL_HOURS</code> που αλλάξατε.</footer>
+</body>
+</html>

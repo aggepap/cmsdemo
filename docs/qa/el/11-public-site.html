@@ -1,0 +1,845 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Δημόσιος ιστότοπος, γλώσσες, προσβασιμότητα &amp; απόδοση</title>
+<link rel="stylesheet" href="../qa.css">
+<script src="../qa.js" defer></script>
+</head>
+<body>
+<nav class="crumbs"><a href="index.html">Χειροκίνητος έλεγχος CMS</a></nav>
+<header class="page">
+  <h1>11 · Δημόσιος ιστότοπος, γλώσσες, προσβασιμότητα &amp; απόδοση</h1>
+  <p class="scope">Ο οριζόντιος έλεγχος του δημόσιου ιστότοπου όπως τον βλέπει ένας επισκέπτης. Καλύπτονται εδώ: η φόρτωση κάθε δημόσιας διαδρομής στα ελληνικά και στα αγγλικά, οι κανόνες διευθύνσεων του proxy (ελληνικά χωρίς πρόθεμα, ανακατευθύνσεις <code>/en</code>, <code>/el</code> και <code>/home</code>, καμία ανίχνευση της γλώσσας του browser), οι σύνδεσμοι της κεφαλίδας, του υποσέλιδου και του μενού κινητού, ο επιλογέας γλώσσας, τα μεταφρασμένα κείμενα της διεπαφής και η αντιστοιχία των <code>messages/*.json</code>, η μορφοποίηση τιμών, ημερομηνιών και αριθμών ανά γλώσσα, οι ενότητες της αρχικής σελίδας και οι κενές καταστάσεις τους, οι εικόνες, η κοινή συμπεριφορά των δημόσιων φορμών, ένας έλεγχος προσβασιμότητας με βάση το WCAG 2.2 AA (πληκτρολόγιο, εστίαση, σύνδεσμος παράκαμψης, ορόσημα (landmarks), επικεφαλίδες, αντίθεση χρωμάτων, μεγέθυνση και αναδιάταξη, μειωμένη κίνηση, αναγνώστες οθόνης), η διάταξη σε πέντε πλάτη, η κάλυψη browsers, το Lighthouse και τα Core Web Vitals, οι κεφαλίδες cache, τα σφάλματα κονσόλας και δικτύου, το favicon και το χρώμα θέματος, η εκτύπωση, και τι συμβαίνει όταν η βάση δεδομένων είναι εκτός λειτουργίας ή το δίκτυο είναι αργό. Καλύπτονται αλλού και αναφέρονται με το ID τους: οι διακόπτες γλωσσών στα Settings (SET-044 έως SET-049), οι διακόπτες modules (SET-033 έως SET-043), οι κεφαλίδες ασφαλείας και το robots.txt (SET-073 έως SET-078), η απόδοση, η δημοσίευση και η προεπισκόπηση σελίδων του CMS (CON-004, CON-065, CON-094, CON-099), η μπάρα διαχείρισης (ADM-022 έως ADM-034, ADM-060), οι ετικέτες head, το hreflang, το sitemap, τα δομημένα δεδομένα και η καταγραφή 404 (MED-035 έως MED-039, MED-060 έως MED-062, MED-078 έως MED-096), οι κεφαλίδες των αρχείων πολυμέσων (MED-026 έως MED-029), η ταυτότητα και τα χρώματα του brand (MED-030 έως MED-034), η φόρμα επικοινωνίας (MKT-003 έως MKT-015), η εγγραφή στο newsletter (MKT-030 έως MKT-036), το banner των cookies (MKT-049 έως MKT-058), τα popups (MKT-080 έως MKT-094), το κατάστημα, το καλάθι, η ολοκλήρωση παραγγελίας και οι λογαριασμοί (COM-015 έως COM-032, COM-095 έως COM-103), οι σελίδες και οι φόρμες κρατήσεων (BKG-011 έως BKG-016, BKG-042 έως BKG-046, BKG-091). Χρειάζεστε: ένα build παραγωγής του site με ενεργά τα commerce, booking, λογαριασμούς πελατών, λίστα επιθυμιών και newsletter, και τα δεδομένα QA των λιστών ελέγχου 08 και 09· Chrome (με το Lighthouse στα εργαλεία προγραμματιστή), Firefox, Safari σε Mac ή iPhone, και Samsung Internet σε κινητό Android, αν υπάρχει· NVDA σε Windows ή/και VoiceOver σε macOS ή iOS· τερματικό με <code>curl</code> και <code>node</code>· και πρόσβαση με shell για να σταματήσετε τη βάση δεδομένων σε μία περίπτωση ελέγχου.</p>
+</header>
+<main>
+
+  <section class="suite" id="suite-prep">
+    <h2>Πριν ξεκινήσετε</h2>
+    <p class="intro">Η λίστα ελέγχου 01 πρέπει να έχει ολοκληρωθεί. Οι περιπτώσεις ελέγχου απόδοσης, cache και κεφαλίδων χρειάζονται build παραγωγής (<code>npm run build</code> και έπειτα <code>npm run start</code>, βλ. SET-030), το οποίο απαντά στο <code>http://localhost:3000</code>· ο dev server (<code>npm run dev</code>, θύρα 3002) είναι πιο αργός, δεν στέλνει CSP και δεν πρέπει να χρησιμοποιείται για το Lighthouse. Σε φιλοξενούμενο περιβάλλον χρησιμοποιήστε τη διεύθυνσή του. Τα ελληνικά είναι η κύρια γλώσσα και δεν έχουν πρόθεμα· τα αγγλικά βρίσκονται κάτω από το <code>/en</code> (SET-044).</p>
+    <div class="callout">
+      <p><strong>Τερματικό.</strong> Στον φάκελο του έργου εκτελέστε <code>BASE=http://localhost:3000</code>. Ένας γρήγορος έλεγχος κατάστασης μιας διεύθυνσης είναι <code>curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$BASE/about"</code>.</p>
+      <p><strong>Παράθυρα.</strong> Εκτός αν μια περίπτωση ελέγχου ορίζει διαφορετικά, εκτελείτε τις δημόσιες περιπτώσεις σε ιδιωτικό παράθυρο όπου δεν είστε συνδεδεμένοι στο διαχειριστικό, ώστε να μην εμφανίζεται η μπάρα διαχείρισης. Όπου μια περίπτωση αναφέρει «συνδεδεμένοι ως πελάτης», χρησιμοποιήστε τον λογαριασμό πελάτη της COM-095.</p>
+      <p><strong>Πλάτη.</strong> Χρησιμοποιήστε τη λειτουργία responsive / συσκευής του browser και πληκτρολογήστε το πλάτος. Τα 320 px είναι το πλάτος αναδιάταξης του WCAG· τα 375 px είναι ένα μικρό κινητό· στα 768 px εμφανίζεται η κεφαλίδα υπολογιστή (Tailwind <code>md</code>)· τα 1024 px και 1440 px είναι φορητός και επιτραπέζιος υπολογιστής.</p>
+    </div>
+
+    <article class="tc" id="PUB-001" data-priority="P2">
+      <h3>Προετοιμάστε το site για αυτή τη λίστα ελέγχου</h3>
+      <ol class="steps">
+        <li>Στα <strong>Settings</strong> → <strong>Modules</strong> επιλέξτε τα <strong>Commerce</strong>, <strong>Booking</strong>, <strong>Customer accounts</strong> και <strong>Newsletter</strong> και πατήστε <strong>Save settings</strong>. Στα <strong>Settings</strong> → <strong>Ecommerce</strong> → <strong>Wishlist</strong> ενεργοποιήστε τη λίστα επιθυμιών.</li>
+        <li>Στα <strong>Settings</strong> → <strong>Languages</strong> βεβαιωθείτε ότι τα EL και EN είναι και τα δύο <strong>Public</strong>.</li>
+        <li>Βεβαιωθείτε ότι οι σελίδες <code>home</code>, <code>about</code>, <code>contact</code>, <code>privacy</code> και <code>terms</code> είναι δημοσιευμένες και στις δύο γλώσσες (εκτελέστε <code>npm run db:seed-site -- --force --publish-samples</code> όπως στην SET-021, αν είναι ακόμη πρόχειρα).</li>
+        <li>Βεβαιωθείτε ότι υπάρχουν και στις δύο γλώσσες τουλάχιστον ένα δημοσιευμένο προϊόν με εικόνα, μία κατηγορία, μία ετικέτα και μία δημοσιευμένη εμπειρία κράτησης (από τις λίστες ελέγχου 08 και 09), καθώς και ένας λογαριασμός πελάτη με ολοκληρωμένη παραγγελία (COM-101). Σημειώστε: slug προϊόντος <code>&lt;p&gt;</code>, slug κατηγορίας <code>&lt;c&gt;</code>, slug ετικέτας <code>&lt;t&gt;</code>, slug εμπειρίας <code>&lt;x&gt;</code>, κωδικό παραγγελίας <code>&lt;ref&gt;</code>.</li>
+        <li>Δημιουργήστε μία σελίδα <code>QA EL Only</code> (slug <code>qa-el-only</code>), δημοσιευμένη μόνο στα ελληνικά· αφήστε κενή την αγγλική της έκδοση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Υπάρχουν όλα τα παραπάνω. Η κεφαλίδα του <code>/</code> δείχνει Αρχική, Κρατήσεις, Κατάστημα, Σχετικά, Επικοινωνία, μια καρδιά (λίστα επιθυμιών), ένα εικονίδιο λογαριασμού και ένα εικονίδιο καλαθιού.</p>
+      <p class="ref">Αναφ.: <code>src/lib/nav.ts</code> (<code>navItems</code>) · <code>src/components/layout/Header.tsx</code> · <code>src/site-seed/data.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-routes">
+    <h2>Διαδρομές &amp; διευθύνσεις</h2>
+    <p class="intro">Κάθε δημόσια διαδρομή βρίσκεται κάτω από το <code>src/app/[locale]/</code>. Οι διαδρομές ενός module απαντούν με τη σελίδα «δεν βρέθηκε» όταν το module είναι ανενεργό (SET-034, SET-038, SET-040)· εδώ όλα τα modules είναι ενεργά.</p>
+
+    <article class="tc" id="PUB-002" data-priority="P1">
+      <h3>Κάθε δημόσια διαδρομή φορτώνει και στις δύο γλώσσες</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Η PUB-001 έχει ολοκληρωθεί. Η κονσόλα του browser είναι ανοιχτή (F12). Ιδιωτικό παράθυρο χωρίς σύνδεση· για τις γραμμές λογαριασμού που σημειώνονται «πελάτης», συνδεθείτε πρώτα ως πελάτης στο <code>/account/login</code>.</p>
+      <ol class="steps">
+        <li>Ανοίξτε κάθε ελληνική διεύθυνση και έπειτα την αντίστοιχη αγγλική. Επιλέξτε το κουτάκι όταν η σελίδα δείχνει την επικεφαλίδα στη σωστή γλώσσα, την κεφαλίδα και το υποσέλιδο, κανένα ακατέργαστο κλειδί μηνύματος (κείμενο όπως <code>account.loginTitle</code>), κανένα ατελείωτο «Φόρτωση…» / «Loading…» και κανένα κόκκινο σφάλμα στην κονσόλα.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>EL</th><th>EN</th><th>Ελληνική διεύθυνση</th><th>Αγγλική διεύθυνση</th><th>Κύρια επικεφαλίδα (EL / EN)</th></tr></thead>
+          <tbody>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η Αρχική EL"></td><td><input type="checkbox" aria-label="Φορτώνει η Αρχική EN"></td><td><code>/</code></td><td><code>/en</code></td><td>τίτλος της σελίδας <code>home</code> (το όνομα του site, αν δεν έχει τίτλο)</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η σελίδα Σχετικά EL"></td><td><input type="checkbox" aria-label="Φορτώνει η σελίδα Σχετικά EN"></td><td><code>/about</code></td><td><code>/en/about</code></td><td>τίτλος της σελίδας <code>about</code></td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η σελίδα Επικοινωνία EL"></td><td><input type="checkbox" aria-label="Φορτώνει η σελίδα Επικοινωνία EN"></td><td><code>/contact</code></td><td><code>/en/contact</code></td><td>Επικοινωνήστε μαζί μας / Get in touch (ή ο τίτλος της σελίδας επικοινωνίας)</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η σελίδα Απόρρητο EL"></td><td><input type="checkbox" aria-label="Φορτώνει η σελίδα Απόρρητο EN"></td><td><code>/privacy</code></td><td><code>/en/privacy</code></td><td>τίτλος της σελίδας <code>privacy</code></td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η σελίδα Όροι EL"></td><td><input type="checkbox" aria-label="Φορτώνει η σελίδα Όροι EN"></td><td><code>/terms</code></td><td><code>/en/terms</code></td><td>τίτλος της σελίδας <code>terms</code></td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η πολιτική cookies EL"></td><td><input type="checkbox" aria-label="Φορτώνει η πολιτική cookies EN"></td><td><code>/legal/cookies</code></td><td><code>/en/legal/cookies</code></td><td>Πολιτική cookies / Cookie policy</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το κατάστημα EL"></td><td><input type="checkbox" aria-label="Φορτώνει το κατάστημα EN"></td><td><code>/shop</code></td><td><code>/en/shop</code></td><td>Κατάστημα / Shop</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το προϊόν EL"></td><td><input type="checkbox" aria-label="Φορτώνει το προϊόν EN"></td><td><code>/shop/&lt;p&gt;</code></td><td><code>/en/shop/&lt;p&gt;</code></td><td>όνομα του προϊόντος στη συγκεκριμένη γλώσσα</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η κατηγορία EL"></td><td><input type="checkbox" aria-label="Φορτώνει η κατηγορία EN"></td><td><code>/shop/category/&lt;c&gt;</code></td><td><code>/en/shop/category/&lt;c&gt;</code></td><td>όνομα της κατηγορίας</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η ετικέτα EL"></td><td><input type="checkbox" aria-label="Φορτώνει η ετικέτα EN"></td><td><code>/shop/tag/&lt;t&gt;</code></td><td><code>/en/shop/tag/&lt;t&gt;</code></td><td>όνομα της ετικέτας</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η σύγκριση EL"></td><td><input type="checkbox" aria-label="Φορτώνει η σύγκριση EN"></td><td><code>/shop/compare</code></td><td><code>/en/shop/compare</code></td><td>Σύγκριση / Compare</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η λίστα επιθυμιών EL"></td><td><input type="checkbox" aria-label="Φορτώνει η λίστα επιθυμιών EN"></td><td><code>/wishlist</code></td><td><code>/en/wishlist</code></td><td>Η λίστα επιθυμιών μου / My wishlist</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η ολοκλήρωση παραγγελίας EL"></td><td><input type="checkbox" aria-label="Φορτώνει η ολοκλήρωση παραγγελίας EN"></td><td><code>/checkout</code> (ένα προϊόν στο καλάθι)</td><td><code>/en/checkout</code></td><td>Ολοκλήρωση παραγγελίας / Checkout</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η αναζήτηση παραγγελίας EL"></td><td><input type="checkbox" aria-label="Φορτώνει η αναζήτηση παραγγελίας EN"></td><td><code>/order</code></td><td><code>/en/order</code></td><td>Παρακολούθηση παραγγελίας / Track your order</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η ανάκτηση καλαθιού EL"></td><td><input type="checkbox" aria-label="Φορτώνει η ανάκτηση καλαθιού EN"></td><td><code>/cart/recover</code> (χωρίς token)</td><td><code>/en/cart/recover</code></td><td>Το καλάθι σας είναι άδειο. / Your cart is empty.</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνουν οι κρατήσεις EL"></td><td><input type="checkbox" aria-label="Φορτώνουν οι κρατήσεις EN"></td><td><code>/booking</code></td><td><code>/en/booking</code></td><td>Κρατήσεις / Booking</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η εμπειρία EL"></td><td><input type="checkbox" aria-label="Φορτώνει η εμπειρία EN"></td><td><code>/booking/&lt;x&gt;</code></td><td><code>/en/booking/&lt;x&gt;</code></td><td>τίτλος της εμπειρίας</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η αναζήτηση κράτησης EL"></td><td><input type="checkbox" aria-label="Φορτώνει η αναζήτηση κράτησης EN"></td><td><code>/booking/lookup</code></td><td><code>/en/booking/lookup</code></td><td>Η κράτησή μου / My booking</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η σύνδεση EL"></td><td><input type="checkbox" aria-label="Φορτώνει η σύνδεση EN"></td><td><code>/account/login</code></td><td><code>/en/account/login</code></td><td>Σύνδεση / Sign in</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η εγγραφή EL"></td><td><input type="checkbox" aria-label="Φορτώνει η εγγραφή EN"></td><td><code>/account/register</code></td><td><code>/en/account/register</code></td><td>Δημιουργία λογαριασμού / Create an account</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η ξεχασμένη σύνδεση EL"></td><td><input type="checkbox" aria-label="Φορτώνει η ξεχασμένη σύνδεση EN"></td><td><code>/account/forgot</code></td><td><code>/en/account/forgot</code></td><td>Ξέχασα τον κωδικό μου / Forgotten password</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η επαναφορά EL"></td><td><input type="checkbox" aria-label="Φορτώνει η επαναφορά EN"></td><td><code>/account/reset</code> (χωρίς token)</td><td><code>/en/account/reset</code></td><td>Νέος κωδικός / New password</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η επιβεβαίωση EL"></td><td><input type="checkbox" aria-label="Φορτώνει η επιβεβαίωση EN"></td><td><code>/account/verify</code> (χωρίς token)</td><td><code>/en/account/verify</code></td><td>Επιβεβαίωση email / Confirm your email</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει ο λογαριασμός EL"></td><td><input type="checkbox" aria-label="Φορτώνει ο λογαριασμός EN"></td><td><code>/account</code> (πελάτης)</td><td><code>/en/account</code></td><td>Ο λογαριασμός μου / My account</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνουν οι παραγγελίες EL"></td><td><input type="checkbox" aria-label="Φορτώνουν οι παραγγελίες EN"></td><td><code>/account/orders</code> (πελάτης)</td><td><code>/en/account/orders</code></td><td>Οι παραγγελίες μου / My orders</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η λεπτομέρεια παραγγελίας EL"></td><td><input type="checkbox" aria-label="Φορτώνει η λεπτομέρεια παραγγελίας EN"></td><td><code>/account/orders/&lt;ref&gt;</code> (πελάτης)</td><td><code>/en/account/orders/&lt;ref&gt;</code></td><td>ο κωδικός της παραγγελίας</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνουν οι διευθύνσεις EL"></td><td><input type="checkbox" aria-label="Φορτώνουν οι διευθύνσεις EN"></td><td><code>/account/addresses</code> (πελάτης)</td><td><code>/en/account/addresses</code></td><td>Οι διευθύνσεις μου / My addresses</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το προφίλ EL"></td><td><input type="checkbox" aria-label="Φορτώνει το προφίλ EN"></td><td><code>/account/profile</code> (πελάτης)</td><td><code>/en/account/profile</code></td><td>Τα στοιχεία μου / My details</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει το απόρρητο λογαριασμού EL"></td><td><input type="checkbox" aria-label="Φορτώνει το απόρρητο λογαριασμού EN"></td><td><code>/account/privacy</code> (πελάτης)</td><td><code>/en/account/privacy</code></td><td>Δεδομένα και απόρρητο / Data and privacy</td></tr>
+          <tr><td><input type="checkbox" aria-label="Φορτώνει η 404 EL"></td><td><input type="checkbox" aria-label="Φορτώνει η 404 EN"></td><td><code>/qa-no-such-page</code></td><td><code>/en/qa-no-such-page</code></td><td>καταλήγει στο <code>/page-not-found</code> ή στο <code>/en/page-not-found</code>: Η σελίδα δεν βρέθηκε / Page not found</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Μπορούν να επιλεγούν όλα τα κουτάκια. Το <code>&lt;html lang&gt;</code> είναι <code>el</code> στην ελληνική στήλη και <code>en</code> στην αγγλική. Η σελίδα πληρωμής <code>/booking/pay/&lt;reference&gt;</code> δεν περιλαμβάνεται στον πίνακα: χωρίς έγκυρο token δείχνει εκ σχεδιασμού τη σελίδα «δεν βρέθηκε» (BKG-067). Τα κουτάκια είναι βοήθημα εργασίας και δεν αποθηκεύονται· γράψτε κάθε διεύθυνση που αποτυγχάνει στις σημειώσεις.</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/**/page.tsx</code> · <code>messages/el.json</code>, <code>messages/en.json</code> · docs/dev-guides/01-architecture.md</p>
+    </article>
+
+    <article class="tc" id="PUB-003" data-priority="P2">
+      <h3>Κανόνες διευθύνσεων: /, /el, /home, κάθετος στο τέλος, γλώσσα του browser και cookie</h3>
+      <ol class="steps">
+        <li>Εκτελέστε κάθε εντολή και σημειώστε την κατάσταση και τον προορισμό της ανακατεύθυνσης:
+<pre><code>for p in / /en /el /el/about /home /en/home /en/ /about/; do
+  printf '%-12s ' "$p"; curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$BASE$p"; done
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' -H 'Accept-Language: en-US,en;q=0.9' "$BASE/"
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' -b 'NEXT_LOCALE=en' "$BASE/about"</code></pre></li>
+        <li>Σε browser με προτιμώμενη γλώσσα τα αγγλικά, ανοίξτε το <code>/</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li><code>/</code> και <code>/en</code>: <code>200</code>, χωρίς ανακατεύθυνση. Δεν υπάρχει ανακατεύθυνση από το <code>/</code> σε πρόθεμα γλώσσας· τα ελληνικά σερβίρονται στη ρίζα.</li>
+        <li><code>/el</code> → <code>/</code> και <code>/el/about</code> → <code>/about</code> (307 ή 308). <code>/home</code> → <code>/</code> και <code>/en/home</code> → <code>/en</code> με <code>308</code>. Τα <code>/en/</code> και <code>/about/</code> ανακατευθύνουν μία φορά στη διεύθυνση χωρίς την κάθετο.</li>
+        <li>Το αγγλικό Accept-Language και το cookie <code>NEXT_LOCALE=en</code> δίνουν και τα δύο και πάλι <code>200</code> χωρίς ανακατεύθυνση, και ο browser του βήματος 2 δείχνει την ελληνική αρχική σελίδα (καμία ανίχνευση γλώσσας, όπως στην SET-045).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/proxy.ts</code> · <code>src/lib/i18n/routing.ts</code> (<code>localeDetection: false</code>) · <code>src/lib/i18n/config.ts</code> (<code>localePrefix: 'as-needed'</code>) · <code>next.config.ts</code> (<code>redirects</code>)</p>
+    </article>
+
+    <article class="tc" id="PUB-004" data-priority="P2">
+      <h3>Ποια σελίδα «δεν βρέθηκε» δείχνει κάθε είδος διεύθυνσης που δεν υπάρχει</h3>
+      <ol class="steps">
+        <li>Στον browser ανοίξτε κάθε διεύθυνση και σημειώστε το τελικό URL, αν υπάρχουν η κεφαλίδα και το υποσέλιδο, αν η σελίδα έχει μορφοποίηση στυλ και τη γλώσσα της:
+          <code>/qa-nope</code>, <code>/en/qa-nope</code>, <code>/a/b/c</code>, <code>/shop/qa-no-product</code>, <code>/en/booking/qa-no-experience</code>, <code>/shop/category/qa-no-cat</code>, <code>/de/about</code>, <code>/qa.weird</code>.</li>
+        <li>Εκτελέστε <code>curl -s -o /dev/null -w '%{http_code}\n' "$BASE/shop/qa-no-product"</code> και το ίδιο για το <code>/qa.weird</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Οι άγνωστες διαδρομές ενός ή περισσότερων τμημάτων ανακατευθύνουν στο <code>/page-not-found</code> (ή στο <code>/en/page-not-found</code>), που έχει κεφαλίδα, υποσέλιδο, την επικεφαλίδα Η σελίδα δεν βρέθηκε / Page not found και τα κουμπιά Αρχική, Επικοινωνία / Home, Contact (η MED-062 καλύπτει τους κωδικούς κατάστασης και το noindex).</li>
+        <li>Άγνωστο προϊόν, εμπειρία ή κατηγορία: το περιεχόμενο «δεν βρέθηκε» του site με κεφαλίδα και υποσέλιδο, HTTP <code>404</code>. Αν κάποιο από αυτά εμφανίζεται χωρίς στυλ, κενό ή χωρίς κεφαλίδα και υποσέλιδο, σημειώστε Αποτυχία και καταγράψτε ποιο (τα σχόλια του κώδικα προειδοποιούν ότι το <code>notFound()</code> μέσα σε δυναμικό τμήμα μπορεί να το προκαλέσει αυτό στο Next 16).</li>
+        <li>Το <code>/qa.weird</code> (διαδρομή με τελεία, εκτός της δρομολόγησης γλωσσών) δείχνει την απλή εφεδρική σελίδα: «404», <code>Page not found</code>, <code>Return home</code>, στα αγγλικά σε site με προεπιλογή τα ελληνικά, κατάσταση <code>404</code>. <code>/de/about</code>: καταγράψτε πού καταλήγει· δεν πρέπει να δείχνει σφάλμα server.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/[...rest]/page.tsx</code> · <code>src/app/[locale]/not-found.tsx</code> · <code>src/app/not-found.tsx</code> · <code>src/lib/i18n/page-not-found.ts</code></p>
+    </article>
+
+    <article class="tc" id="PUB-005" data-priority="P2">
+      <h3>Οι μη συνδεδεμένοι επισκέπτες μεταφέρονται από τις σελίδες λογαριασμού στη σύνδεση</h3>
+      <ol class="steps">
+        <li>Χωρίς σύνδεση, εκτελέστε <code>curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$BASE/account/orders"</code> και το ίδιο για το <code>/en/account/profile</code>.</li>
+        <li>Στον browser ανοίξτε το <code>/account</code> και έπειτα συνδεθείτε ως πελάτης.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: ανακατεύθυνση στο <code>/account/login</code> και στο <code>/en/account/login</code> αντίστοιχα (η γλώσσα διατηρείται). Βήμα 2: η φόρμα Σύνδεση· μετά τη σύνδεση ανοίγει η επισκόπηση του λογαριασμού. Καμία σελίδα λογαριασμού δεν εμφανίζει στιγμιαία το περιεχόμενό της πριν από την ανακατεύθυνση. Οι σελίδες λογαριασμού έχουν <code>&lt;meta name="robots" content="noindex, nofollow"&gt;</code>.</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/account/require-customer.ts</code> · <code>src/app/[locale]/account/layout.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-nav">
+    <h2>Κεφαλίδα, υποσέλιδο &amp; μενού κινητού</h2>
+
+    <article class="tc" id="PUB-006" data-priority="P1">
+      <h3>Οι σύνδεσμοι της κεφαλίδας οδηγούν σωστά σε υπολογιστή</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Παράθυρο στα 1440 px.</p>
+      <ol class="steps">
+        <li>Στο <code>/</code> πατήστε με τη σειρά κάθε στοιχείο της κεφαλίδας: το λογότυπο ή το όνομα του site, Αρχική, Κρατήσεις, Κατάστημα, Σχετικά, Επικοινωνία (μενού), το κουμπί <strong>Επικοινωνία</strong>, την καρδιά, το εικονίδιο λογαριασμού, το εικονίδιο καλαθιού.</li>
+        <li>Επαναλάβετε στο <code>/en</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Ελληνικά: <code>/</code>, <code>/</code>, <code>/booking</code>, <code>/shop</code>, <code>/about</code>, <code>/contact</code>, <code>/contact</code>, <code>/wishlist</code>, <code>/account/login</code> (ή <code>/account</code> όταν έχετε συνδεθεί), και το εικονίδιο καλαθιού ανοίγει το συρτάρι του καλαθιού αντί να μεταβεί σε άλλη σελίδα.</li>
+        <li>Αγγλικά: οι ίδιοι προορισμοί κάτω από το <code>/en</code>, με ετικέτες Home, Booking, Shop, About, Contact και κουμπί <strong>Contact us</strong>.</li>
+        <li>Κανένας σύνδεσμος δεν καταλήγει στη σελίδα «δεν βρέθηκε». Το προσβάσιμο όνομα του συνδέσμου του λογοτύπου είναι <code>Site — αρχική σελίδα</code> / <code>Site — home</code> (ή το alt της εικόνας του λογοτύπου).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/layout/Header.tsx</code> · <code>src/lib/nav.ts</code> · <code>messages/*.json</code> (<code>nav</code>, <code>header</code>)</p>
+    </article>
+
+    <article class="tc" id="PUB-007" data-priority="P3">
+      <h3>Η τρέχουσα σελίδα επισημαίνεται στην πλοήγηση</h3>
+      <ol class="steps">
+        <li>Ανοίξτε τα <code>/about</code>, <code>/shop</code> και <code>/en/booking</code>. Κοιτάξτε το στοιχείο του μενού της κεφαλίδας για την τρέχουσα ενότητα· ελέγξτε αν έχει <code>aria-current</code>.</li>
+        <li>Κοιτάξτε τον επιλογέα γλώσσας στις ίδιες σελίδες.</li>
+      </ol>
+      <ul class="exp">
+        <li>Ο επιλογέας γλώσσας επισημαίνει την τρέχουσα γλώσσα με έντονα γράμματα και <code>aria-current="page"</code>.</li>
+        <li>Το WCAG δεν το απαιτεί, αλλά οι χρήστες περιμένουν να επισημαίνεται το τρέχον στοιχείο του μενού. Σύμφωνα με τον τρέχοντα κώδικα, οι σύνδεσμοι της κεφαλίδας, του μενού κινητού και του υποσέλιδου δεν έχουν στυλ ενεργού στοιχείου ούτε <code>aria-current</code>· καταγράψτε το ως παρατήρηση ευχρηστίας (όχι Αποτυχία), εκτός αν το προβλέπει ο σχεδιασμός.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/layout/Header.tsx</code> · <code>src/components/layout/MobileMenu.tsx</code> · <code>src/components/layout/LanguageSwitcher.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-008" data-priority="P2">
+      <h3>Σύνδεσμοι και στοιχεία επικοινωνίας του υποσέλιδου</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Στα Settings → Branding έχουν συμπληρωθεί email, τηλέφωνο και τουλάχιστον ένας σύνδεσμος κοινωνικού δικτύου.</p>
+      <ol class="steps">
+        <li>Στο <code>/about</code> κυλήστε μέχρι το υποσέλιδο. Πατήστε κάθε σύνδεσμο κάτω από το <strong>Περιήγηση</strong> και έπειτα τα Απόρρητο, Όροι, Cookies στο κάτω μέρος.</li>
+        <li>Πατήστε τους συνδέσμους email, τηλεφώνου και κοινωνικών δικτύων (ακυρώστε όποια εφαρμογή email ή τηλεφώνου ανοίξει).</li>
+        <li>Στο <code>/about</code> πατήστε <strong>Σχετικά</strong> στο υποσέλιδο, ενώ έχετε κυλήσει προς τα κάτω.</li>
+        <li>Επαναλάβετε το βήμα 1 στο <code>/en/about</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Η Περιήγηση περιέχει μόνο τα Αρχική, Σχετικά, Επικοινωνία (όχι Κατάστημα ή Κρατήσεις, ακόμη και με αυτά τα modules ενεργά· καταγράψτε αν ο ιδιοκτήτης τα περιμένει). Νομικά: <code>/privacy</code>, <code>/terms</code>, <code>/legal/cookies</code>. Όλα φορτώνουν· οι αγγλικοί σύνδεσμοι παραμένουν κάτω από το <code>/en</code>.</li>
+        <li>Το email είναι σύνδεσμος <code>mailto:</code>, το τηλέφωνο σύνδεσμος <code>tel:</code>· οι σύνδεσμοι κοινωνικών δικτύων ανοίγουν σε νέα καρτέλα με <code>rel="noopener noreferrer"</code>.</li>
+        <li>Βήμα 3: το πάτημα του συνδέσμου της σελίδας όπου βρίσκεστε κυλά στην κορυφή.</li>
+        <li>Η γραμμή πνευματικών δικαιωμάτων γράφει <code>© &lt;current year&gt; Site. Με την επιφύλαξη παντός δικαιώματος.</code>. Σημείωση: αναφέρει «Site» από το αρχείο μηνυμάτων, όχι το όνομα του site από το Branding (βλ. PUB-017).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/layout/Footer.tsx</code> · <code>src/components/layout/FooterLink.tsx</code> · <code>src/lib/nav.ts</code> (<code>NAV_ITEMS</code>, <code>LEGAL_LINKS</code>)</p>
+    </article>
+
+    <article class="tc" id="PUB-009" data-priority="P2">
+      <h3>Σύνδεσμοι μέσα στις σελίδες καταστήματος, ολοκλήρωσης παραγγελίας, κρατήσεων και λογαριασμού</h3>
+      <ol class="steps">
+        <li>Στο <code>/en/checkout</code> με ένα προϊόν, πατήστε τον σύνδεσμο στο <code>I accept the terms.</code> (ανοίγει σε νέα καρτέλα).</li>
+        <li>Πατήστε το κουμπί πολιτικής του banner των cookies (καθαρίστε πρώτα τα δεδομένα του site για να εμφανιστεί ξανά το banner), τα δύο κουμπιά της σελίδας «δεν βρέθηκε», τα breadcrumbs σε σελίδα προϊόντος και σε σελίδα κατηγορίας, το <strong>Back to shop</strong> σε άδεια ολοκλήρωση παραγγελίας, και τους συνδέσμους <code>/booking/lookup</code> και <code>/order</code> όπου εμφανίζονται.</li>
+        <li>Προαιρετικά εκτελέστε έναν έλεγχο συνδέσμων (για παράδειγμα την επέκταση browser <em>Check My Links</em> ή <code>npx linkinator $BASE --recurse --skip '/api/'</code>) σε όλο το site.</li>
+      </ol>
+      <ul class="exp">
+        <li>Κάθε σύνδεσμος καταλήγει σε πραγματική σελίδα και όχι στη σελίδα «δεν βρέθηκε».</li>
+        <li>Σύμφωνα με τον τρέχοντα κώδικα, ο σύνδεσμος όρων της ολοκλήρωσης παραγγελίας οδηγεί στο <code>/legal/terms</code>, που δεν έχει διαδρομή (η σελίδα όρων είναι το <code>/terms</code>), οπότε καταλήγει στη σελίδα «δεν βρέθηκε»: αν συμβαίνει αυτό, σημειώστε Αποτυχία.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/checkout/CheckoutClient.tsx</code> (<code>href="/legal/terms"</code>) · <code>src/components/layout/CookieBanner.tsx</code> · <code>src/components/site/NotFoundContent.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-010" data-priority="P2">
+      <h3>Μενού κινητού: άνοιγμα, κλείσιμο, πληκτρολόγιο</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Παράθυρο στα 375 px, διαθέσιμο πληκτρολόγιο (η λειτουργία συσκευής σε browser υπολογιστή αρκεί).</p>
+      <ol class="steps">
+        <li>Στο <code>/about</code> η κεφαλίδα δείχνει το λογότυπο, τα εικονίδια και ένα κουμπί hamburger. Μεταβείτε με Tab στο hamburger και πατήστε Enter.</li>
+        <li>Πατήστε Tab επανειλημμένα πέρα από το τελευταίο στοιχείο και έπειτα Shift+Tab.</li>
+        <li>Πατήστε Escape.</li>
+        <li>Ανοίξτε ξανά το μενού με το ποντίκι και πατήστε <strong>Κατάστημα</strong>. Ανοίξτε το ξανά και πατήστε <strong>EN</strong>.</li>
+        <li>Ανοίξτε το άλλη μία φορά και προσπαθήστε να κυλήσετε τη σελίδα από πίσω του.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το όνομα του hamburger είναι <code>Άνοιγμα μενού</code> (<code>Open menu</code> στα αγγλικά). Το μενού καλύπτει την οθόνη με το όνομα του site, ένα κουμπί κλεισίματος <code>Κλείσιμο μενού</code>, τα στοιχεία του μενού, το κουμπί <strong>Επικοινωνία</strong>, τον επιλογέα EL | EN και το email του site.</li>
+        <li>Με το άνοιγμα η εστίαση μεταφέρεται μέσα στο μενού και το Tab κυκλοφορεί μόνο στα στοιχεία ελέγχου του μενού. Το Escape το κλείνει και η εστίαση επιστρέφει στο hamburger.</li>
+        <li>Το πάτημα ενός στοιχείου του μενού μεταβαίνει στη σελίδα και κλείνει το μενού· το EN φορτώνει το <code>/en/about</code> (την αντίστοιχη σελίδα, PUB-012). Η σελίδα από πίσω δεν κυλά όσο το μενού είναι ανοιχτό.</li>
+        <li>Όταν το μενού είναι κλειστό, κανένας από τους συνδέσμους του δεν είναι προσβάσιμος με Tab.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/layout/MobileMenu.tsx</code> · <code>src/cms/admin/ui/use-dialog.ts</code></p>
+    </article>
+
+    <article class="tc" id="PUB-011" data-priority="P3">
+      <h3>Η κεφαλίδα στα διάφορα breakpoints και η αλλαγή μεγέθους με ανοιχτό μενού</h3>
+      <ol class="steps">
+        <li>Στο <code>/</code> αλλάξτε σιγά σιγά το πλάτος από 320 px σε 1440 px και παρατηρήστε την κεφαλίδα.</li>
+        <li>Στα 375 px ανοίξτε το μενού κινητού και έπειτα διευρύνετε το παράθυρο στα 1024 px. Προσπαθήστε να κυλήσετε τη σελίδα.</li>
+      </ol>
+      <ul class="exp">
+        <li>Κάτω από 640 px το κουμπί <strong>Επικοινωνία</strong> είναι κρυφό· από 640 px εμφανίζεται. Κάτω από 768 px το μενού είναι το hamburger· από 768 px εμφανίζονται το ενσωματωμένο μενού και ο επιλογέας EL | EN και το hamburger εξαφανίζεται. Σε κανένα πλάτος τα στοιχεία δεν επικαλύπτονται ούτε σπάνε σε δύο γραμμές.</li>
+        <li>Βήμα 2: το μενού εξαφανίζεται στα 768 px. Καταγράψτε αν η σελίδα μπορεί ακόμη να κυλήσει· αν η κύλιση μένει κλειδωμένη μέχρι την επαναφόρτωση, σημειώστε Αποτυχία (το μενού μένει ανοιχτό στην κατάστασή του ενώ είναι κρυφό).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/layout/Header.tsx</code> (<code>sm:inline-flex</code>, <code>md:block</code>, <code>md:hidden</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-lang">
+    <h2>Επιλογέας γλώσσας</h2>
+    <p class="intro">Ο επιλογέας δημιουργεί απλούς συνδέσμους που διατηρούν τη διαδρομή και αλλάζουν μόνο το πρόθεμα γλώσσας, και επιβάλλει πλήρη φόρτωση της σελίδας. Τα slugs είναι ίδια σε κάθε γλώσσα.</p>
+
+    <article class="tc" id="PUB-012" data-priority="P1">
+      <h3>Η αλλαγή γλώσσας σας κρατά στην αντίστοιχη σελίδα</h3>
+      <ol class="steps">
+        <li>Σε καθεμία από τις παρακάτω ελληνικές σελίδες πατήστε <strong>EN</strong> στην κεφαλίδα, ελέγξτε τη διεύθυνση και έπειτα πατήστε <strong>EL</strong>: <code>/</code>, <code>/about</code>, <code>/contact</code>, <code>/legal/cookies</code>, <code>/shop</code>, <code>/shop/&lt;p&gt;</code>, <code>/shop/category/&lt;c&gt;</code>, <code>/booking/&lt;x&gt;</code>, <code>/account/login</code>.</li>
+        <li>Βάλτε ένα προϊόν στο καλάθι, αλλάξτε γλώσσα και ανοίξτε το καλάθι.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το EN οδηγεί στα <code>/en</code>, <code>/en/about</code>, <code>/en/contact</code> κ.ο.κ., ποτέ στο <code>/en/</code>· το EL επιστρέφει στη διεύθυνση χωρίς πρόθεμα, ποτέ στο <code>/el/…</code>. Κάθε αλλαγή είναι πλήρης φόρτωση της σελίδας και όλα τα κείμενα της σελίδας (κεφαλίδα, υποσέλιδο, banner cookies, καλάθι) αλλάζουν γλώσσα ταυτόχρονα· αλλάζει και το <code>&lt;html lang&gt;</code>.</li>
+        <li>Ο επιλογέας είναι ένα <code>nav</code> με όνομα <code>Αλλαγή γλώσσας</code> / <code>Switch language</code>· κάθε σύνδεσμος έχει <code>hreflang</code>.</li>
+        <li>Το καλάθι διατηρεί το προϊόν του μετά την αλλαγή (αποθηκεύεται στον browser).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/layout/LanguageSwitcher.tsx</code> (<code>hrefFor</code>)</p>
+    </article>
+
+    <article class="tc" id="PUB-013" data-priority="P2">
+      <h3>Αλλαγή γλώσσας σε σελίδα που δεν έχει μετάφραση</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/qa-el-only</code> (PUB-001) και πατήστε <strong>EN</strong>.</li>
+        <li>Ορίστε την αγγλική έκδοση ενός προϊόντος ως πρόχειρο (αφήστε την ελληνική δημοσιευμένη), ανοίξτε το στα ελληνικά και πατήστε <strong>EN</strong>. Δημοσιεύστε το ξανά στη συνέχεια.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: ο επιλογέας εξακολουθεί να προσφέρει EN· το πάτημα οδηγεί στο <code>/en/qa-el-only</code>, που ανακατευθύνει στο <code>/en/page-not-found</code> (Page not found). Δεν υπάρχει εναλλακτική εμφάνιση του ελληνικού κειμένου ούτε μήνυμα ότι η σελίδα υπάρχει μόνο στα ελληνικά. Καταγράψτε το ως την τρέχουσα συμπεριφορά· σημειώστε Αποτυχία μόνο αν ο product owner περιμένει εναλλακτική εμφάνιση ή κρυφό σύνδεσμο EN.</li>
+        <li>Βήμα 2: το <code>/en/shop/&lt;p&gt;</code> δείχνει το περιεχόμενο «δεν βρέθηκε» ή ανακατευθύνει όπως περιγράφει η COM-022· δεν δείχνει ποτέ το ελληνικό προϊόν μέσα σε αγγλικό πλαίσιο διεπαφής.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/[slug]/page.tsx</code> · <code>src/lib/cms/resolve-doc.ts</code> · <code>src/components/layout/LanguageSwitcher.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-014" data-priority="P3">
+      <h3>Query strings και anchors κατά την αλλαγή· μία μόνο δημόσια γλώσσα</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/shop?sort=price-asc&amp;page=2</code> (ή εφαρμόστε μια ταξινόμηση και ένα φίλτρο) και πατήστε <strong>EN</strong>.</li>
+        <li>Ανοίξτε το <code>/booking/lookup</code>, πληκτρολογήστε έναν κωδικό και πατήστε <strong>EN</strong>.</li>
+        <li>Αφαιρέστε το EN από τον δημόσιο ιστότοπο (SET-047), φορτώστε ξανά το <code>/about</code> και έπειτα επαναφέρετέ το.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: ο σύνδεσμος του επιλογέα μεταφέρει μόνο τη διαδρομή, οπότε η ταξινόμηση, τα φίλτρα και η σελίδα χάνονται (<code>/en/shop</code>). Καταγράψτε το· σημειώστε Αποτυχία μόνο αν η διατήρηση των φίλτρων είναι απαίτηση.</li>
+        <li>Βήμα 2: οι τιμές που πληκτρολογήθηκαν στη φόρμα χάνονται με την πλήρη επαναφόρτωση· αυτό είναι αναμενόμενο.</li>
+        <li>Βήμα 3: με μία δημόσια γλώσσα ο επιλογέας εξαφανίζεται από την κεφαλίδα και το μενού κινητού.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/layout/LanguageSwitcher.tsx</code> (<code>locales.length &lt; 2</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-i18n">
+    <h2>Μεταφράσεις &amp; μορφοποίηση</h2>
+
+    <article class="tc" id="PUB-015" data-priority="P1">
+      <h3>Κανένα ακατέργαστο κλειδί μηνύματος και καμία ανάμειξη γλωσσών</h3>
+      <ol class="steps">
+        <li>Με ένα προϊόν στο καλάθι, ανοίξτε το συρτάρι του καλαθιού, το banner των cookies και τις Preferences του, την ολοκλήρωση παραγγελίας (πατήστε Place order με κενά πεδία για να δείτε τα σφάλματα), τη φόρμα επικοινωνίας (υποβολή κενή), τη φόρμα κράτησης στο <code>/booking/&lt;x&gt;</code>, τις αναζητήσεις κράτησης και παραγγελίας (υποβολή με λάθος κωδικό), τη φόρμα σύνδεσης (λάθος κωδικός πρόσβασης) και τη σελίδα «δεν βρέθηκε». Κάντε το στον ελληνικό ιστότοπο και έπειτα στο <code>/en</code>.</li>
+        <li>Διαβάστε κάθε ορατό κείμενο, κουμπί, placeholder, μήνυμα σφάλματος και tooltip. Με αναγνώστη οθόνης ή με το δέντρο προσβασιμότητας διαβάστε επίσης τα προσβάσιμα ονόματα των κουμπιών με εικονίδιο.</li>
+      </ol>
+      <ul class="exp">
+        <li>Κανένα κείμενο δεν μοιάζει με κλειδί (<code>checkout.email</code>, <code>MISSING_MESSAGE</code>, <code>{year}</code>) και το αρχείο καταγραφής του server δεν δείχνει προειδοποίηση <code>MISSING_MESSAGE</code>.</li>
+        <li>Ο ελληνικός ιστότοπος δεν έχει αγγλικές προτάσεις και ο αγγλικός δεν έχει ελληνικές. Επιτρέπονται λέξεις που είναι εκ σχεδιασμού ίδιες και στα δύο αρχεία: <code>Email</code>, <code>Cookies</code>, <code>Blog</code>, <code>NEWSLETTER</code>, <code>name@example.com</code>.</li>
+        <li>Σύμφωνα με τον τρέχοντα κώδικα, σημειώστε Αποτυχία αν δείτε τα εξής: το ελληνικό σήμα <code>Best seller</code> (το <code>shop.badges.bestseller</code> είναι στα αγγλικά στο <code>el.json</code>), τα αγγλικά προσβάσιμα ονόματα <code>Primary</code> (κεφαλίδα και μενού κινητού), <code>Breadcrumb</code>, <code>Categories</code> και <code>… out of 5</code> (βαθμολογίες με αστέρια) στον ελληνικό ιστότοπο, και την αλλαγή από τον πληθυντικό ευγενείας στον ενικό (<code>Ζήτησε καινούριο</code>, <code>Η λίστα σου είναι άδεια</code>) στα κείμενα του λογαριασμού και της λίστας επιθυμιών.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>messages/el.json</code> · <code>messages/en.json</code> · <code>src/components/layout/Header.tsx</code> · <code>src/components/shop/Breadcrumbs.tsx</code> · <code>src/components/shop/CategoryNav.tsx</code> · <code>src/components/shop/ReviewStars.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-016" data-priority="P2">
+      <h3>Τα el.json και en.json έχουν τα ίδια κλειδιά</h3>
+      <ol class="steps">
+        <li>Στον φάκελο του έργου εκτελέστε:
+<pre><code>node -e '
+const f=(o,p="")=&gt;Object.entries(o).flatMap(([k,v])=&gt;v&amp;&amp;typeof v==="object"?f(v,p+k+"."):[p+k]);
+const el=f(require("./messages/el.json")), en=f(require("./messages/en.json"));
+console.log("el",el.length,"en",en.length);
+console.log("only el",el.filter(k=&gt;!en.includes(k)));
+console.log("only en",en.filter(k=&gt;!el.includes(k)));'</code></pre></li>
+        <li>Αναζητήστε κενές τιμές και στα δύο αρχεία: <code>grep -n '": ""' messages/*.json</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και τα δύο αρχεία έχουν τον ίδιο αριθμό κλειδιών (552 στο τρέχον branch) και και οι δύο λίστες «only» είναι <code>[]</code>. Καμία κενή τιμή. Διαφορετικός αριθμός ή μη κενή λίστα σημαίνει ότι λείπει μετάφραση: σημειώστε Αποτυχία και καταγράψτε τα κλειδιά.</p>
+      <p class="ref">Αναφ.: <code>messages/el.json</code> · <code>messages/en.json</code> · <code>src/lib/i18n/request.ts</code></p>
+    </article>
+
+    <article class="tc" id="PUB-017" data-priority="P3">
+      <h3>Κείμενα placeholder που δεν ακολουθούν το Branding</h3>
+      <ol class="steps">
+        <li>Σημειώστε το όνομα του site στα Settings → Branding (για παράδειγμα <code>QA Brand</code> από την MED-030).</li>
+        <li>Στα <code>/</code> και <code>/en</code> διαβάστε τα πνευματικά δικαιώματα στο υποσέλιδο, την περιγραφή του newsletter στην αρχική σελίδα, το προσβάσιμο όνομα του συνδέσμου του λογοτύπου και το <code>&lt;meta name="description"&gt;</code> στον κώδικα της αρχικής σελίδας.</li>
+        <li>Υποβάλετε τη φόρμα επικοινωνίας ενώ η αποστολή email δεν λειτουργεί (MKT-018) και διαβάστε το σφάλμα.</li>
+      </ol>
+      <ul class="exp">
+        <li>Σύμφωνα με τον τρέχοντα κώδικα, τα εξής προέρχονται από τα αρχεία μηνυμάτων και όχι από το Branding: <code>© &lt;year&gt; Site.</code>, <code>… από το Site …</code> / <code>… from Site …</code>, <code>Site — αρχική σελίδα</code> / <code>Site — home</code>, η περιγραφή της αρχικής <code>Site</code>, και το σφάλμα επικοινωνίας <code>… info@example.com.</code>. Σε site που βγαίνει στον αέρα πρέπει να αντικατασταθούν με το πραγματικό όνομα και τη διεύθυνση· καταγράψτε καθένα που εξακολουθεί να γράφει «Site» ή <code>example.com</code> ως Αποτυχία για την έναρξη λειτουργίας.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>messages/*.json</code> (<code>footer.copyright</code>, <code>home.metaDescription</code>, <code>home.newsletter.description</code>, <code>header.logoAlt</code>, <code>contact.form.error</code>)</p>
+    </article>
+
+    <article class="tc" id="PUB-018" data-priority="P2">
+      <h3>Τιμές σε ευρώ, ανά γλώσσα</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ένα προϊόν με τιμή <code>1234.5</code> και ένα με τιμή <code>49.99</code> και τιμή έκπτωσης (δημιουργήστε τα για αυτή την περίπτωση ελέγχου), νόμισμα EUR.</p>
+      <ol class="steps">
+        <li>Ανοίξτε τη λίστα του καταστήματος, τις δύο σελίδες προϊόντων, το συρτάρι του καλαθιού και τη σύνοψη της ολοκλήρωσης παραγγελίας στα ελληνικά και έπειτα στα αγγλικά.</li>
+        <li>Ανοίξτε μια εμπειρία κράτησης και επιλέξτε ημερομηνία για να δείτε την ανάλυση της τιμής, και στις δύο γλώσσες.</li>
+      </ol>
+      <ul class="exp">
+        <li>Ελληνικά: <code>1.234,50 €</code> και <code>49,99 €</code>: υποδιαστολή το κόμμα, τελεία για τις χιλιάδες, το σύμβολο του ευρώ μετά τον αριθμό με ένα κενό.</li>
+        <li>Αγγλικά: <code>€1,234.50</code> και <code>€49.99</code>: πρώτα το σύμβολο, υποδιαστολή η τελεία, κόμμα για τις χιλιάδες.</li>
+        <li>Η ίδια μορφή παντού σε μια σελίδα (λίστα, προϊόν, καλάθι, ολοκλήρωση παραγγελίας, φόρμα κράτησης, σελίδα πληρωμής κράτησης, αναζήτηση παραγγελίας, παραγγελίες λογαριασμού, email των λιστών ελέγχου 08 και 09). Οποιοδήποτε <code>49.99 EUR</code>, <code>€49,99</code> ή σκέτο <code>49.99</code> στον ελληνικό ιστότοπο είναι Αποτυχία.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/lib/money.ts</code> (<code>formatPrice</code>) · <code>src/cms/modules/commerce/read.ts</code> · <code>src/cms/modules/commerce/orders.ts</code> (<code>formatMoney</code>)</p>
+    </article>
+
+    <article class="tc" id="PUB-019" data-priority="P2">
+      <h3>Ημερομηνίες ανά γλώσσα</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το ημερολόγιο κρατήσεων στο <code>/booking/&lt;x&gt;</code>, επιλέξτε ημερομηνία και διαβάστε την ημερομηνία στη σύνοψη της φόρμας· έπειτα ανοίξτε το <code>/booking/lookup</code> με έναν κωδικό. Κάντε και τα δύο στα ελληνικά και στα αγγλικά.</li>
+        <li>Ανοίξτε το <code>/account/orders</code> και ένα προϊόν με κριτικές, και στις δύο γλώσσες.</li>
+      </ol>
+      <ul class="exp">
+        <li>Οι ελληνικές ημερομηνίες χρησιμοποιούν ελληνικά ονόματα μηνών και σειρά ημέρα-μήνας (για παράδειγμα <code>6 Μαΐ</code>, <code>6 Μαΐου 2026</code>)· τα αγγλικά χρησιμοποιούν επίσης σειρά ημέρα-μήνας (<code>6 May</code>, <code>6 May 2026</code>). Τα ονόματα μηνών και ημερών του ημερολογίου ακολουθούν τη γλώσσα της σελίδας και η εβδομάδα ξεκινά τη Δευτέρα και στις δύο.</li>
+        <li>Καμία ημερομηνία δεν εμφανίζεται σε μορφή ISO (<code>2026-05-06</code>) ή σε αμερικανική σειρά (<code>5/6/2026</code>) σε κανέναν από τους δύο ιστότοπους. Οι ημερομηνίες κριτικών στον αγγλικό ιστότοπο χρησιμοποιούν μορφοποίηση <code>en-US</code> σύμφωνα με τον κώδικα (<code>May 6, 2026</code>)· καταγράψτε το αν διαφέρει από τις άλλες αγγλικές ημερομηνίες.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/booking/booking-form-types.ts</code> (<code>formatDay</code>) · <code>src/lib/content-dates.ts</code> · <code>src/components/shop/ProductReviews.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-020" data-priority="P3">
+      <h3>Άλλοι αριθμοί ανά γλώσσα</h3>
+      <ol class="steps">
+        <li>Δώστε σε ένα προϊόν κριτικές με μέσο όρο 4.5 (COM-105, COM-106). Ανοίξτε το στα <code>/shop/&lt;p&gt;</code> και <code>/en/shop/&lt;p&gt;</code>.</li>
+        <li>Φιλτράρετε το <code>/booking</code> ώστε να μείνει ακριβώς μία εμπειρία, έπειτα αρκετές, και διαβάστε τον αριθμό αποτελεσμάτων και στις δύο γλώσσες. Διαβάστε τον μετρητή επισκεπτών στη φόρμα κράτησης.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Οι αριθμοί διαβάζονται φυσικά σε κάθε γλώσσα. Σύμφωνα με τον τρέχοντα κώδικα, το μήνυμα δεν έχει μορφή ενικού (<code>{count} εμπειρίες</code> / <code>{count} experiences</code>), οπότε ένα αποτέλεσμα εμφανίζεται ως <code>1 εμπειρίες</code> / <code>1 experiences</code>: σημειώστε Αποτυχία. Η βαθμολογία στον ελληνικό ιστότοπο θα έπρεπε να είναι <code>4,5</code>· σύμφωνα με τον τρέχοντα κώδικα εμφανίζεται <code>4.5</code> και στις δύο γλώσσες (<code>toFixed(1)</code>): σημειώστε Αποτυχία για τον ελληνικό ιστότοπο.</p>
+      <p class="ref">Αναφ.: <code>src/components/shop/ProductShowcase.tsx</code> · <code>src/components/shop/ProductReviews.tsx</code> · <code>src/components/shop/ReviewStars.tsx</code> · <code>messages/*.json</code> (<code>booking.resultCount</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-home">
+    <h2>Ενότητες της αρχικής σελίδας</h2>
+    <p class="intro">Η αρχική σελίδα αποτελείται από το hero (από τη σελίδα με slug <code>home</code>), το μπλοκ πρόσφατου περιεχομένου, την ενότητα newsletter και την καταληκτική πρόσκληση για επικοινωνία. Η CON-094 καλύπτει την επεξεργασία της αρχικής σελίδας· η MKT-032 την ενότητα newsletter.</p>
+
+    <article class="tc" id="PUB-021" data-priority="P2">
+      <h3>Η αρχική χωρίς τίποτα δημοσιευμένο</h3>
+      <ol class="steps">
+        <li>Ορίστε τη σελίδα <code>home</code> ως πρόχειρο και στις δύο γλώσσες και απενεργοποιήστε το module Newsletter.</li>
+        <li>Ανοίξτε τα <code>/</code> και <code>/en</code> χωρίς σύνδεση.</li>
+        <li>Επαναφέρετε και τα δύο στη συνέχεια.</li>
+      </ol>
+      <ul class="exp">
+        <li>Η επικεφαλίδα του hero είναι το όνομα του site από το Branding, με το σύνθημα (tagline) από κάτω αν έχει οριστεί, και το κουμπί <strong>Επικοινωνία</strong> / <strong>Contact us</strong> προς το <code>/contact</code>. Καμία εικόνα hero και κανένα κενό πλαίσιο εικόνας.</li>
+        <li>Η καταληκτική ζώνη γράφει <code>Επικοινωνήστε μαζί μας</code>, <code>Έχετε απορίες; Θα χαρούμε να βοηθήσουμε.</code> / <code>Get in touch</code>, <code>Questions? We are happy to help.</code> με κουμπί προς το <code>/contact</code>.</li>
+        <li>Καμία ενότητα newsletter και καμία κενή λωρίδα στη θέση της. Κανένα σφάλμα, κανένα ακατέργαστο κλειδί, κανένα κενό στη διάταξη.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/page.tsx</code> · <code>src/components/site/HomeSections.tsx</code> (<code>HomeHero</code>, <code>ContactCta</code>) · <code>src/components/site/HomeNewsletter.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-022" data-priority="P2">
+      <h3>Η αρχική με δημοσιευμένη τη σελίδα home και εικόνα hero</h3>
+      <ol class="steps">
+        <li>Δημοσιεύστε τη <code>home</code> και στις δύο γλώσσες με διαφορετικούς τίτλους και κείμενο, και με <strong>Hero image</strong>. Ενεργοποιήστε το Newsletter.</li>
+        <li>Ανοίξτε τα <code>/</code> και <code>/en</code>· επιθεωρήστε την εικόνα hero.</li>
+      </ol>
+      <ul class="exp">
+        <li>Κάθε γλώσσα δείχνει τον δικό της τίτλο ως το μοναδικό <code>h1</code> και το δικό της κείμενο. Η εικόνα βρίσκεται δίπλα στο κείμενο από τα 768 px και κάτω από αυτό σε μικρότερα πλάτη.</li>
+        <li>Η εικόνα σερβίρεται μέσω του <code>/_next/image</code> με <code>srcset</code> και <code>sizes="(max-width: 768px) 100vw, 50vw"</code>, φορτώνεται άμεσα (είναι το πιθανό στοιχείο LCP) και έχει <code>alt=""</code> (θεωρείται διακοσμητική).</li>
+        <li>Η ενότητα newsletter εμφανίζεται μία φορά, ανάμεσα στο μπλοκ πρόσφατου περιεχομένου (αν υπάρχει) και τη ζώνη επικοινωνίας, και το υποσέλιδο δεν έχει δεύτερη φόρμα εγγραφής (MKT-032).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/site/HomeSections.tsx</code> (<code>HomeHero</code>)</p>
+    </article>
+
+    <article class="tc" id="PUB-023" data-priority="P3">
+      <h3>Το μπλοκ πρόσφατου περιεχομένου και η κενή του κατάσταση</h3>
+      <ol class="steps">
+        <li>Στο <code>/</code> αναζητήστε μια ενότητα με τίτλο <code>Πρόσφατα</code> / <code>Latest</code>.</li>
+        <li>Σε site που δημιουργήθηκε με συλλογή blog, FAQ ή case studies (new-site skill), ανοίξτε το <code>/</code> πριν δημοσιευτεί οτιδήποτε σε αυτές και έπειτα μετά τη δημοσίευση ενός άρθρου.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1 στη βάση του CMS: δεν υπάρχει τέτοια ενότητα, επειδή η βάση δεν καταχωρίζει καμία από τις συλλογές άρθρων, απαντήσεων ή case studies. Αυτό είναι σωστό.</li>
+        <li>Βήμα 2: πριν από τη δημοσίευση, το μπλοκ δείχνει <code>Νέο περιεχόμενο θα εμφανιστεί εδώ μόλις δημοσιευτεί.</code> / <code>New content will appear here once it is published.</code>· μετά, μια ομάδα ανά συλλογή με τον τίτλο της, σύνδεσμο προς τη λίστα και έως τρία στοιχεία (CON-099).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/site/HomeSections.tsx</code> (<code>LatestContent</code>, <code>FAMILIES</code>) · <code>src/site.config.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-images">
+    <h2>Εικόνες</h2>
+
+    <article class="tc" id="PUB-024" data-priority="P2">
+      <h3>Προσαρμοστικά μεγέθη εικόνων</h3>
+      <ol class="steps">
+        <li>Ανοίξτε μια σελίδα του CMS με εικόνα hero (το <code>/qa-seo</code> από την MED-029 ή το <code>/about</code> με hero) με τα εργαλεία προγραμματιστή → Network → Img, στα 375 px και έπειτα στα 1440 px, φορτώνοντας ξανά κάθε φορά με απενεργοποιημένη την cache.</li>
+        <li>Κάντε το ίδιο στο <code>/shop</code>, σε μια σελίδα προϊόντος και στο <code>/booking</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Σελίδα CMS και hero της αρχικής: το <code>w=</code> στο αίτημα <code>/_next/image</code> είναι μικρότερο στα 375 px απ' ό,τι στα 1440 px, και η απάντηση είναι AVIF ή WebP.</li>
+        <li>Οι κάρτες του καταστήματος, η συλλογή εικόνων του προϊόντος, οι μικρογραφίες του καλαθιού και οι κάρτες κρατήσεων χρησιμοποιούν απευθείας το URL του αρχείου <code>/api/cms/media/file/&lt;uuid&gt;</code> (χωρίς <code>srcset</code>), οπότε ένα κινητό κατεβάζει ολόκληρη την αποθηκευμένη εικόνα (έως 1600×1200, MED-004). Καταγράψτε το μεγαλύτερο μέγεθος εικόνας στο <code>/shop</code> στα 375 px· πάνω από περίπου 200 KB ανά κάρτα προσμετράται στα ευρήματα απόδοσης της PUB-044.</li>
+        <li>Καμία εικόνα δεν είναι εμφανώς τεντωμένη ή συμπιεσμένη σε κανένα από τα δύο πλάτη.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/[slug]/page.tsx</code> (<code>next/image</code>) · <code>src/components/shop/ProductCard.tsx</code> · <code>src/components/booking/BookingCard.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-025" data-priority="P2">
+      <h3>Καθυστερημένη φόρτωση (lazy loading) κάτω από το ορατό τμήμα</h3>
+      <ol class="steps">
+        <li>Με τουλάχιστον 12 προϊόντα με εικόνες, ανοίξτε το <code>/shop</code> στα 375 px με ανοιχτό το Network → Img και απενεργοποιημένη την cache. Μην κυλήσετε· μετρήστε τα αιτήματα εικόνων. Έπειτα κυλήστε μέχρι κάτω.</li>
+        <li>Επαναλάβετε στο <code>/booking</code> με αρκετές εμπειρίες.</li>
+      </ol>
+      <ul class="exp">
+        <li>Οι κάρτες κρατήσεων και η συλλογή εικόνων της εμπειρίας έχουν <code>loading="lazy"</code>: οι εικόνες πιο κάτω φορτώνουν μόνο όταν κυλήσετε κοντά τους.</li>
+        <li>Σύμφωνα με τον τρέχοντα κώδικα, οι εικόνες των καρτών προϊόντων δεν έχουν <code>loading="lazy"</code>, οπότε φορτώνουν όλες μαζί· καταγράψτε τον αριθμό και σημειώστε Αποτυχία αν επιβραδύνει αισθητά τη σελίδα (βλ. PUB-044).</li>
+        <li>Τα hero στο ορατό τμήμα της σελίδας δεν φορτώνουν ποτέ καθυστερημένα (χρησιμοποιούν <code>priority</code>).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/shop/ProductCard.tsx</code> · <code>src/components/booking/BookingCard.tsx</code> · <code>src/app/[locale]/booking/[slug]/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-026" data-priority="P2">
+      <h3>Κείμενο alt σε κάθε εικόνα</h3>
+      <ol class="steps">
+        <li>Στα <code>/</code>, <code>/about</code>, <code>/shop</code>, σε μια σελίδα προϊόντος, στο <code>/booking</code>, σε μια σελίδα εμπειρίας, στο <code>/wishlist</code> (με ένα στοιχείο) και στο συρτάρι του καλαθιού, εκτελέστε στην κονσόλα:
+<pre><code>[...document.images].map(i =&gt; [i.getAttribute('alt'), i.currentSrc.slice(-40)])</code></pre></li>
+        <li>Ορίστε κείμενο alt σε μια εικόνα προϊόντος στη βιβλιοθήκη πολυμέσων (MED-019) και φορτώστε ξανά τη σελίδα του προϊόντος.</li>
+      </ol>
+      <ul class="exp">
+        <li>Καμία εικόνα δεν στερείται το χαρακτηριστικό <code>alt</code> (<code>null</code> στην έξοδο).</li>
+        <li>Οι πληροφοριακές εικόνες έχουν ουσιαστικό alt: λογότυπο = όνομα του site, εικόνα προϊόντος = το alt της ή το όνομα του προϊόντος, μικρογραφίες συλλογής = alt ή <code>&lt;name&gt; 2</code>, εικόνες καλαθιού και σύγκρισης = όνομα του προϊόντος.</li>
+        <li>Το <code>alt=""</code> εμφανίζεται μόνο όπου η εικόνα είναι διακοσμητική ή το όνομα είναι γραμμένο ακριβώς δίπλα της: hero της αρχικής, κάρτες κρατήσεων, γραμμές της λίστας επιθυμιών, avatars μαρτυριών, εικόνα popup.</li>
+        <li>Βήμα 2: η εικόνα του προϊόντος χρησιμοποιεί πλέον το κείμενο alt της βιβλιοθήκης (βλ. MED-021 για το πού χρησιμοποιείται και πού όχι).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/shop/ProductCard.tsx</code> · <code>src/components/shop/ProductShowcase.tsx</code> · <code>src/components/layout/Header.tsx</code> · <code>src/app/[locale]/wishlist/WishlistClient.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-forms">
+    <h2>Φόρμες</h2>
+    <p class="intro">Ισχύει για κάθε δημόσια φόρμα: επικοινωνία, newsletter (υποσέλιδο και αρχική), προτιμήσεις cookies, ολοκλήρωση παραγγελίας, δωροκάρτα και κωδικός έκπτωσης, φόρμα κράτησης, αναζήτηση παραγγελίας και κράτησης, σύνδεση, εγγραφή, ξεχασμένος κωδικός, επαναφορά, προφίλ και διευθύνσεις. Οι ειδικοί κανόνες κάθε φόρμας ελέγχονται στις 07, 08 και 09.</p>
+
+    <article class="tc" id="PUB-027" data-priority="P2">
+      <h3>Κάθε πεδίο έχει ορατή ετικέτα συνδεδεμένη με αυτό</h3>
+      <ol class="steps">
+        <li>Σε κάθε φόρμα από τις παραπάνω πατήστε πάνω στο κείμενο κάθε ετικέτας.</li>
+        <li>Στα εργαλεία προγραμματιστή → Accessibility (Chrome) ή στο Accessibility inspector (Firefox), ελέγξτε το υπολογισμένο όνομα κάθε πεδίου.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το πάτημα μιας ετικέτας τοποθετεί τον κέρσορα στο πεδίο της (ή επιλέγει το κουτάκι της). Κάθε input, select και textarea έχει όνομα που ταιριάζει με την ορατή ετικέτα του· τα placeholders δεν είναι ποτέ η μόνη ετικέτα (το email του newsletter έχει ετικέτα <code>Email</code> και το <code>name@example.com</code> μόνο ως placeholder).</li>
+        <li>Τα υποχρεωτικά πεδία επισημαίνονται ορατά (για παράδειγμα με <code>*</code> στην ολοκλήρωση παραγγελίας) και όχι μόνο με χρώμα. Τα πεδία email, ονόματος, τηλεφώνου και διεύθυνσης έχουν κατάλληλη τιμή <code>autocomplete</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/site/ContactForm.tsx</code> · <code>src/components/ui/Input.tsx</code> · <code>src/app/[locale]/checkout/CheckoutClient.tsx</code> · <code>src/components/account/AccountForms.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-028" data-priority="P2">
+      <h3>Τα μηνύματα σφάλματος εμφανίζονται στο πεδίο και ανακοινώνονται</h3>
+      <ol class="steps">
+        <li>Στο <code>/contact</code> υποβάλετε τη φόρμα κενή και έπειτα με email <code>a@b</code>.</li>
+        <li>Κάντε το ίδιο στο <code>/en/checkout</code> (επιλέξτε τους όρους και πατήστε Place order με κενά πεδία), στη φόρμα κράτησης, στο <code>/account/register</code> και στο <code>/order</code>.</li>
+        <li>Επαναλάβετε το βήμα 1 με ενεργό αναγνώστη οθόνης.</li>
+      </ol>
+      <ul class="exp">
+        <li>Επικοινωνία: κάτω από τα Όνομα και Μήνυμα <code>Το πεδίο είναι υποχρεωτικό.</code>, κάτω από το Email <code>Εισάγετε μια έγκυρη διεύθυνση email.</code>· τα πεδία αποκτούν κόκκινο περίγραμμα και <code>aria-invalid="true"</code> και το μήνυμα συνδέεται με <code>aria-describedby</code>, ώστε ο αναγνώστης οθόνης να το διαβάζει όταν μεταβαίνετε με Tab στο πεδίο.</li>
+        <li>Τα σφάλματα είναι κείμενο και όχι μόνο χρώμα, στη γλώσσα της σελίδας, και εξηγούν πώς διορθώνεται το πρόβλημα.</li>
+        <li>Σύμφωνα με τον τρέχοντα κώδικα, καμία δημόσια φόρμα δεν μεταφέρει την εστίαση στο πρώτο μη έγκυρο πεδίο μετά από αποτυχημένη υποβολή, και τα πεδία της ολοκλήρωσης παραγγελίας δεν έχουν <code>aria-invalid</code> ή <code>aria-describedby</code>. Καταγράψτε ποιες φόρμες αφήνουν τον χρήστη αναγνώστη οθόνης χωρίς ανακοίνωση των σφαλμάτων (WCAG 3.3.1, 4.1.3) και σημειώστε τες ως Αποτυχία.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/site/ContactForm.tsx</code> · <code>src/app/[locale]/checkout/CheckoutClient.tsx</code> · <code>src/components/booking/BookingForm.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-029" data-priority="P2">
+      <h3>Υποβολή με το πληκτρολόγιο</h3>
+      <ol class="steps">
+        <li>Στα <code>/contact</code>, <code>/order</code>, <code>/booking/lookup</code>, <code>/account/login</code> και στο newsletter του υποσέλιδου, συμπληρώστε τα πεδία μόνο με Tab και πατήστε Enter στο τελευταίο πεδίο κειμένου.</li>
+        <li>Στην ολοκλήρωση παραγγελίας επιλέξτε το κουτάκι των όρων με Space και υποβάλετε με Enter στο <strong>Place order</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το Enter υποβάλλει κάθε φόρμα (ένα textarea δέχεται το Enter ως νέα γραμμή, πράγμα σωστό· μεταβείτε με Tab στο κουμπί και πατήστε Enter εκεί). Κατά την αποστολή, το κουμπί δείχνει το κείμενο αναμονής (<code>Αποστολή…</code>, <code>Αναζήτηση…</code>) και δεν μπορεί να πατηθεί δύο φορές. Το μήνυμα αποτελέσματος (<code>Ευχαριστούμε — το μήνυμά σας στάλθηκε.</code>, αποτέλεσμα αναζήτησης, σφάλμα) εμφανίζεται χωρίς ποντίκι και ανακοινώνεται από τον αναγνώστη οθόνης (<code>role="status"</code> ή <code>role="alert"</code>).</p>
+      <p class="ref">Αναφ.: <code>src/components/site/ContactForm.tsx</code> · <code>src/app/[locale]/order/OrderLookupClient.tsx</code> · <code>src/app/[locale]/booking/lookup/BookingLookupClient.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-a11y">
+    <h2>Προσβασιμότητα (WCAG 2.2 AA)</h2>
+    <p class="intro">Τύποι σελίδων: αρχική, σελίδα CMS, επικοινωνία, λίστα καταστήματος, προϊόν, συρτάρι καλαθιού, ολοκλήρωση παραγγελίας, λίστα κρατήσεων, εμπειρία με φόρμα κράτησης, σελίδες αναζήτησης, σελίδες λογαριασμού, πολιτική cookies, «δεν βρέθηκε». Προαιρετικά εκτελέστε την επέκταση axe DevTools σε καθεμία και επισυνάψτε την αναφορά της· τα αυτόματα εργαλεία βρίσκουν μόνο μέρος των προβλημάτων, γι' αυτό κάντε και τα χειροκίνητα βήματα.</p>
+
+    <article class="tc" id="PUB-030" data-priority="P1">
+      <h3>Σύνδεσμος παράκαμψης</h3>
+      <ol class="steps">
+        <li>Στο <code>/about</code> κάντε κλικ στη γραμμή διευθύνσεων και πατήστε Tab μία φορά.</li>
+        <li>Πατήστε Enter και έπειτα Tab άλλη μία φορά.</li>
+        <li>Επαναλάβετε στο <code>/en/shop</code> και, συνδεδεμένοι ως διαχειριστής, στο <code>/about</code> (με τη μπάρα διαχείρισης).</li>
+      </ol>
+      <ul class="exp">
+        <li>Το πρώτο Tab εμφανίζει ένα σκούρο πλαίσιο πάνω αριστερά με το κείμενο <code>Μετάβαση στο περιεχόμενο</code> (<code>Skip to content</code> στα αγγλικά).</li>
+        <li>Το Enter μεταφέρει στο κύριο περιεχόμενο: το επόμενο Tab καταλήγει στον πρώτο σύνδεσμο ή στοιχείο ελέγχου μέσα στο σώμα της σελίδας και όχι στην κεφαλίδα. Ελέγξτε το και στο Safari (ορισμένοι browsers δεν μεταφέρουν την εστίαση σε προορισμό χωρίς <code>tabindex</code>· αν στο Safari το επόμενο Tab καταλήγει στην κεφαλίδα, σημειώστε Αποτυχία για το Safari).</li>
+        <li>Με τη μπάρα διαχείρισης, ο σύνδεσμος παράκαμψης εξακολουθεί να είναι η πρώτη στάση.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/layout.tsx</code> (σύνδεσμος παράκαμψης, <code>&lt;main id="main-content"&gt;</code>)</p>
+    </article>
+
+    <article class="tc" id="PUB-031" data-priority="P2">
+      <h3>Χρήση κάθε τύπου σελίδας μόνο με πληκτρολόγιο</h3>
+      <ol class="steps">
+        <li>Αποσυνδέστε ή αγνοήστε το ποντίκι. Σε κάθε τύπο σελίδας από τους παραπάνω διατρέξτε όλη τη σελίδα με Tab και χρησιμοποιήστε κάθε στοιχείο ελέγχου: μενού, επιλογέα γλώσσας, φίλτρα και ταξινόμηση, σελιδοποίηση, επιλογή παραλλαγής και ποσότητας, προσθήκη στο καλάθι, κουμπιά λίστας επιθυμιών και σύγκρισης, συρτάρι καλαθιού (άνοιγμα, αλλαγή ποσότητας, αφαίρεση, κλείσιμο), πεδία ολοκλήρωσης παραγγελίας και επιλογή αποστολής, ημερολόγιο κρατήσεων (πλήκτρα βέλους αν υποστηρίζονται, Enter για επιλογή), επισκέπτες και επιπλέον παροχές, banner cookies και προτιμήσεις, κλείσιμο popup.</li>
+        <li>Ολοκληρώστε μία παραγγελία επισκέπτη με χειροκίνητο τρόπο πληρωμής και ένα αίτημα κράτησης μόνο με πληκτρολόγιο.</li>
+      </ol>
+      <ul class="exp">
+        <li>Ό,τι μπορεί να γίνει με ποντίκι μπορεί να γίνει και με πληκτρολόγιο· η σειρά ακολουθεί την οπτική σειρά· τίποτα δεν παγιδεύει την εστίαση εκτός από τους ανοιχτούς διαλόγους (συρτάρι καλαθιού, μενού κινητού, προτιμήσεις cookies, popup), που την απελευθερώνουν με Escape και επιστρέφουν την εστίαση στο στοιχείο ελέγχου που τους άνοιξε.</li>
+        <li>Η εστίαση δεν πέφτει ποτέ σε αόρατα στοιχεία (κλειστό μενού, κλειστό συρτάρι, πεδίο honeypot). Το βήμα 2 ολοκληρώνεται με τη σελίδα ή το μήνυμα επιβεβαίωσης.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/ui/use-dialog.ts</code> · <code>src/components/shop/cart/CartDrawer.tsx</code> · <code>src/components/booking/BookingForm.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-032" data-priority="P2">
+      <h3>Η εστίαση είναι πάντα ορατή</h3>
+      <ol class="steps">
+        <li>Κατά την PUB-031 παρατηρήστε την ένδειξη εστίασης σε κάθε στάση, μεταξύ άλλων στους συνδέσμους του σκούρου υποσέλιδου, της σκούρας ζώνης επικοινωνίας, του banner cookies και της μπάρας διαχείρισης.</li>
+        <li>Ελέγξτε ότι το εστιασμένο στοιχείο δεν κρύβεται ποτέ πίσω από τη σταθερή (sticky) κεφαλίδα, το banner cookies ή τη μπάρα σύγκρισης όταν κατεβαίνετε με Tab σε μια μεγάλη σελίδα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε στάση δείχνει περίγραμμα ή δακτύλιο με αντίθεση τουλάχιστον 3:1 ως προς το φόντο του (WCAG 2.4.7, 2.4.13 συμβουλευτικό). Οι σύνδεσμοι του μενού της κεφαλίδας βασίζονται στο προεπιλεγμένο περίγραμμα του browser· καταγράψτε τον browser αν είναι αόρατο ή αχνό. Ένα εστιασμένο στοιχείο δεν καλύπτεται ποτέ πλήρως από σταθερή κεφαλίδα ή banner (WCAG 2.2 2.4.11)· αν το banner cookies καλύπτει έναν εστιασμένο σύνδεσμο του υποσέλιδου, σημειώστε Αποτυχία.</p>
+      <p class="ref">Αναφ.: <code>src/components/layout/Header.tsx</code> · <code>src/components/ui/Button.tsx</code> · <code>src/components/layout/CookieBanner.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-033" data-priority="P2">
+      <h3>Ορόσημα (landmarks) και σειρά επικεφαλίδων</h3>
+      <ol class="steps">
+        <li>Σε κάθε τύπο σελίδας εμφανίστε τη λίστα με τα ορόσημα και τις επικεφαλίδες (NVDA: Insert+F7· VoiceOver: rotor· ή την επέκταση <em>HeadingsMap</em> και το δέντρο προσβασιμότητας).</li>
+        <li>Στα <code>/booking</code>, <code>/booking/&lt;x&gt;</code>, <code>/booking/lookup</code> εκτελέστε <code>document.querySelectorAll('main').length</code> στην κονσόλα.</li>
+      </ol>
+      <ul class="exp">
+        <li>Κάθε σελίδα έχει ένα banner (κεφαλίδα), ένα main, ένα contentinfo (υποσέλιδο) και περιοχές πλοήγησης με όνομα. Οι δύο τίτλοι στηλών του υποσέλιδου είναι <code>h2</code>.</li>
+        <li>Ακριβώς ένα <code>h1</code> ανά σελίδα, που ταιριάζει με τον τίτλο της σελίδας· οι επικεφαλίδες κατεβαίνουν ένα επίπεδο κάθε φορά (<code>h1</code> → <code>h2</code> → <code>h3</code>) χωρίς παράλειψη.</li>
+        <li>Σύμφωνα με τον τρέχοντα κώδικα, οι σελίδες λίστας κρατήσεων, εμπειρίας, αναζήτησης και πληρωμής τοποθετούν δεύτερο <code>&lt;main&gt;</code> μέσα στο <code>&lt;main&gt;</code> του layout, οπότε το βήμα 2 τυπώνει <code>2</code>: σημειώστε Αποτυχία. Η κεφαλίδα και το μενού κινητού έχουν και τα δύο το αγγλικό όνομα <code>Primary</code> στον ελληνικό ιστότοπο (βλ. PUB-015).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/layout.tsx</code> · <code>src/app/[locale]/booking/page.tsx</code> · <code>src/app/[locale]/booking/[slug]/page.tsx</code> · <code>src/app/[locale]/booking/lookup/page.tsx</code> · <code>src/app/[locale]/booking/pay/[reference]/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-034" data-priority="P2">
+      <h3>Αντίθεση χρωμάτων των χρωμάτων του brand</h3>
+      <ol class="steps">
+        <li>Με την προεπιλεγμένη παλέτα, ελέγξτε με ένα εργαλείο αντίθεσης (επιλογέας χρώματος των εργαλείων προγραμματιστή, WebAIM checker ή axe): κείμενο σώματος, αχνό κείμενο, συνδέσμους κεφαλίδας, κείμενο υποσέλιδου σε navy, ψιλά γράμματα υποσέλιδου, κουμπιά (primary, secondary, ghost), σήμα έκπτωσης, κείμενο σφάλματος, κείμενο placeholder, απενεργοποιημένα κουμπιά.</li>
+        <li>Στα Settings → Branding ορίστε ένα ανοιχτό χρώμα έμφασης που ενεργοποιεί την προειδοποίηση αντίθεσης (MED-033), αποθηκεύστε παρ' όλα αυτά και ελέγξτε ξανά κουμπιά και συνδέσμους. Επαναφέρετε στη συνέχεια.</li>
+      </ol>
+      <ul class="exp">
+        <li>Κανονικό κείμενο τουλάχιστον 4.5:1, μεγάλο κείμενο και στοιχεία διεπαφής (περιγράμματα πεδίων, εικονίδια, δακτύλιοι εστίασης) τουλάχιστον 3:1. Προεπιλογές: το κείμενο <code>#111827</code> και το αχνό <code>#4b5563</code> σε λευκό περνούν· το <code>#9ca3af</code> (text-light) είναι κάτω από 4.5:1 και επιτρέπεται μόνο για διακόσμηση (το <code>|</code> ανάμεσα σε EL και EN) ή για απενεργοποιημένα στοιχεία· το περίγραμμα πεδίου <code>#e5e7eb</code> σε λευκό είναι κάτω από 3:1: καταγράψτε το (WCAG 1.4.11).</li>
+        <li>Βήμα 2: καταγράψτε ποια στοιχεία πέφτουν κάτω από τα όρια με τα χρώματα του ιδιοκτήτη· το διαχειριστικό προειδοποιεί αλλά δεν το εμποδίζει.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/globals.css</code> (χρώματα <code>@theme</code>) · <code>src/cms/core/brand/BrandStyle.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-035" data-priority="P2">
+      <h3>Μεγέθυνση στο 200%, διάστιχο κειμένου, αναδιάταξη στα 320 px</h3>
+      <ol class="steps">
+        <li>Με πλάτος παραθύρου 1280 px, μεγεθύνετε τον browser στο 200% στην αρχική, σε ένα προϊόν, στην ολοκλήρωση παραγγελίας και σε μια σελίδα εμπειρίας.</li>
+        <li>Ορίστε πλάτος 320 px με μεγέθυνση 100% στις ίδιες σελίδες.</li>
+        <li>Εφαρμόστε μεγαλύτερες αποστάσεις κειμένου (ένα bookmarklet ή μια επέκταση που ορίζει ύψος γραμμής 1.5, απόσταση γραμμάτων 0.12em, απόσταση λέξεων 0.16em, απόσταση παραγράφων 2em).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Όλο το περιεχόμενο και όλες οι λειτουργίες παραμένουν διαθέσιμα· στο 200% αναλαμβάνει η κεφαλίδα κινητού και το μενού λειτουργεί. Στα 320 px δεν υπάρχει οριζόντια κύλιση, εκτός μέσα σε πίνακες δεδομένων (ο πίνακας σύγκρισης μπορεί να κυλά μέσα στο δικό του πλαίσιο). Με τις μεγαλύτερες αποστάσεις κανένα κείμενο δεν κόβεται ούτε επικαλύπτεται· τα κουμπιά μεγαλώνουν αντί να κόβουν τις ετικέτες τους (WCAG 1.4.4, 1.4.10, 1.4.12).</p>
+      <p class="ref">Αναφ.: <code>src/app/globals.css</code> · <code>src/components/shop/compare/CompareClient.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-036" data-priority="P3">
+      <h3>Η μειωμένη κίνηση γίνεται σεβαστή</h3>
+      <ol class="steps">
+        <li>Ενεργοποιήστε τη μειωμένη κίνηση (Windows: Settings → Accessibility → Visual effects → Animation effects off· macOS/iOS: Reduce motion· ή Chrome developer tools → Rendering → Emulate <code>prefers-reduced-motion: reduce</code>).</li>
+        <li>Ανοίξτε μια εμπειρία κράτησης και επιλέξτε ημερομηνία (οι ενότητες της φόρμας που εμφανίζονται), ανοίξτε το μενού κινητού και το συρτάρι του καλαθιού, περάστε τον δείκτη πάνω από κάρτες προϊόντων και κυλήστε μια μεγάλη σελίδα με τη σταθερή κεφαλίδα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Οι ενότητες της φόρμας κράτησης εμφανίζονται χωρίς να γλιστρούν, και το σταθερό κουμπί πρόσκλησης σε ενέργεια δεν έχει μετάβαση. Τα υπόλοιπα εφέ είναι σύντομες μεταβάσεις χρώματος ή αδιαφάνειας, που επιτρέπονται. Καταγράψτε κάθε ολίσθηση, zoom (η εικόνα προϊόντος μεγεθύνεται ελαφρά στο hover) ή ομαλή κύλιση που εξακολουθεί να εκτελείται· κανένα εφέ δεν πρέπει να αναβοσβήνει περισσότερο από τρεις φορές το δευτερόλεπτο.</p>
+      <p class="ref">Αναφ.: <code>src/app/globals.css</code> (<code>.booking-reveal</code>) · <code>src/components/ui/StickyAnchorCta.tsx</code> · <code>src/components/shop/ProductCard.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-037" data-priority="P2">
+      <h3>Αναγνώστης οθόνης: αρχική σελίδα και banner cookies</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Νέο ιδιωτικό παράθυρο (εμφανίζεται το banner). NVDA με Firefox ή Chrome, ή VoiceOver με Safari.</p>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/</code>. Αφήστε τον αναγνώστη οθόνης να διαβάσει από την αρχή και έπειτα πλοηγηθείτε με ορόσημα και επικεφαλίδες.</li>
+        <li>Μεταβείτε στο banner cookies, ανοίξτε τις <strong>Προτιμήσεις</strong>, αλλάξτε μια κατηγορία και αποθηκεύστε.</li>
+      </ol>
+      <ul class="exp">
+        <li>Ο τίτλος και η γλώσσα της σελίδας είναι σωστά (το ελληνικό κείμενο διαβάζεται με ελληνική φωνή, αν υπάρχει εγκατεστημένη). Ο σύνδεσμος παράκαμψης, το όνομα του συνδέσμου του λογοτύπου, τα στοιχεία του μενού, ο επιλογέας γλώσσας και τα κουμπιά με εικονίδιο (λίστα επιθυμιών, λογαριασμός, καλάθι με τον αριθμό του) έχουν όλα εκφωνούμενα ονόματα.</li>
+        <li>Το banner είναι περιοχή με όνομα <code>Συγκατάθεση cookies</code>· τα κουμπιά του διαβάζονται με το κείμενό τους· το κουμπί προτιμήσεων ανακοινώνει αν είναι ανεπτυγμένο ή συμπτυγμένο· κάθε διακόπτης κατηγορίας ανακοινώνει το όνομα και την κατάστασή του, και ο απαραίτητος ανακοινώνεται ως μη διαθέσιμος ή πάντα ενεργός.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/layout/CookieBanner.tsx</code> · <code>src/components/layout/Header.tsx</code> · MKT-049 έως MKT-054</p>
+    </article>
+
+    <article class="tc" id="PUB-038" data-priority="P2">
+      <h3>Αναγνώστης οθόνης: σελίδα προϊόντος</h3>
+      <ol class="steps">
+        <li>Ανοίξτε ένα προϊόν με παραλλαγές. Πλοηγηθείτε στη συλλογή εικόνων, την τιμή, την επιλογή παραλλαγής, την ποσότητα, το <strong>Add to cart</strong>, τα κουμπιά λίστας επιθυμιών και σύγκρισης και τις κριτικές.</li>
+        <li>Επιλέξτε μια παραλλαγή και προσθέστε την στο καλάθι.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τα breadcrumbs είναι πλοήγηση με όνομα. Η τιμή διαβάζεται ως μία τιμή (η τιμή έκπτωσης και η αρχική τιμή διακρίνονται και όχι μόνο με τη διαγραφή). Οι επιλογές παραλλαγών ανακοινώνουν το όνομά τους και την κατάσταση επιλογής· μια μη διαθέσιμη επιλογή ανακοινώνεται ως τέτοια. Η προσθήκη στο καλάθι ανοίγει το συρτάρι και ο αναγνώστης οθόνης μεταφέρεται μέσα του ή ανακοινώνει το προϊόν που προστέθηκε. Η βαθμολογία με αστέρια διαβάζεται ως αριθμός αστεριών (βλ. PUB-015 για τη γλώσσα της).</p>
+      <p class="ref">Αναφ.: <code>src/components/shop/ProductShowcase.tsx</code> · <code>src/components/shop/cart/CartDrawer.tsx</code> · <code>src/components/shop/ReviewStars.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-039" data-priority="P2">
+      <h3>Αναγνώστης οθόνης: φόρμα κράτησης</h3>
+      <ol class="steps">
+        <li>Στο <code>/booking/&lt;x&gt;</code> συμπληρώστε τη φόρμα με τον αναγνώστη οθόνης: ημερολόγιο, επισκέπτες, επιπλέον παροχές, στοιχεία, όροι, υποβολή. Υποβάλετε μία φορά με ένα υποχρεωτικό πεδίο κενό.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το ημερολόγιο ανακοινώνει τον μήνα, την ημερομηνία κάθε ημέρας και αν είναι διαθέσιμη ή επιλεγμένη· τα κουμπιά προηγούμενου και επόμενου μήνα έχουν ονόματα. Όταν επιλεγεί ημερομηνία, οι ενότητες που εμφανίζονται και η τιμή ανακοινώνονται ή είναι προσβάσιμες με τη σειρά. Το στοιχείο ελέγχου επισκεπτών ανακοινώνει την τιμή και τα όριά του. Τα σφάλματα ανακοινώνονται (βλ. PUB-028). Η τελική επιβεβαίωση ανακοινώνεται.</p>
+      <p class="ref">Αναφ.: <code>src/components/booking/BookingForm.tsx</code> · <code>src/components/booking/TransportFields.tsx</code> · <code>src/components/booking/booking-form-fields.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-040" data-priority="P2">
+      <h3>Αναγνώστης οθόνης: ολοκλήρωση παραγγελίας</h3>
+      <ol class="steps">
+        <li>Με δύο προϊόντα στο καλάθι, διατρέξτε το <code>/checkout</code> με τον αναγνώστη οθόνης: στοιχεία επικοινωνίας, αποστολή, επιλογή τρόπου, δωροκάρτα, κωδικός έκπτωσης, πλαίσιο λογαριασμού, επιλογές δώρου, σύνοψη, όροι, Place order. Εφαρμόστε μία φορά λάθος κωδικό έκπτωσης.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε ομάδα έχει επικεφαλίδα ή legend που διαβάζεται· οι ομάδες επιλογής (τρόποι αποστολής, πληρωμή) ανακοινώνουν το όνομα της ομάδας και την επιλεγμένη επιλογή· τα σύνολα ενημερώνονται και το νέο σύνολο είναι αναγνώσιμο μετά από αλλαγή τρόπου ή κωδικού· το μήνυμα λάθους κωδικού ανακοινώνεται. Καταγράψτε κάθε πεδίο του οποίου το σφάλμα δεν ανακοινώνεται (PUB-028).</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/checkout/CheckoutClient.tsx</code> · <code>src/components/checkout/GiftCardField.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-responsive">
+    <h2>Προσαρμοστική διάταξη &amp; browsers</h2>
+
+    <article class="tc" id="PUB-041" data-priority="P1">
+      <h3>Καμία οριζόντια κύλιση σε πέντε πλάτη</h3>
+      <ol class="steps">
+        <li>Σε κάθε πλάτος του πίνακα ανοίξτε τις σελίδες που αναφέρονται και κυλήστε από πάνω μέχρι κάτω. Στην κονσόλα εκτελέστε <code>document.documentElement.scrollWidth &gt; innerWidth</code>.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>OK</th><th>Πλάτος</th><th>Σελίδες</th></tr></thead>
+          <tbody>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκαν τα 320 px"></td><td>320 px</td><td><code>/</code>, <code>/about</code>, <code>/shop</code>, προϊόν, <code>/checkout</code>, εμπειρία, <code>/account</code>, «δεν βρέθηκε»</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκαν τα 375 px"></td><td>375 px</td><td>οι ίδιες σελίδες, καθώς και συρτάρι καλαθιού, banner cookies, μενού κινητού, μπάρα σύγκρισης</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκαν τα 768 px"></td><td>768 px</td><td>οι ίδιες σελίδες· εδώ η κεφαλίδα αλλάζει σε αυτή του υπολογιστή</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκαν τα 1024 px"></td><td>1024 px</td><td>οι ίδιες σελίδες</td></tr>
+          <tr><td><input type="checkbox" aria-label="Ελέγχθηκαν τα 1440 px"></td><td>1440 px</td><td>οι ίδιες σελίδες· το περιεχόμενο μένει μέσα στην κεντραρισμένη στήλη</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η κονσόλα τυπώνει <code>false</code> σε κάθε σελίδα και σε κάθε πλάτος. Τίποτα δεν κόβεται, δεν επικαλύπτεται και δεν είναι απρόσιτο· οι στόχοι αφής στα κινητά είναι τουλάχιστον 24×24 px (WCAG 2.5.8)· οι μεγάλες ελληνικές λέξεις και τα μεγάλα ονόματα προϊόντων αναδιπλώνονται αντί να ξεχειλίζουν.</p>
+      <p class="ref">Αναφ.: <code>src/components/layout/Header.tsx</code> · <code>src/app/globals.css</code></p>
+    </article>
+
+    <article class="tc" id="PUB-042" data-priority="P2">
+      <h3>Chrome, Firefox και Safari / iOS</h3>
+      <ol class="steps">
+        <li>Στις τρέχουσες εκδόσεις των Chrome, Firefox και Safari (macOS), και στο Safari σε iPhone, επαναλάβετε τις PUB-006, PUB-012 και μια παραγγελία επισκέπτη και ένα αίτημα κράτησης (PUB-031 βήμα 2, με ποντίκι ή αφή).</li>
+        <li>Στο iPhone ελέγξτε επίσης το μενού κινητού, το συρτάρι του καλαθιού, τον επιλογέα ημερομηνίας, το πληκτρολόγιο οθόνης πάνω από τα πεδία της ολοκλήρωσης παραγγελίας και την περιστροφή σε οριζόντιο προσανατολισμό.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το ίδιο αποτέλεσμα σε κάθε browser: οι γραμματοσειρές φορτώνουν, η διάταξη και τα εικονίδια ταιριάζουν, το καλάθι διατηρείται, οι φόρμες υποβάλλονται, οι ανακατευθύνσεις πληρωμής και οι επιστροφές λειτουργούν. Στο iOS τα πεδία δεν μεγεθύνουν τη σελίδα κατά την εστίαση (μέγεθος γραμματοσειράς τουλάχιστον 16 px), το συρτάρι και το μενού δεν κρύβονται κάτω από τις μπάρες του browser και η σελίδα δεν μετακινείται απότομα όταν ανοίγει το πληκτρολόγιο. Καταγράψτε τις εκδόσεις των browsers.</p>
+      <p class="ref">Αναφ.: docs/dev-guides/01-architecture.md</p>
+    </article>
+
+    <article class="tc" id="PUB-043" data-priority="P3">
+      <h3>Δειγματοληπτικός έλεγχος στο Samsung Internet</h3>
+      <ol class="steps">
+        <li>Σε κινητό Android με Samsung Internet ανοίξτε το <code>/</code>, το <code>/shop</code>, ένα προϊόν, προσθέστε το στο καλάθι, ανοίξτε το <code>/checkout</code>, ανοίξτε μια εμπειρία και επιλέξτε ημερομηνία. Ενεργοποιήστε τη σκοτεινή λειτουργία του browser και επαναλάβετε το <code>/</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Οι σελίδες εμφανίζονται και συμπεριφέρονται όπως στο Chrome για Android. Με την επιβεβλημένη σκοτεινή λειτουργία της Samsung, το κείμενο παραμένει αναγνώσιμο και τα λογότυπα ορατά· καταγράψτε οτιδήποτε δεν διαβάζεται (το site δεν έχει δικό του σκοτεινό θέμα).</p>
+      <p class="ref">Αναφ.: <code>src/app/globals.css</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-perf">
+    <h2>Απόδοση</h2>
+    <p class="intro">Μόνο σε build παραγωγής. Εκτελέστε το Lighthouse από τα Chrome developer tools → Lighthouse, λειτουργία Navigation, συσκευή Mobile, όλες οι κατηγορίες, σε ιδιωτικό παράθυρο χωρίς επεκτάσεις, τρεις εκτελέσεις ανά σελίδα, και καταγράψτε τη διάμεσο. Σε origin που δεν είναι παραγωγής, η βαθμολογία SEO χάνει μονάδες λόγω των κανόνων robots που μπλοκάρουν (SET-076)· αγνοήστε αυτόν τον έναν έλεγχο.</p>
+
+    <article class="tc" id="PUB-044" data-priority="P2">
+      <h3>Lighthouse για κινητό: αρχική, σελίδες λίστας και σελίδες λεπτομερειών</h3>
+      <ol class="steps">
+        <li>Εκτελέστε το Lighthouse σε κάθε σελίδα του πίνακα και συμπληρώστε τις βαθμολογίες στις σημειώσεις.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>OK</th><th>Σελίδα</th><th>Performance</th><th>Accessibility</th><th>Best practices</th><th>SEO</th></tr></thead>
+          <tbody>
+          <tr><td><input type="checkbox" aria-label="Lighthouse εντάξει για την αρχική"></td><td><code>/</code></td><td>≥ 90</td><td>≥ 95</td><td>≥ 95</td><td>≥ 95</td></tr>
+          <tr><td><input type="checkbox" aria-label="Lighthouse εντάξει για τη σελίδα Σχετικά"></td><td><code>/about</code></td><td>≥ 90</td><td>≥ 95</td><td>≥ 95</td><td>≥ 95</td></tr>
+          <tr><td><input type="checkbox" aria-label="Lighthouse εντάξει για το κατάστημα"></td><td><code>/shop</code></td><td>≥ 80</td><td>≥ 95</td><td>≥ 95</td><td>≥ 95</td></tr>
+          <tr><td><input type="checkbox" aria-label="Lighthouse εντάξει για τις κρατήσεις"></td><td><code>/booking</code></td><td>≥ 80</td><td>≥ 95</td><td>≥ 95</td><td>≥ 95</td></tr>
+          <tr><td><input type="checkbox" aria-label="Lighthouse εντάξει για το προϊόν"></td><td><code>/shop/&lt;p&gt;</code></td><td>≥ 80</td><td>≥ 95</td><td>≥ 95</td><td>≥ 95</td></tr>
+          <tr><td><input type="checkbox" aria-label="Lighthouse εντάξει για την εμπειρία"></td><td><code>/booking/&lt;x&gt;</code></td><td>≥ 80</td><td>≥ 95</td><td>≥ 95</td><td>≥ 95</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε βαθμολογία πιάνει το όριό της (αυτοί είναι οι στόχοι της λίστας ελέγχου· συμφωνήστε διαφορετικούς με τον ιδιοκτήτη, αν χρειάζεται). Για κάθε απόκλιση, αντιγράψτε στις σημειώσεις τις τρεις κορυφαίες ευκαιρίες βελτίωσης από την αναφορά (συνήθεις εδώ: εικόνες προϊόντων σε πλήρες μέγεθος, PUB-024· εικόνες χωρίς καθυστερημένη φόρτωση, PUB-025).</p>
+      <p class="ref">Αναφ.: docs/dev-guides/06-media-seo-structured-data.md · <code>next.config.ts</code> (<code>images</code>)</p>
+    </article>
+
+    <article class="tc" id="PUB-045" data-priority="P2">
+      <h3>Στόχοι Core Web Vitals</h3>
+      <ol class="steps">
+        <li>Από τις εκτελέσεις Lighthouse της PUB-044 σημειώστε τα LCP και CLS, καθώς και το στοιχείο LCP.</li>
+        <li>Για το INP ανοίξτε τα Chrome developer tools → Performance (live metrics), έπειτα σε μια σελίδα προϊόντος αλλάξτε την παραλλαγή, προσθέστε στο καλάθι, ανοίξτε και κλείστε το συρτάρι· σε μια σελίδα εμπειρίας επιλέξτε ημερομηνία και αλλάξτε τους επισκέπτες· στο <code>/shop</code> εφαρμόστε ένα φίλτρο.</li>
+        <li>Αν το site είναι δημόσιο και έχει επισκεψιμότητα, διαβάστε επίσης τα δεδομένα πεδίου στο PageSpeed Insights.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> LCP ≤ 2.5 s, CLS ≤ 0.1, INP ≤ 200 ms (τα όρια «good» της Google) σε κάθε σελίδα. Το στοιχείο LCP είναι η εικόνα hero ή η επικεφαλίδα της σελίδας, όχι μια κάρτα που φορτώνει αργά. Καμία μετατόπιση διάταξης όταν εμφανίζονται το banner cookies, η μπάρα διαχείρισης, οι γραμματοσειρές (Inter με <code>display: swap</code>) ή οι τιμές.</p>
+      <p class="ref">Αναφ.: <code>src/lib/fonts.ts</code> · <code>src/components/site/HomeSections.tsx</code> (<code>priority</code>)</p>
+    </article>
+
+    <article class="tc" id="PUB-046" data-priority="P2">
+      <h3>Κεφαλίδες cache σε σελίδες, στατικά αρχεία και εικόνες</h3>
+      <ol class="steps">
+        <li>Εκτελέστε:
+<pre><code>curl -s -I "$BASE/about" | grep -i cache-control
+JS=$(curl -s "$BASE/" | grep -o '/_next/static/[^"]*\.js' | head -1); curl -s -I "$BASE$JS" | grep -i cache-control
+FONT=$(curl -s "$BASE/" | grep -o '/_next/static/media/[^"]*\.woff2' | head -1); curl -s -I "$BASE$FONT" | grep -i cache-control
+curl -s -I "$BASE/favicon.svg" | grep -i cache-control</code></pre></li>
+        <li>Στα εργαλεία προγραμματιστή → Network, φορτώστε ξανά μια σελίδα με hero και λίστα προϊόντων και διαβάστε το <code>Cache-Control</code> ενός αιτήματος <code>/_next/image</code> και ενός αιτήματος <code>/api/cms/media/file/…</code>. Φορτώστε ξανά (χωρίς να απενεργοποιήσετε την cache) και ελέγξτε τι σερβίρεται από την cache.</li>
+      </ol>
+      <ul class="exp">
+        <li>Σελίδες HTML: δεν αποθηκεύονται δημόσια στην cache (<code>private, no-cache, no-store, max-age=0, must-revalidate</code>), αφού κάθε σελίδα αποδίδεται ανά αίτημα.</li>
+        <li>Scripts, styles και γραμματοσειρές <code>/_next/static/…</code>: <code>public, max-age=31536000, immutable</code>. <code>/favicon.svg</code>: <code>public, max-age=86400, stale-while-revalidate=604800</code>. Αρχεία πολυμέσων: <code>public, max-age=31536000, immutable</code> (MED-026). <code>/_next/image</code>: public με μη μηδενικό <code>max-age</code>· καταγράψτε την τιμή.</li>
+        <li>Η δεύτερη επαναφόρτωση σερβίρει τα στατικά αρχεία και τις εικόνες από την cache του browser (χωρίς νέα λήψη).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>next.config.ts</code> (<code>headers()</code>) · <code>src/app/[locale]/layout.tsx</code> (<code>dynamic = 'force-dynamic'</code>) · <code>src/app/api/cms/media/file/[uuid]/route.ts</code></p>
+    </article>
+
+    <article class="tc" id="PUB-047" data-priority="P1">
+      <h3>Κανένα σφάλμα κονσόλας και κανένα αποτυχημένο αίτημα</h3>
+      <ol class="steps">
+        <li>Με ανοιχτή την κονσόλα και την καρτέλα Network (με ενεργό το Preserve log), διατρέξτε: <code>/</code>, <code>/about</code>, <code>/contact</code>, <code>/shop</code>, ένα προϊόν, προσθήκη στο καλάθι, <code>/checkout</code>, <code>/booking</code>, μια εμπειρία με επιλεγμένη ημερομηνία, <code>/account/login</code>, τη σελίδα «δεν βρέθηκε»· έπειτα αποδεχτείτε το banner cookies. Κάντε το στα ελληνικά και στα αγγλικά.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κανένα κόκκινο σφάλμα κονσόλας (κανένα hydration mismatch, καμία παραβίαση CSP, κανένα chunk που αποτυγχάνει, κανένα <code>MISSING_MESSAGE</code>). Κανένα αίτημα με κατάσταση 4xx ή 5xx πέρα από τα αναμενόμενα (το <code>307</code> προς τη σελίδα «δεν βρέθηκε», το <code>404</code> ενός προϊόντος που δεν υπάρχει). Κανένα αίτημα σε host τρίτου πριν από τη συγκατάθεση· μετά το Accept all, το Google Analytics φορτώνει μόνο όταν έχει οριστεί ID (MKT-079). Καταγράψτε κάθε σφάλμα με τη σελίδα του.</p>
+      <p class="ref">Αναφ.: <code>next.config.ts</code> (<code>PRODUCTION_CSP</code>) · <code>src/components/layout/AnalyticsLoader.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-048" data-priority="P3">
+      <h3>Οι γραμματοσειρές και οι πόροι τρίτων φιλοξενούνται στο ίδιο το site</h3>
+      <ol class="steps">
+        <li>Στο <code>/</code> στο Network φιλτράρετε κατά Font και έπειτα κατά Domain (ή χρησιμοποιήστε το φίλτρο «Third-party» στο Chrome).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τα αρχεία γραμματοσειρών προέρχονται από το <code>/_next/static/media/</code> του ίδιου του site· κανένα αίτημα δεν πηγαίνει στο <code>fonts.googleapis.com</code> ή στο <code>fonts.gstatic.com</code>. Το ελληνικό κείμενο χρησιμοποιεί Inter (φορτώνεται το ελληνικό υποσύνολο), όχι εφεδρική γραμματοσειρά. Κανένα απολύτως αίτημα σε τρίτους πριν από τη συγκατάθεση για τα cookies.</p>
+      <p class="ref">Αναφ.: <code>src/lib/fonts.ts</code> (<code>next/font/google</code>, <code>subsets: ['latin', 'latin-ext', 'greek']</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-head">
+    <h2>Favicon, χρώμα θέματος &amp; εκτύπωση</h2>
+
+    <article class="tc" id="PUB-049" data-priority="P3">
+      <h3>Favicon, χρώμα θέματος και web manifest</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s "$BASE/" | grep -o '&lt;link rel="icon"[^&gt;]*&gt;\|&lt;meta name="theme-color"[^&gt;]*&gt;\|&lt;link rel="manifest"[^&gt;]*&gt;\|&lt;link rel="apple-touch-icon"[^&gt;]*&gt;'</code>.</li>
+        <li>Κοιτάξτε την καρτέλα του browser και, στο Chrome για Android, το χρώμα της γραμμής διευθύνσεων. Σε iPhone προσθέστε το site στην αρχική οθόνη.</li>
+        <li>Εκτελέστε <code>curl -s -o /dev/null -w '%{http_code}\n' "$BASE/manifest.webmanifest"</code> και το ίδιο για τα <code>/apple-touch-icon.png</code> και <code>/favicon.ico</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Ένας σύνδεσμος εικονιδίου προς το <code>/favicon.svg</code> (ή το favicon του Branding, MED-031) και <code>&lt;meta name="theme-color" content="#111827"&gt;</code> (το σκούρο χρώμα του brand· ακολουθεί το Branding). Η καρτέλα δείχνει το εικονίδιο· η γραμμή του Android χρησιμοποιεί το χρώμα.</li>
+        <li>Σύμφωνα με τον τρέχοντα κώδικα, δεν υπάρχει web manifest ούτε apple-touch icon, οπότε το βήμα 3 δίνει το αποτέλεσμα «δεν βρέθηκε» (όχι σφάλμα server) και το εικονίδιο στην αρχική οθόνη του iPhone είναι στιγμιότυπο οθόνης. Οι browsers που ζητούν το <code>/favicon.ico</code> παίρνουν 404. Καταγράψτε τα ως παρατηρήσεις· σημειώστε Αποτυχία μόνο αν το site προορίζεται να είναι εγκαταστάσιμο.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/lib/seo/metadata.ts</code> (<code>icons</code>) · <code>src/app/[locale]/layout.tsx</code> (<code>generateViewport</code>) · <code>public/favicon.svg</code></p>
+    </article>
+
+    <article class="tc" id="PUB-050" data-priority="P3">
+      <h3>Εκτύπωση μιας σελίδας</h3>
+      <ol class="steps">
+        <li>Ανοίξτε την προεπισκόπηση εκτύπωσης (Ctrl+P / Cmd+P) στο <code>/about</code>, σε μια σελίδα προϊόντος, στο <code>/legal/cookies</code> και σε μια σελίδα παραγγελίας λογαριασμού.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το site δεν έχει στυλ εκτύπωσης, οπότε η σελίδα εκτυπώνεται όπως στην οθόνη. Καταγράψτε αν το κύριο κείμενο είναι πλήρες και αναγνώσιμο, αν το banner cookies, το popup ή το συρτάρι του καλαθιού τυπώνονται πάνω από το περιεχόμενο και αν το σκούρο υποσέλιδο σπαταλά μελάνι. Σημειώστε Αποτυχία μόνο αν το περιεχόμενο κόβεται ή δεν διαβάζεται· ένα στυλ εκτύπωσης είναι βελτίωση που πρέπει να συζητηθεί με τον ιδιοκτήτη.</p>
+      <p class="ref">Αναφ.: <code>src/app/globals.css</code> (χωρίς <code>@media print</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-resilience">
+    <h2>Ανθεκτικότητα σε σφάλματα &amp; η μπάρα διαχείρισης</h2>
+
+    <article class="tc" id="PUB-051" data-priority="P3">
+      <h3>Βάση δεδομένων εκτός λειτουργίας</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Μόνο σε περιβάλλον δοκιμών, με πρόσβαση σε shell. «Ζεστάνετε» πρώτα το site ανοίγοντας μία φορά τα <code>/</code>, <code>/about</code> και <code>/shop</code>.</p>
+      <ol class="steps">
+        <li>Σταματήστε τη βάση δεδομένων (για παράδειγμα <code>sudo systemctl stop mariadb</code> ή σταματήστε το container της).</li>
+        <li>Ανοίξτε τα <code>/</code>, <code>/about</code>, <code>/en/about</code>, <code>/shop</code>, ένα προϊόν που δεν έχει ανοιχτεί ποτέ πριν, το <code>/contact</code>, και υποβάλετε τη φόρμα επικοινωνίας. Σημειώστε την κατάσταση (<code>curl -s -o /dev/null -w '%{http_code}\n'</code>), τον χρόνο απόκρισης και τι εμφανίζεται.</li>
+        <li>Ξεκινήστε ξανά τη βάση δεδομένων και φορτώστε ξανά τις ίδιες σελίδες χωρίς επανεκκίνηση της εφαρμογής.</li>
+      </ol>
+      <ul class="exp">
+        <li>Καμία σελίδα δεν δείχνει stack trace, SQL, όνομα host, κωδικό πρόσβασης ή διαδρομή αρχείου. Η φόρμα επικοινωνίας δείχνει το δικό της μήνυμα σφάλματος.</li>
+        <li>Δεν υπάρχει <code>error.tsx</code> ή <code>global-error.tsx</code> στο <code>src/app</code>, οπότε μια σελίδα που αποτυγχάνει δείχνει την απλή προεπιλεγμένη σελίδα σφάλματος του Next.js (χωρίς brand, στα αγγλικά, χωρίς κεφαλίδα ή υποσέλιδο). Οι αναγνώσεις ρυθμίσεων και εγγράφων αποτυγχάνουν ομαλά και οι αναγνώσεις από την cache συνεχίζουν να σερβίρονται, οπότε ορισμένες σελίδες μπορεί να εμφανίζονται ακόμη με παλιό περιεχόμενο, ενώ σελίδες του CMS που δεν είναι στην cache μπορεί να καταλήξουν στη σελίδα «δεν βρέθηκε» αντί για σφάλμα. Καταγράψτε τι έδειξε κάθε σελίδα· η απουσία φιλικής σελίδας σφάλματος με το brand είναι Αποτυχία που πρέπει να αναφερθεί.</li>
+        <li>Βήμα 3: όλες οι σελίδες λειτουργούν ξανά χωρίς επανεκκίνηση.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/settings/index.ts</code> (catch του <code>getSetting</code>) · <code>src/proxy.ts</code> (η αναζήτηση ανακατευθύνσεων αποτυγχάνει ανοιχτά) · <code>src/app/</code> (χωρίς <code>error.tsx</code>)</p>
+    </article>
+
+    <article class="tc" id="PUB-052" data-priority="P3">
+      <h3>Ευχρηστία σε αργό δίκτυο (3G)</h3>
+      <ol class="steps">
+        <li>Στα Chrome developer tools → Network ορίστε περιορισμό ταχύτητας δικτύου σε <strong>Slow 4G</strong>, έπειτα σε <strong>3G</strong>, και απενεργοποιήστε την cache.</li>
+        <li>Ανοίξτε τα <code>/</code>, <code>/shop</code>, ένα προϊόν· προσθέστε στο καλάθι· μεταβείτε στην ολοκλήρωση παραγγελίας· ανοίξτε μια εμπειρία και επιλέξτε ημερομηνία· υποβάλετε τη φόρμα επικοινωνίας.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το κείμενο είναι αναγνώσιμο πριν ολοκληρωθεί η φόρτωση των εικόνων (οι γραμματοσειρές αντικαθίστανται, κανένα αόρατο κείμενο). Τα κουμπιά δίνουν ανάδραση κατά την αναμονή (κείμενο αναμονής, απενεργοποιημένη κατάσταση) και ένα διπλό κλικ δεν υποβάλλει δύο φορές. Τα τμήματα του client που φέρνουν δεδομένα (καλάθι, προσφορές τιμών, διαθεσιμότητα ημερολογίου) δείχνουν κατάσταση φόρτωσης (<code>Φόρτωση…</code>) αντί για κενό ή χαλασμένο πλαίσιο. Τίποτα δεν λήγει λόγω χρόνου στο 3G. Καταγράψτε τον χρόνο μέχρι η σελίδα να γίνει χρήσιμη.</p>
+      <p class="ref">Αναφ.: <code>messages/*.json</code> (<code>ui.loading</code>) · <code>src/components/booking/BookingForm.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-053" data-priority="P3">
+      <h3>Σελίδες χωρίς JavaScript</h3>
+      <ol class="steps">
+        <li>Απενεργοποιήστε τη JavaScript (εργαλεία προγραμματιστή → Settings → Debugger → Disable JavaScript) και ανοίξτε τα <code>/</code>, <code>/about</code>, <code>/shop</code>, ένα προϊόν και το <code>/legal/cookies</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Οι σελίδες περιεχομένου, το κείμενο του προϊόντος και οι τιμές υπάρχουν (αποδίδονται στον server) και οι σύνδεσμοι λειτουργούν. Τα διαδραστικά τμήματα (καλάθι, μενού κινητού, φόρμες, banner cookies) μπορεί να μη λειτουργούν· καταγράψτε τι λείπει. Καμία σελίδα δεν είναι κενή.</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/layout.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-054" data-priority="P1">
+      <h3>Η μπάρα διαχείρισης μόνο για συνδεδεμένους διαχειριστές</h3>
+      <ol class="steps">
+        <li>Σε ιδιωτικό παράθυρο ανοίξτε τα <code>/</code>, <code>/shop/&lt;p&gt;</code> και <code>/en/booking/&lt;x&gt;</code>. Έπειτα συνδεθείτε στο διαχειριστικό στο ίδιο παράθυρο και φορτώστε τα ξανά. Έπειτα συνδεθείτε ως πελάτης του καταστήματος σε άλλο ιδιωτικό παράθυρο και ανοίξτε τις ίδιες σελίδες.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Οι επισκέπτες και οι πελάτες δεν βλέπουν μπάρα διαχείρισης ούτε διεύθυνση του διαχειριστικού στον κώδικα της σελίδας· ένας συνδεδεμένος διαχειριστής βλέπει τη μπάρα με λειτουργικό σύνδεσμο Edit στο προϊόν και στην εμπειρία. Οι λεπτομέρειες βρίσκονται στις ADM-022 έως ADM-034· εκτελέστε τες όταν αυτή η περίπτωση ελέγχου αποτυγχάνει.</p>
+      <p class="ref">Αναφ.: <code>src/components/admin-bar/AdminBar.tsx</code> · <code>src/lib/admin-bar.ts</code> · ADM-022, ADM-023, ADM-024, ADM-026, ADM-027</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-cleanup">
+    <h2>Καθαρισμός</h2>
+
+    <article class="tc" id="PUB-055" data-priority="P3">
+      <h3>Επαναφέρετε το site</h3>
+      <ol class="steps">
+        <li>Διαγράψτε τη σελίδα <code>QA EL Only</code> και τα δύο προϊόντα μορφοποίησης τιμών από την PUB-018. Επαναφέρετε την αρχική σελίδα, το module Newsletter, την αγγλική έκδοση του προϊόντος και τα χρώματα του brand όπως ήταν (PUB-013, PUB-021, PUB-034).</li>
+        <li>Βεβαιωθείτε ότι η βάση δεδομένων λειτουργεί (PUB-051) και απενεργοποιήστε στον browser τη μειωμένη κίνηση, τις αποστάσεις κειμένου, τον περιορισμό ταχύτητας δικτύου και την απενεργοποίηση της JavaScript.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Δεν απομένει κανένα από τα αντικείμενα QA αυτής της λίστας ελέγχου· η PUB-002 εξακολουθεί να περνά.</p>
+      <p class="ref">Αναφ.: αυτή η λίστα ελέγχου</p>
+    </article>
+  </section>
+
+</main>
+<footer class="page">Λίστα ελέγχου 11 από 12. Τα αποτελέσματα αποθηκεύονται μόνο σε αυτόν τον browser· χρησιμοποιήστε την εξαγωγή πριν καθαρίσετε τα δεδομένα του browser. Στη συνέχεια διαγράψτε τη σελίδα και τα προϊόντα QA, επαναφέρετε την αρχική σελίδα, τα modules και τα χρώματα του brand, και βεβαιωθείτε ότι η βάση δεδομένων λειτουργεί ξανά (PUB-055).</footer>
+</body>
+</html>

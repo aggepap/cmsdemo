@@ -1,0 +1,1278 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Κρατήσεις: διαθεσιμότητα &amp; κρατήσεις</title>
+<link rel="stylesheet" href="../qa.css">
+<script src="../qa.js" defer></script>
+</head>
+<body>
+<nav class="crumbs"><a href="index.html">Χειροκίνητος έλεγχος CMS</a></nav>
+<header class="page">
+  <h1>09 · Κρατήσεις: διαθεσιμότητα, κρατήσεις &amp; πληρωμές</h1>
+  <p class="scope">Το module κρατήσεων από άκρη σε άκρη, και για τα δύο είδη: <strong>μεταφορά</strong> (μια ημέρα του ημερολογίου: εκδρομές, ημέρες με σκάφος, ναυλώσεις· κοινή, αποκλειστική και ανά επιλογή κατανομή, αριθμός ατόμων, χωρητικότητα ανά ημέρα) και <strong>διαμονή</strong> (ένα εύρος διανυκτερεύσεων: άφιξη, αναχώρηση, τιμές ανά διανυκτέρευση και ανά περίοδο, ελάχιστη διαμονή, πληρότητα σε άτομα, χρεώσεις). Καλύπτονται εδώ: οι ρυθμίσεις Booking· η δημιουργία εμπειριών, επιλογών, τιμών, περιόδων, προθεσμίας κράτησης (cut-off) και ορίων κράτησης εκ των προτέρων· το ημερολόγιο Availability του διαχειριστικού (παρακάμψεις χωρητικότητας και τιμής, κλειστές ημερομηνίες, η αναφορά υπερκρατήσεων)· οι δημόσιες σελίδες <code>/booking</code> και <code>/en/booking</code> (λίστα και λεπτομέρειες), ο επιλογέας ημερομηνίας και η συμφωνία του με ό,τι μπορεί πραγματικά να κρατηθεί· οι προσφορές τιμής· ο έλεγχος της φόρμας· οι δεσμεύσεις και η λήξη τους μέσω της εργασίας <code>booking-expire</code>· οι ροές αιτήματος κράτησης και άμεσης κράτησης· οι προκαταβολές και οι πλήρεις πληρωμές με Stripe, PayPal και Viva σε sandbox· η σελίδα πληρωμής υπολοίπου· η αναζήτηση κράτησης από τον επισκέπτη· η ταυτόχρονη πρόσβαση και η υπερκράτηση· οι καθυστερημένες πληρωμές που δεν μπορούν να εφαρμοστούν («Needs action»)· η οθόνη Reservations, το πλαϊνό πάνελ της, οι αλλαγές κατάστασης, οι χειροκίνητες πληρωμές και οι επιστροφές χρημάτων· και τα email προς τον πελάτη για κάθε κατάσταση. Καλύπτονται αλλού και αναφέρονται με το ID τους: ο διακόπτης Booking και τα 404 του (SET-038, ADM-038), οι προγραμματισμένες εργασίες ενός ανενεργού module (SET-042), οι πίνακες των κρατήσεων και οι αναλλοίωτες ιδιότητές τους (DB-053 έως DB-058, DB-091 έως DB-093), τα δικαιώματα των κρατήσεων (AUTH-055), οι καταχωρίσεις του πλευρικού μενού (ADM-010, ADM-017), η γραμμή διαχείρισης στις σελίδες κρατήσεων (ADM-027, ADM-060), οι διευθύνσεις των κρατήσεων στο sitemap (MED-079), το JSON-LD των εκδρομών και των διαμονών (MED-094, MED-095) και η ρύθμιση sandbox των παρόχων πληρωμών (COM-051, COM-055, COM-058). Χρειάζεστε: ένα περιβάλλον δοκιμών προσβάσιμο από το διαδίκτυο (για τα webhooks του PayPal και της Viva), λογαριασμούς sandbox σε Stripe, PayPal και Viva, ένα γραμματοκιβώτιο που μπορείτε να διαβάσετε ως πελάτης και ένα ως επιχείρηση, πρόσβαση στη βάση δεδομένων μέσω client, τερματικό με <code>curl</code> και δύο browsers (ή ένα κανονικό και ένα ιδιωτικό παράθυρο).</p>
+</header>
+<main>
+
+  <section class="suite" id="suite-prep">
+    <h2>Πριν ξεκινήσετε</h2>
+    <p class="intro">Οι λίστες ελέγχου 01 (migrations, seeds, superadmin <code>qa-admin@example.com</code>) και 07 (MKT-001: η εξερχόμενη αλληλογραφία λειτουργεί) πρέπει να έχουν ολοκληρωθεί. Συνδεθείτε ως <code>qa-admin@example.com</code>, εκτός αν μια περίπτωση ελέγχου ορίζει διαφορετικά. Τα URL χρησιμοποιούν το <code>http://localhost:3002</code>· στο φιλοξενούμενο περιβάλλον δοκιμών χρησιμοποιήστε τη διεύθυνσή του. Τα ελληνικά είναι η προεπιλεγμένη γλώσσα και δεν έχουν πρόθεμα: το <code>/booking</code> είναι ελληνικά, το <code>/en/booking</code> αγγλικά. Τα περισσότερα βήματα χρησιμοποιούν τις αγγλικές σελίδες, ώστε το κείμενο που παρατίθεται να συγκρίνεται απευθείας. Τα ποσά στο διαχειριστικό εμφανίζονται σε ελληνική μορφή (<code>130,00 €</code>)· οι αγγλικές δημόσιες σελίδες δείχνουν <code>€130.00</code>. Στη βάση δεδομένων τα ποσά είναι σε λεπτά.</p>
+    <div class="callout">
+      <p><strong>Μη χρησιμοποιείτε ποτέ πραγματικά (live) κλειδιά.</strong> Τα κλειδιά Stripe πρέπει να ξεκινούν με <code>sk_test_</code> / <code>pk_test_</code>, <code>PAYPAL_ENV=sandbox</code>, <code>VIVA_ENV=demo</code>. Ρυθμίστε τους παρόχους και τα webhooks τους ακριβώς όπως στις COM-051, COM-055 και COM-058 (οι κρατήσεις εκκαθαρίζονται μέσω των ίδιων URL webhook)· διαφέρει μόνο η επιλογή για όλο το site: τα χρήματα των κρατήσεων χρησιμοποιούν το <strong>Settings</strong> → <strong>Booking</strong> → <strong>Payment method</strong>, όχι εκείνο του Ecommerce.</p>
+      <p><strong>Τερματικό.</strong> Στον φάκελο του έργου εκτελέστε <code>BASE=http://localhost:3002</code>, <code>CRON='&lt;value of CMS_CRON_SECRET&gt;'</code>, και αντιγράψτε το cookie <code>cms_session</code> του διαχειριστικού στο <code>S</code> όπως στη λίστα ελέγχου 05 («Χρήση του curl με συνεδρία»)· προσθέστε το <code>-b "cms_session=$S"</code> στις κλήσεις του διαχειριστικού. Τα δημόσια endpoints των κρατήσεων έχουν όριο ρυθμού ανά διεύθυνση (αίτημα 5/λεπτό, προσφορά τιμής και διαθεσιμότητα 60/λεπτό, αναζήτηση 20/λεπτό, πληρωμή 10/λεπτό): δώστε σε κάθε curl το δικό του <code>-H 'X-Real-IP: 10.90.0.N'</code> (νέο N ανά περίπτωση).</p>
+      <p><strong>Η εκκαθάριση ληγμένων δεσμεύσεων.</strong> Εκτελέστε την όπως στη SET-042 και στο docs/dev-guides/10-settings-cron-operations.md §3.4: <code>curl -s -X POST -H "x-cron-secret: $CRON" "$BASE/api/cms/cron/booking-expire"</code>. Απαντά <code>{"ok":true,"data":{"status":"ran","result":{"expired":N}}}</code>.</p>
+      <p><strong>Η κράτηση με μια ματιά.</strong> Πολλές περιπτώσεις τελειώνουν με αυτά τα ερωτήματα· αντικαταστήστε τον κωδικό αναφοράς και το id:</p>
+<pre><code>SELECT id, reference, status, mode, allocation_mode, slot_date, end_date, nights, persons, adults, children,
+       resource_label, total, deposit_amount, amount_paid, expires_at, email_status,
+       JSON_EXTRACT(metadata,'$.attention.reason') AS attention
+FROM reservations WHERE reference = 'BKG-2026-XXXXXXXX';
+
+SELECT slot_key, slot_date, seats, state, expires_at FROM reservation_holds
+WHERE reservation_id = &lt;id&gt; ORDER BY slot_key, slot_date;
+
+SELECT id, provider, provider_ref, status, amount, JSON_EXTRACT(metadata,'$.surcharge') AS surcharge,
+       JSON_EXTRACT(metadata,'$.transactionId') AS viva_tx, JSON_EXTRACT(metadata,'$.captureId') AS pp_capture,
+       JSON_EXTRACT(metadata,'$.refundOf') AS refund_of, JSON_EXTRACT(metadata,'$.refundedAmount') AS refunded
+FROM reservation_payments WHERE reservation_id = &lt;id&gt; ORDER BY id;
+
+SELECT kind, from_status, to_status, recipient, email_status FROM reservation_events
+WHERE reservation_id = &lt;id&gt; ORDER BY id;</code></pre>
+      <p><strong>Κλειδιά θέσεων ημερομηνίας (slot keys).</strong> <code>SELECT slug, translation_group_id, JSON_EXTRACT(data,'$.options[*].id') AS option_ids FROM documents WHERE type = 'booking' AND locale = 'el' AND slug LIKE 'qa-%';</code> Το ημερήσιο καθολικό μιας εμπειρίας είναι το <code>exp:&lt;translation_group_id&gt;</code>, μιας επιλογής το <code>res:&lt;option id&gt;</code>. Παρακάμψεις ανά ημερομηνία: <code>SELECT * FROM booking_slots WHERE slot_date = '&lt;date&gt;';</code></p>
+      <p><strong>Ημερομηνίες.</strong> Εκτός αν μια περίπτωση ορίζει διαφορετικά, επιλέξτε ημερομηνίες κράτησης 5 έως 50 ημέρες μπροστά που δεν πέφτουν μεταξύ 20 και 31 Δεκεμβρίου (οι περίοδοι QA), και χρησιμοποιήστε νέα ημερομηνία σε κάθε περίπτωση, ώστε οι προηγούμενες κρατήσεις να μην επηρεάζουν. Το «D» σε μια περίπτωση σημαίνει την ημερομηνία που επιλέξατε· σημειώστε την.</p>
+      <p><strong>Αναλλοίωτες ιδιότητες.</strong> Μετά τις ενότητες πληρωμών και επιστροφών χρημάτων, εκτελέστε τις DB-091, DB-092 και DB-093 από τη λίστα ελέγχου 02 και συγκρίνετε με τις σημειώσεις της BKG-095.</p>
+    </div>
+
+    <article class="tc" id="BKG-001" data-priority="P1">
+      <h3>Ενεργοποίηση των κρατήσεων και ρύθμιση των Booking settings</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/admin/settings?tab=Modules</code>, τσεκάρετε το <strong>Booking</strong>, πατήστε <strong>Save settings</strong> (η SET-038 καλύπτει αναλυτικά την απενεργοποίηση/ενεργοποίηση).</li>
+        <li>Ανοίξτε το <code>/admin/settings?tab=Booking</code>. Ορίστε <strong>What you take bookings for</strong>: και τα δύο πλαίσια τσεκαρισμένα· <strong>Booking mode</strong> <code>Request first — you confirm, then the customer pays</code>· <strong>Booking currency</strong> <code>EUR</code>· <strong>Timezone</strong> <code>Europe/Athens</code>· <strong>Notify these addresses</strong> το γραμματοκιβώτιο της επιχείρησης· <strong>Payment method</strong> <code>Manual / bank transfer</code>· <strong>Payment instructions</strong> <code>QA Bank, IBAN GR00 0000 0000 0000 0000 0000 000, quote your booking reference</code>. Αφήστε κάθε άλλο πεδίο κενό. Πατήστε <strong>Save settings</strong>.</li>
+        <li>Εκτελέστε <code>SELECT `key`, value FROM site_settings WHERE `key` LIKE 'booking.%';</code></li>
+      </ol>
+      <ul class="exp">
+        <li><code>Settings saved.</code> Το πλευρικό μενού δείχνει μια ομάδα BOOKING: Categories, Types, Locations, Experiences, Reservations, Availability.</li>
+        <li>Η καρτέλα Booking έχει αυτά τα πεδία: What you take bookings for, Booking mode, Booking currency, Timezone, Notify these addresses, Requests lapse after (hours), Instant payment hold (minutes), Payment links expire after (days), Deposit (%), Default places per day, Payment method, Payment instructions, Card surcharge (%), PayPal surcharge (%), Viva.com surcharge (%), Default cut-off (hours before).</li>
+        <li>Το ερώτημα δείχνει <code>booking.mode</code> = <code>request</code>, <code>booking.paymentProvider</code> = <code>manual</code>, <code>booking.timezone</code> = <code>Europe/Athens</code> και το κείμενο των οδηγιών.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/settings/schema.ts</code> (ομάδα Booking) · docs/dev-guides/09-booking.md §7</p>
+    </article>
+
+    <article class="tc" id="BKG-002" data-priority="P2">
+      <h3>Οι κενές ρυθμίσεις επιστρέφουν στις προεπιλογές του κώδικα</h3>
+      <ol class="steps">
+        <li>Στο <code>/admin/settings?tab=Booking</code> διαβάστε τα γκρι placeholders των κενών πεδίων.</li>
+        <li>Βάλτε <code>abc</code> στο <strong>Instant payment hold (minutes)</strong> και <code>Mars/Olympus</code> στο <strong>Timezone</strong>, αποθηκεύστε και ανοίξτε το <code>/en/booking</code> (αφού υπάρχει η BKG-005, και τη σελίδα του QA Boat Day). Αδειάστε ξανά και τα δύο πεδία και αποθηκεύστε.</li>
+      </ol>
+      <ul class="exp">
+        <li>Placeholders: Requests lapse after <code>72</code>, Instant payment hold <code>20</code>, Payment links expire after <code>7</code>, Deposit <code>0</code>, Default places per day <code>1</code>, Card/PayPal/Viva surcharge <code>0</code>, Default cut-off <code>0</code>, Timezone <code>Europe/Athens</code>.</li>
+        <li>Βήμα 2: οι ρυθμίσεις αποθηκεύονται και οι δημόσιες σελίδες εξακολουθούν να λειτουργούν· οι λανθασμένες τιμές επιστρέφουν σιωπηλά στα 20 λεπτά και στο <code>Europe/Athens</code> (οι συναρτήσεις ανάγνωσης είναι ολικές και δεν πετούν ποτέ εξαίρεση).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/settings-read.ts</code> (<code>DEFAULT_PAYMENT_HOLD_MINUTES</code>, <code>DEFAULT_LEAD_TIME_HOURS = 0</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-003" data-priority="P3">
+      <h3>Όταν πουλάτε ένα μόνο είδος, κρύβεται ο επιλογέας Booking type</h3>
+      <ol class="steps">
+        <li>Ξετσεκάρετε το <strong>Stays — rooms, villas, apartments (booked by the night)</strong> στο <strong>What you take bookings for</strong>, αποθηκεύστε και ανοίξτε <strong>Experiences</strong> → <strong>+ New</strong>.</li>
+        <li>Αφού υπάρχει η BKG-009, ανοίξτε τη QA Villa στον επεξεργαστή.</li>
+        <li>Τσεκάρετε ξανά και τα δύο είδη και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: η νέα φόρμα δεν έχει πεδίο <strong>Booking type</strong> και δείχνει μόνο ενότητες μεταφοράς (Pricing, Party size, Availability με το <strong>How a date is used up</strong>). Βήμα 2: η QA Villa, ήδη αποθηκευμένη ως διαμονή, εξακολουθεί να δείχνει το <strong>Booking type</strong> με τιμή <code>Stay — room, villa, apartment (booked by the night)</code> και τις ενότητες διαμονής της, ώστε να μη μένει ορφανή. Βήμα 3: το <strong>Booking type</strong> επανέρχεται στις νέες εμπειρίες.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/fields.ts</code> (<code>resolveKindField</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-setup">
+    <h2>Διαχειριστικό: λίστες φίλτρων και εμπειρίες</h2>
+    <p class="intro">Κάθε στοιχείο δημιουργείται πρώτα στα ελληνικά (καρτέλα EL) και μετά μεταφράζεται στην καρτέλα EN με <strong>Copy from EL</strong> και <strong>Create EN</strong>, όπως στη λίστα ελέγχου 03. Τα πεδία που σημειώνονται ως κοινά (τιμές, ημερομηνίες, χωρητικότητα, επιλογές) πληκτρολογούνται μία φορά και είναι ίδια και στις δύο γλώσσες. Το πρώτο κουμπί αποθήκευσης γράφει <strong>Create Experience</strong>, τα επόμενα <strong>Save EL</strong> / <strong>Save EN</strong>. Ορίστε <strong>Status — EL</strong> και <strong>Status — EN</strong> σε <code>published</code>, εκτός αν μια περίπτωση ορίζει διαφορετικά.</p>
+
+    <article class="tc" id="BKG-004" data-priority="P2">
+      <h3>Δημιουργία κατηγορίας, τύπου και σημείου αναχώρησης</h3>
+      <ol class="steps">
+        <li>Κάτω από το BOOKING ανοίξτε <strong>Categories</strong> → <strong>+ New</strong>: όνομα EL <code>QA Κρουαζιέρες</code>, slug <code>qa-cruises</code>, δημοσιευμένο· EN <code>QA Cruises</code>, δημοσιευμένο.</li>
+        <li>Το ίδιο στο <strong>Types</strong>: <code>QA Ταχύπλοο</code> / <code>QA Speedboat</code>, slug <code>qa-speedboat</code>· και στο <strong>Locations</strong>: <code>QA Μαρίνα</code> / <code>QA Marina</code>, slug <code>qa-marina</code>.</li>
+        <li>Ελέγξτε αν ο επεξεργαστής της κατηγορίας έχει ενότητα <strong>SEO &amp; AEO</strong>.</li>
+        <li>Εκτελέστε <code>SELECT type, locale, slug, status FROM documents WHERE slug IN ('qa-cruises','qa-speedboat','qa-marina');</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Έξι γραμμές (<code>booking_category</code>, <code>vessel_type</code>, <code>departure_location</code> × <code>el</code>/<code>en</code>), όλες <code>published</code>. Ο επεξεργαστής της κατηγορίας έχει πεδίο <strong>Parent</strong> και <strong>καμία</strong> ενότητα SEO &amp; AEO (οι κατηγορίες είναι μόνο φίλτρα, χωρίς δική τους σελίδα).</p>
+      <p class="ref">Αναφ.: <code>src/site.config.ts</code> · <code>src/cms/modules/booking/collection.ts</code> (<code>bookingTermCollection</code>) · docs/dev-guides/09-booking.md §10 («booking_category has no route»)</p>
+    </article>
+
+    <article class="tc" id="BKG-005" data-priority="P1">
+      <h3>Δημιουργία εμπειρίας μεταφοράς με κοινή χρήση (QA Boat Day)</h3>
+      <ol class="steps">
+        <li><strong>Experiences</strong> → <strong>+ New</strong>. <strong>Booking type</strong> <code>Transport — boat, helicopter, transfer (booked by the day)</code>· <strong>Experience name</strong> <code>QA Ημερήσια βόλτα</code>· slug <code>qa-boat-day</code>.</li>
+        <li><strong>Organization</strong>: Service categories <code>QA Κρουαζιέρες</code>, Vessel types <code>QA Ταχύπλοο</code>, Departure locations <code>QA Μαρίνα</code>.</li>
+        <li><strong>Pricing</strong>: <strong>Base price</strong> <code>50</code>· μία γραμμή <strong>Seasonal prices</strong> From <code>12-24</code> To <code>12-26</code> Price <code>70</code>.</li>
+        <li><strong>Party size</strong>: τσεκάρετε <strong>Priced per party size</strong>, <strong>Minimum persons</strong> <code>1</code>, <strong>Maximum persons</strong> <code>10</code>, <strong>Pricing mode</strong> <code>Per person — base price × number of people</code>.</li>
+        <li><strong>Availability</strong>: <strong>How a date is used up</strong> <code>Shared — several bookings share the day, up to the capacity</code>· <strong>Places per day</strong> <code>6</code>· <strong>Bookable up to (days ahead)</strong> <code>60</code>· αφήστε κενά τα Season opens/closes, Cut-off και Available weekdays· <strong>Booking mode</strong> <code>Use the site default</code>.</li>
+        <li><strong>Extras</strong>: τσεκάρετε <strong>Offer extras</strong> και <strong>Multiply extras by party size</strong>· μία γραμμή Name <code>QA Lunch</code>, Price <code>15</code>.</li>
+        <li><strong>Booking form</strong>: μία ερώτηση <code>Pick-up point</code> με επιλογές <code>Marina A</code> και <code>Marina B</code>.</li>
+        <li>Δημοσιεύστε, <strong>Create Experience</strong>· έπειτα EN: <strong>Copy from EL</strong>, όνομα <code>QA Boat Day</code>, ονόματα ερώτησης και πρόσθετου στα αγγλικά, δημοσιευμένο, <strong>Create EN</strong>.</li>
+        <li>Εκτελέστε <code>SELECT locale, status, JSON_EXTRACT(data,'$.kind'), JSON_EXTRACT(data,'$.basePrice'), JSON_EXTRACT(data,'$.capacityPerDay'), JSON_EXTRACT(data,'$.allocationMode') FROM documents WHERE type = 'booking' AND slug = 'qa-boat-day';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και οι δύο αποθηκεύσεις πετυχαίνουν χωρίς προειδοποιήσεις. Δύο γραμμές, και οι δύο <code>published</code>, <code>"transport"</code>, <code>50</code>, <code>6</code>, <code>"shared"</code>: οι κοινές τιμές είναι ίδιες και στις δύο γλώσσες.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/collection.ts</code> · docs/user-guides/src/04-kratiseis.md («Νέα καταχώριση»)</p>
+    </article>
+
+    <article class="tc" id="BKG-006" data-priority="P2">
+      <h3>Δημιουργία εμπειρίας ανά επιλογή με δύο σκάφη (QA Yacht Charter)</h3>
+      <ol class="steps">
+        <li>Νέα εμπειρία Transport <code>QA Ναύλωση σκάφους</code> / <code>QA Yacht Charter</code>, slug <code>qa-yacht-charter</code>. <strong>Base price</strong> <code>400</code>.</li>
+        <li><strong>Party size</strong>: Priced per party size ενεργό, ελάχιστο <code>1</code>, μέγιστο <code>12</code>, <strong>Pricing mode</strong> <code>Flat price up to N people, then a charge per extra person</code>, <strong>Persons included in the flat price</strong> <code>6</code>, <strong>Charge per extra person</strong> <code>20</code>.</li>
+        <li><strong>Availability</strong>: <strong>How a date is used up</strong> <code>Per option — the chosen option is what gets used up</code>, <strong>Places per day</strong> <code>12</code>, Booking mode <code>Use the site default</code>.</li>
+        <li><strong>Options</strong>: τσεκάρετε <strong>Offer options</strong>, <strong>Option picker label</strong> <code>Choose your yacht</code>· γραμμές <code>QA Yacht Alpha</code> Price <code>500</code> Bookings per day <code>1</code> Sleeps / seats <code>8</code>· <code>QA Yacht Beta</code> Price <code>700</code> Bookings per day <code>1</code> Sleeps / seats <code>12</code>.</li>
+        <li>Δημοσιεύστε και στις δύο γλώσσες. Σημειώστε τα δύο id των επιλογών με το ερώτημα των κλειδιών θέσεων ημερομηνίας.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Αποθηκεύεται και δημοσιεύεται. Το <code>$.options[*].id</code> επιστρέφει δύο id, ίδια στις γραμμές <code>el</code> και <code>en</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/data.ts</code> (<code>readOptions</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-007" data-priority="P2">
+      <h3>Δημιουργία μιας αποκλειστικής εμπειρίας και μιας εμπειρίας άμεσης κράτησης</h3>
+      <ol class="steps">
+        <li>Νέα εμπειρία Transport <code>QA Ηλιοβασίλεμα</code> / <code>QA Sunset Exclusive</code>, slug <code>qa-sunset-exclusive</code>: Base price <code>300</code>, <strong>Priced per party size</strong> ανενεργό, <strong>How a date is used up</strong> <code>Exclusive — one booking takes the whole day</code>, Places per day κενό, <strong>Booking mode</strong> <code>Instant — the customer books and pays straight away</code>.</li>
+        <li>Νέα εμπειρία Transport <code>QA Γύρος νησιού</code> / <code>QA Island Tour</code>, slug <code>qa-island-tour</code>: Base price <code>40</code>, Priced per party size ενεργό, ελάχιστο <code>1</code>, μέγιστο <code>10</code>, Per person, Shared, Places per day <code>20</code>, Booking mode <code>Instant — the customer books and pays straight away</code>. Χωρίς πρόσθετα, χωρίς ερωτήσεις.</li>
+        <li>Δημοσιεύστε και τις δύο και στις δύο γλώσσες.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Αποθηκεύονται και δημοσιεύονται χωρίς προειδοποιήσεις.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/collection.ts</code> (<code>ALLOCATION_MODE_VALUES</code>, <code>BOOKING_MODE_VALUES</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-008" data-priority="P1">
+      <h3>Δημιουργία διαμονής ανά διανυκτέρευση χωρίς επιλογές (QA Villa)</h3>
+      <ol class="steps">
+        <li>Νέα εμπειρία, <strong>Booking type</strong> <code>Stay — room, villa, apartment (booked by the night)</code>, <code>QA Βίλα</code> / <code>QA Villa</code>, slug <code>qa-villa</code>.</li>
+        <li><strong>Nightly rates</strong>: <strong>Rate per night</strong> <code>100</code>· μία γραμμή <strong>Seasonal rates</strong> From <code>12-20</code> To <code>12-31</code> Rate per night <code>150</code> <strong>Minimum nights in this season</strong> <code>3</code>.</li>
+        <li><strong>Nights &amp; arrival</strong>: <strong>Minimum nights</strong> <code>2</code>, <strong>Maximum nights</strong> <code>7</code>, Check-in days και Check-out days κενά.</li>
+        <li><strong>Occupancy</strong>: <strong>Guests included in the rate</strong> <code>2</code>, <strong>Maximum guests</strong> <code>4</code>, <strong>Charge per extra guest, per night</strong> <code>20</code>, τσεκάρετε <strong>Accept children at a different rate</strong>, <strong>A child is under</strong> <code>12</code>, <strong>Charge per child, per night</strong> <code>10</code>.</li>
+        <li><strong>Fees &amp; taxes</strong>: <code>QA Cleaning</code> Amount <code>30</code> Charged <code>Once per booking</code>· <code>QA City tax</code> Amount <code>2</code> Charged <code>Per night</code>.</li>
+        <li><strong>Availability</strong>: Places per day κενό, Booking mode <code>Instant — the customer books and pays straight away</code>. Δημοσιεύστε και στις δύο γλώσσες.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η φόρμα διαμονής δείχνει τα Nightly rates, Nights &amp; arrival, Occupancy και Fees &amp; taxes, και κρύβει τα Pricing, Party size, <strong>How a date is used up</strong> και <strong>Available weekdays</strong>. Αποθηκεύεται και δημοσιεύεται χωρίς προειδοποιήσεις· το <code>$.kind</code> είναι <code>"stay"</code> και στις δύο γραμμές.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/collection.ts</code> (<code>showIf</code> stay/transport) · <code>src/cms/modules/booking/stay.ts</code></p>
+    </article>
+
+    <article class="tc" id="BKG-009" data-priority="P2">
+      <h3>Δημιουργία διαμονής με δύο δωμάτια ως επιλογές (QA Suites)</h3>
+      <ol class="steps">
+        <li>Νέα Stay <code>QA Σουίτες</code> / <code>QA Suites</code>, slug <code>qa-suites</code>: Rate per night <code>90</code>, Minimum nights <code>1</code>, Maximum guests κενό, Booking mode Instant.</li>
+        <li><strong>Options</strong>: Offer options ενεργό, ετικέτα <code>Choose your room</code>· <code>QA Sea View</code> Price <code>120</code> Bookings per day <code>1</code> Sleeps / seats <code>2</code>· <code>QA Garden</code> Price <code>90</code> Bookings per day <code>1</code> Sleeps / seats <code>3</code>. Δημοσιεύστε και στις δύο γλώσσες.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Αποθηκεύεται και δημοσιεύεται. Η βοήθεια του πεδίου Price της επιλογής αναφέρει ότι <em>αντικαθιστά</em> την τιμή ανά διανυκτέρευση και δεν προστίθεται σε αυτήν.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/collection.ts</code> (<code>cost</code> της επιλογής)</p>
+    </article>
+
+    <article class="tc" id="BKG-010" data-priority="P2">
+      <h3>Οι προειδοποιήσεις τιμολόγησης δεν εμποδίζουν την αποθήκευση, αλλά μια εσφαλμένη τιμή δεν επιτρέπει κράτηση</h3>
+      <ol class="steps">
+        <li>Δημιουργήστε μια πρόχειρη εμπειρία μεταφοράς <code>qa-broken</code> (Base price <code>10</code>) με δύο γραμμές <strong>Seasonal prices</strong> <code>06-01</code>–<code>06-30</code> Price <code>20</code> και <code>06-15</code>–<code>07-15</code> Price <code>30</code>. Αποθηκεύστε.</li>
+        <li>Δημοσιεύστε την παρ' όλα αυτά στα EN και ανοίξτε το <code>/en/booking/qa-broken</code>· επιλέξτε οποιαδήποτε ημερομηνία.</li>
+        <li>Εκτελέστε <code>curl -s -X POST "$BASE/api/cms/booking/request" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.90.0.1' -d '{"slug":"qa-broken","locale":"en","date":"&lt;D&gt;","persons":1,"customer":{"name":"QA Curl","email":"qa.curl@example.com"},"acceptTerms":true}' -w ' %{http_code}\n'</code></li>
+        <li>Διαγράψτε το <code>qa-broken</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: μια προειδοποίηση κάτω από τη δεύτερη γραμμή γράφει <code>Season 2 overlaps season 1. Two prices for one date is ambiguous.</code>· η αποθήκευση πετυχαίνει κανονικά. Βήμα 2: η ανάλυση τιμής δείχνει <code>Price on request</code>. Βήμα 3: <code>409</code> με <code>"message":"This experience cannot be booked online right now."</code> (δεν διαρρέουν λεπτομέρειες των περιόδων) και δεν δημιουργείται γραμμή κράτησης.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/advisories.ts</code> · <code>src/cms/modules/booking/pricing.ts</code> (<code>validatePricingConfig</code>) · <code>src/cms/modules/booking/reservations.ts</code> (<code>priceRefusalMessage</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-public">
+    <h2>Δημόσιες σελίδες: λίστα και λεπτομέρειες</h2>
+    <p class="intro">Χρησιμοποιήστε ιδιωτικό παράθυρο (χωρίς σύνδεση), ώστε η γραμμή διαχείρισης (ADM-027) να μην παρεμβάλλεται.</p>
+
+    <article class="tc" id="BKG-011" data-priority="P1">
+      <h3>Η λίστα και στις δύο γλώσσες</h3>
+      <ol class="steps">
+        <li>Ανοίξτε τα <code>/booking</code>, <code>/en/booking</code> και <code>/el/booking</code>.</li>
+        <li>Διαβάστε τις κάρτες των QA Boat Day, QA Villa και QA Yacht Charter στην αγγλική σελίδα.</li>
+      </ol>
+      <ul class="exp">
+        <li><code>/booking</code>: επικεφαλίδα <code>Κρατήσεις</code>, υπέρτιτλος <code>Εμπειρίες</code>, ελληνικοί τίτλοι. <code>/en/booking</code>: επικεφαλίδα <code>Booking</code>, εισαγωγή <code>Choose an experience, a date and how many of you there are.</code>, αγγλικοί τίτλοι. Το <code>/el/booking</code> ανακατευθύνει στο <code>/booking</code>.</li>
+        <li>Το QA Boat Day γράφει <code>from €50.00</code>· το QA Villa <code>from €100.00 / night</code>· το QA Yacht Charter <code>from €400.00</code> (η χαμηλότερη από τη βασική τιμή, τις περιόδους και τις επιλογές). Κάθε κάρτα έχει <code>View details</code>. Το πλήθος αποτελεσμάτων γράφει <code>6 experiences</code> (οι έξι εμπειρίες QA· προσθέστε όσες προέρχονται από seed).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/booking/page.tsx</code> · <code>src/components/booking/BookingCard.tsx</code> · <code>src/cms/modules/booking/data.ts</code> (<code>lowestPrice</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-012" data-priority="P2">
+      <h3>Αναζήτηση, φίλτρα, ταξινόμηση και σελιδοποίηση στη λίστα</h3>
+      <ol class="steps">
+        <li>Στο <code>/en/booking</code> πληκτρολογήστε <code>villa</code> στο <code>Search experiences…</code> και πατήστε Enter.</li>
+        <li>Καθαρίστε το. Στα <strong>Filters</strong> τσεκάρετε <code>QA Cruises</code> στο <strong>Category</strong>· έπειτα και <code>QA Speedboat</code> στο <strong>Type</strong>· έπειτα πατήστε <strong>Clear</strong>.</li>
+        <li>Ορίστε <strong>Sort</strong> σε <code>Price (high first)</code>, έπειτα <code>Name (Z–A)</code>.</li>
+        <li>Ανοίξτε τα <code>/en/booking?category=nothing-here</code> και <code>/en/booking?page=99</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: το URL αποκτά <code>?q=villa</code>· εμφανίζεται μόνο το QA Villa.</li>
+        <li>Βήμα 2: το <code>?category=qa-cruises</code> εμφανίζει μόνο το QA Boat Day· η προσθήκη του τύπου δίνει <code>&amp;type=qa-speedboat</code> και πάλι το QA Boat Day· το Clear αφαιρεί και τα δύο.</li>
+        <li>Βήμα 3: το <code>?sort=price-desc</code> βάζει πρώτο το QA Yacht Charter (400)· το <code>?sort=title-desc</code> ταξινομεί κατά αγγλικό τίτλο από Z προς A.</li>
+        <li>Βήμα 4: <code>No experience matches your filters.</code>· μια σελίδα πέρα από το τέλος δεν δείχνει κάρτες, αλλά ούτε σφάλμα. Με περισσότερες από 15 εμπειρίες εμφανίζονται τα <code>Next</code> / <code>Page 1 of N</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/booking/booking-params.ts</code> (<code>BOOKING_PAGE_SIZE = 15</code>) · <code>src/components/booking/BookingFilters.tsx</code> · <code>src/components/booking/BookingToolbar.tsx</code></p>
+    </article>
+
+    <article class="tc" id="BKG-013" data-priority="P3">
+      <h3>Μια κατηγορία κρατήσεων δεν έχει δική της σελίδα</h3>
+      <ol class="steps">
+        <li>Ανοίξτε τα <code>/en/booking/qa-cruises</code>, <code>/en/booking/category/qa-cruises</code> και <code>/booking/qa-cruises</code>.</li>
+        <li>Εκτελέστε <code>curl -s "$BASE/sitemap.xml" | grep -c qa-cruises</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και τα τρία δείχνουν τη σελίδα «δεν βρέθηκε» του site (404). Η μέτρηση στο sitemap είναι <code>0</code>. Ο μόνος τρόπος να φτάσει κανείς σε μια κατηγορία είναι το φίλτρο <code>?category=qa-cruises</code> (BKG-012).</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/booking/[slug]/page.tsx</code> · docs/dev-guides/09-booking.md §10</p>
+    </article>
+
+    <article class="tc" id="BKG-014" data-priority="P1">
+      <h3>Σελίδα λεπτομερειών και φόρμα μεταφοράς</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/en/booking/qa-boat-day</code>.</li>
+        <li>Επιλέξτε μια ημερομηνία D στο ημερολόγιο.</li>
+      </ol>
+      <ul class="exp">
+        <li>Η σελίδα δείχνει τον τίτλο, τη συλλογή εικόνων και το περιεχόμενο, και μια φόρμα <code>Book this experience</code> με τη σημείωση <code>We will check availability and come back to you.</code> (λειτουργία αιτήματος κράτησης). Το ημερολόγιο έχει το υπόμνημα <code>Available</code>, <code>Unavailable</code>, <code>Your date</code> και κουμπιά προηγούμενου/επόμενου μήνα· οι ημέρες πριν από σήμερα είναι απενεργοποιημένες.</li>
+        <li>Το <code>Guests</code> δείχνει 1 με <code>Between 1 and 10 guests</code>.</li>
+        <li>Μετά την επιλογή της D: <code>Extras</code> με <code>QA Lunch</code> (ανά άτομο), <code>Pick-up point</code> με προεπιλεγμένο το Marina A, <code>Price breakdown</code> (<code>Base price</code> €50.00, <code>Total</code> €50.00), <code>Your details</code> (Full name, Email, Phone, Anything we should know), <code>I accept the booking terms</code> και το κουμπί <code>Request this date</code>.</li>
+        <li>Στο <code>/en/booking/qa-island-tour</code> η σημείωση γράφει <code>Your date is reserved immediately.</code> και, μόλις υπολογιστεί η τιμή, το κουμπί γράφει <code>Book now — €40.00</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/booking/[slug]/page.tsx</code> · <code>src/components/booking/BookingForm.tsx</code> · <code>src/components/booking/TransportFields.tsx</code> · <code>messages/en.json</code> (<code>bookingForm</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-015" data-priority="P2">
+      <h3>Σελίδα λεπτομερειών διαμονής και επιλογέας εύρους ημερομηνιών</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/en/booking/qa-villa</code>. Πατήστε μια ημερομηνία άφιξης D.</li>
+        <li>Πατήστε τη D+3 ως αναχώρηση. Έπειτα πατήστε <strong>Clear dates</strong>.</li>
+        <li>Επαναλάβετε στο <code>/booking/qa-villa</code> (ελληνικά).</li>
+      </ol>
+      <ul class="exp">
+        <li>Η ετικέτα ημερομηνίας γράφει <code>Check-in — Check-out</code>· το <code>Adults</code> ξεκινά από 2 και το <code>Children</code> δείχνει <code>Under 12</code>.</li>
+        <li>Μετά το πρώτο πάτημα μια γραμμή δείχνει την ημερομηνία και <code>now pick your check-out</code>· οι ημέρες πριν από τη D+1 είναι απενεργοποιημένες για το δεύτερο πάτημα.</li>
+        <li>Μετά το δεύτερο: <code>&lt;D&gt; – &lt;D+3&gt; · 3 night(s)</code> και εμφανίζεται η ανάλυση τιμής. Το Clear dates αδειάζει την επιλογή.</li>
+        <li>Ελληνικά: <code>Άφιξη — Αναχώρηση</code>, <code>επιλέξτε ημερομηνία αναχώρησης</code>, <code>3 διανυκτέρευση/εις</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/booking/StayFields.tsx</code> · <code>src/components/booking/BookingCalendar.tsx</code> (λειτουργία εύρους)</p>
+    </article>
+
+    <article class="tc" id="BKG-016" data-priority="P3">
+      <h3>Πρόχειρες ή άγνωστες εμπειρίες δεν είναι προσβάσιμες</h3>
+      <ol class="steps">
+        <li>Ορίστε το <strong>Status — EN</strong> του QA Sunset Exclusive σε <code>draft</code> και αποθηκεύστε. Ανοίξτε τα <code>/en/booking/qa-sunset-exclusive</code> και <code>/en/booking</code>.</li>
+        <li>Εκτελέστε <code>curl -s "$BASE/api/cms/booking/quote" -X POST -H 'Content-Type: application/json' -H 'X-Real-IP: 10.90.0.2' -d '{"slug":"no-such-thing","locale":"en"}'</code></li>
+        <li>Δημοσιεύστε ξανά το QA Sunset Exclusive στα EN.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: σελίδα «δεν βρέθηκε», και η αγγλική λίστα δεν το εμφανίζει πλέον (η ελληνική εξακολουθεί να το εμφανίζει). Βήμα 2: <code>404</code> <code>{"ok":false,"error":"not_found","message":"That experience is no longer available."}</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/quote.ts</code> (<code>bookingQuoteRoute</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-calendar">
+    <h2>Το δημόσιο ημερολόγιο συμφωνεί με ό,τι μπορεί να κρατηθεί</h2>
+    <p class="intro">Το δημόσιο ημερολόγιο ζητά από το <code>GET /api/cms/booking/availability</code> τον μήνα που εμφανίζεται στην οθόνη. Ο λόγος για τον οποίο μια ημέρα είναι απενεργοποιημένη βρίσκεται στο προσβάσιμο όνομά της (<code>&lt;day&gt; — Fully booked.</code>): διαβάστε τον με τον επιθεωρητή προσβασιμότητας του browser, ή επιλέξτε πρώτα την ημέρα και έπειτα αλλάξτε τον αριθμό ατόμων, ώστε να εμφανιστεί η κόκκινη σημείωση κάτω από το ημερολόγιο. Άμεσος έλεγχος: το <code>curl -s "$BASE/api/cms/booking/availability?slug=&lt;slug&gt;&amp;from=&lt;D&gt;&amp;to=&lt;D&gt;&amp;persons=&lt;n&gt;" -H 'X-Real-IP: 10.90.0.N'</code> επιστρέφει <code>{"ok":true,"data":{"days":[{"date":…,"status":…,"bookable":…,"remaining":…}],"kind":…,"rules":{…}}}</code>.</p>
+
+    <article class="tc" id="BKG-017" data-priority="P1">
+      <h3>Οι διαθέσιμες θέσεις ακολουθούν τις πραγματικές κρατήσεις (κοινή χρήση)</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Settings → Booking → Payment method <code>Manual / bank transfer</code>. Το QA Island Tour (άμεση κράτηση, κοινή χρήση, 20 θέσεις) δεν έχει κρατήσεις στη D.</p>
+      <ol class="steps">
+        <li>Εκτελέστε το curl διαθεσιμότητας για <code>qa-island-tour</code>, D, <code>persons=1</code>.</li>
+        <li>Στο <code>/en/booking/qa-island-tour</code> κάντε κράτηση για τη D με <code>Guests</code> 10 (όνομα <code>QA One</code>, email το γραμματοκιβώτιο του πελάτη, τσεκάρετε τους όρους, <strong>Book now — €400.00</strong>). Επαναλάβετε για άλλα 8 άτομα.</li>
+        <li>Εκτελέστε ξανά το curl με <code>persons=2</code> και <code>persons=3</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>"status":"open","bookable":true,"remaining":20</code>. Βήμα 2: δύο κρατήσεις <code>confirmed</code> (η άμεση κράτηση με χειροκίνητη πληρωμή επιβεβαιώνεται αμέσως), καθεμία με δέσμευση στο <code>exp:&lt;group&gt;</code> για 10 και 8 θέσεις αντίστοιχα, κατάσταση <code>confirmed</code>. Βήμα 3: <code>persons=2</code> → <code>open</code>, <code>remaining 2</code>· <code>persons=3</code> → <code>"status":"full","bookable":false,"remaining":2</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/quote.ts</code> (<code>bookingAvailabilityRoute</code>) · <code>src/cms/modules/booking/allocation.ts</code> (<code>getDayStates</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-018" data-priority="P2">
+      <h3>Ο αριθμός ατόμων αποστέλλεται, οπότε μια υπερβολικά μεγάλη ομάδα βλέπει την ημέρα ως γεμάτη</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Η BKG-017 άφησε 2 θέσεις στη D.</p>
+      <ol class="steps">
+        <li>Στο <code>/en/booking/qa-island-tour</code> με <code>Guests</code> 2, κοιτάξτε τη D. Επιλέξτε την.</li>
+        <li>Αλλάξτε το <code>Guests</code> σε 3. Παρακολουθήστε την καρτέλα Network στα εργαλεία προγραμματιστή του browser.</li>
+        <li>Προσπαθήστε να υποβάλετε με 3 άτομα (αν το κουμπί είναι ενεργό).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: η D μπορεί να επιλεγεί. Βήμα 2: γίνεται νέο αίτημα <code>availability?…&amp;persons=3</code>· η D γίνεται μη διαθέσιμη και η κόκκινη σημείωση <code>Fully booked.</code> εμφανίζεται κάτω από το ημερολόγιο. Βήμα 3: αν υποβληθεί, η φόρμα δείχνει <code>&lt;D&gt; is no longer available.</code> και δεν δημιουργείται κράτηση. Το ημερολόγιο δεν πρέπει ποτέ να προσφέρει μια ημέρα που ο διακομιστής θα αρνηθεί στη συνέχεια για τον ίδιο αριθμό ατόμων.</p>
+      <p class="ref">Αναφ.: <code>src/components/booking/booking-form-types.ts</code> (<code>availabilityParams</code>) · <code>src/components/booking/use-availability.ts</code></p>
+    </article>
+
+    <article class="tc" id="BKG-019" data-priority="P2">
+      <h3>Αποκλειστική χρήση: μία κράτηση κλείνει την ημέρα, όποιος κι αν είναι ο αριθμός ατόμων</h3>
+      <ol class="steps">
+        <li>Κάντε κράτηση του QA Sunset Exclusive για τη D στο <code>/en/booking/qa-sunset-exclusive</code> (χειροκίνητος πάροχος, οπότε επιβεβαιώνεται αμέσως).</li>
+        <li>Εκτελέστε το curl διαθεσιμότητας για <code>qa-sunset-exclusive</code> στη D με <code>persons=1</code>· ανανεώστε τη σελίδα.</li>
+        <li>Ελέγξτε τις δεσμεύσεις της.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>confirmed</code>, <code>allocation_mode</code> <code>exclusive</code>. Βήμα 2: <code>"status":"full","remaining":0</code>· η ημέρα είναι απενεργοποιημένη στο ημερολόγιο. Βήμα 3: μία δέσμευση στο <code>exp:&lt;group&gt;</code> με <code>seats</code> 1 (όχι τον αριθμό ατόμων). Στο <strong>Availability</strong> η θέση ημερομηνίας δείχνει <code>Default capacity 1 per day</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/availability.ts</code> (<code>slotRequestsFor</code>, exclusive) · <code>src/cms/modules/booking/schedule.ts</code></p>
+    </article>
+
+    <article class="tc" id="BKG-020" data-priority="P2">
+      <h3>Ανά επιλογή: εξαντλείται το σκάφος που επιλέχθηκε</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Το QA Yacht Charter είναι σε λειτουργία αιτήματος κράτησης· για αυτή την περίπτωση ορίστε το <strong>Booking mode</strong> του σε <code>Instant — the customer books and pays straight away</code> (ο τρόπος πληρωμής παραμένει χειροκίνητος). Στο τέλος επαναφέρετέ το σε <code>Use the site default</code>.</p>
+      <ol class="steps">
+        <li>Στο <code>/en/booking/qa-yacht-charter</code> επιλέξτε D, <code>Choose your yacht</code> <code>QA Yacht Alpha</code>, Guests 8, και κάντε την κράτηση.</li>
+        <li>Ανανεώστε, επιλέξτε ξανά τη D με επιλεγμένο το Alpha και Guests 4· έπειτα αλλάξτε σε QA Yacht Beta (Guests 4)· έπειτα Guests 5.</li>
+        <li>Εκτελέστε το curl διαθεσιμότητας με <code>&amp;resourceId=&lt;Alpha id&gt;</code> και με το id του Beta· ελέγξτε τις δεσμεύσεις.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: δύο επιβεβαιωμένες δεσμεύσεις: <code>exp:&lt;group&gt;</code> με 8 θέσεις και <code>res:&lt;Alpha id&gt;</code> με 1 θέση. Βήμα 2: με το Alpha, η D δείχνει <code>Fully booked.</code>· με το Beta και 4 άτομα, η D είναι ξανά διαθέσιμη· με 5 άτομα είναι <code>Fully booked.</code> (στην εμπειρία απομένουν μόνο 4 από τις 12 θέσεις της). Βήμα 3: Alpha <code>full</code> / <code>remaining 0</code>· Beta <code>open</code> / <code>remaining 1</code> (το μικρότερο από τις 4 θέσεις που απομένουν στην εμπειρία και τη 1 κράτηση του Beta).</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/availability.ts</code> (<code>slotRequestsFor</code> resource, <code>combinedDayStatus</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-021" data-priority="P2">
+      <h3>Η κοινή ή αποκλειστική χρήση με επιλογές διαβάζει μόνο τη θέση ημερομηνίας (slot) της εμπειρίας</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Προσθέστε προσωρινά επιλογές στο QA Sunset Exclusive: Offer options ενεργό, γραμμές <code>QA Boat A</code> Price <code>300</code> και <code>QA Boat B</code> Price <code>300</code>. Κρατήστε το αποκλειστικό και με άμεση κράτηση. Αφαιρέστε τις επιλογές στο τέλος.</p>
+      <ol class="steps">
+        <li>Κάντε κράτηση για τη D2 με <code>QA Boat A</code>.</li>
+        <li>Στη σελίδα επιλέξτε <code>QA Boat B</code> και κοιτάξτε τη D2. Εκτελέστε το curl διαθεσιμότητας για τη D2 με <code>resourceId=&lt;Boat B id&gt;</code>.</li>
+        <li>Ελέγξτε τις δεσμεύσεις της κράτησης.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η D2 δεν είναι διαθέσιμη ούτε με το Boat B (<code>"status":"full"</code>): η αποκλειστική λειτουργία δεσμεύει μόνο το <code>exp:&lt;group&gt;</code> (η λίστα δεσμεύσεων δεν έχει γραμμή <code>res:</code>), και το ημερολόγιο διαβάζει την ίδια θέση ημερομηνίας. Ένα ημερολόγιο που θα έδειχνε τη D2 ανοιχτή για το Boat B θα υποσχόταν μια ημέρα που ο διακομιστής αρνείται.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/availability.ts</code> (<code>slotRequestsForKind</code>, <code>readAllocationMode</code>) · docs/dev-guides/09-booking.md §10</p>
+    </article>
+
+    <article class="tc" id="BKG-022" data-priority="P2">
+      <h3>Άνοιγμα και κλείσιμο περιόδου, και περίοδος που διασχίζει την αλλαγή του έτους</h3>
+      <ol class="steps">
+        <li>Στο QA Boat Day ορίστε το <strong>Season opens</strong> στον μήνα-ημέρα της σημερινής + 10 και το <strong>Season closes</strong> στη σημερινή + 30· αποθηκεύστε. Κοιτάξτε τη σημερινή + 5 και τη σημερινή + 15 στο δημόσιο ημερολόγιο και με curl.</li>
+        <li>Ορίστε Season opens <code>12-01</code> και Season closes <code>02-28</code>· αποθηκεύστε. Εκτελέστε το curl διαθεσιμότητας για τις επόμενες 30 Νοεμβρίου, 15 Δεκεμβρίου και 15 Ιανουαρίου (ημερομηνίες πάνω από 60 ημέρες μπροστά δίνουν <code>too_far</code>, κάτι που είναι αποδεκτό: το ζητούμενο είναι να μην είναι <code>out_of_season</code>).</li>
+        <li>Αδειάστε και τα δύο πεδία και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: η σημερινή + 5 είναι <code>out_of_season</code> (<code>Outside the season.</code>), η σημερινή + 15 είναι ανοιχτή. Η σελίδα λεπτομερειών δείχνει <code>Available &lt;from&gt; – &lt;to&gt;</code>. Βήμα 2: 30 Νοεμβρίου <code>out_of_season</code>· 15 Δεκεμβρίου και 15 Ιανουαρίου δεν είναι <code>out_of_season</code> (το διάστημα περνά το τέλος του έτους). Βήμα 3: κάθε ημέρα εντός εύρους είναι ξανά ανοιχτή.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/availability.ts</code> (σειρά του <code>dayStatus</code>: past, out_of_season, wrong_weekday, too_far, too_soon, closed, full)</p>
+    </article>
+
+    <article class="tc" id="BKG-023" data-priority="P2">
+      <h3>Ημέρες λειτουργίας (Available weekdays)</h3>
+      <ol class="steps">
+        <li>Στο QA Boat Day τσεκάρετε μόνο το <code>Saturday</code> στο <strong>Available weekdays</strong> και αποθηκεύστε. Ανοίξτε το δημόσιο ημερολόγιο.</li>
+        <li>Στείλτε αίτημα κράτησης για μια Τρίτη: <code>curl -s -X POST "$BASE/api/cms/booking/request" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.90.0.3' -d '{"slug":"qa-boat-day","locale":"en","date":"&lt;a Tuesday&gt;","persons":1,"answers":{"&lt;question id&gt;":"Marina A"},"customer":{"name":"QA Curl","email":"qa.curl@example.com"},"acceptTerms":true}' -w ' %{http_code}\n'</code> (id ερώτησης: <code>JSON_EXTRACT(data,'$.choices[0].id')</code>).</li>
+        <li>Ξετσεκάρετε το Saturday και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: μόνο τα Σάββατα μπορούν να επιλεγούν· οι υπόλοιπες ημέρες έχουν τον λόγο <code>Not running that day.</code> Βήμα 2: <code>409</code> <code>"This experience does not run on that day of the week."</code>. Οι διαμονές αγνοούν αυτό το πεδίο (χρησιμοποιούν τα Check-in/Check-out days, BKG-046).</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/availability.ts</code> (<code>readDayRules</code>) · <code>src/cms/modules/booking/reservations.ts</code> (<code>unavailableMessage</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-024" data-priority="P2">
+      <h3>Η προθεσμία κράτησης (cut-off) έχει προεπιλογή 0: η σημερινή ημέρα μπορεί ακόμη να κρατηθεί</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Το <strong>Default cut-off (hours before)</strong> κενό στο Settings → Booking και το <strong>Cut-off (hours before)</strong> κενό στο QA Island Tour.</p>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/en/booking/qa-island-tour</code> και κοιτάξτε τη σημερινή ημέρα (ημερομηνία Αθήνας).</li>
+        <li>Εκτελέστε το curl διαθεσιμότητας για σήμερα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η σημερινή ημέρα μπορεί να επιλεγεί και το curl δίνει <code>"status":"open"</code> με <code>"leadTimeHours":0</code> στο <code>rules</code>. Το placeholder του πεδίου στο διαχειριστικό δείχνει το ίδιο <code>0</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/settings-read.ts</code> (<code>DEFAULT_LEAD_TIME_HOURS</code>) · <code>src/cms/modules/booking/availability.ts</code> (<code>dayStatus</code>: cut-off μόνο όταν &gt; 0)</p>
+    </article>
+
+    <article class="tc" id="BKG-025" data-priority="P2">
+      <h3>Η προθεσμία κράτησης (cut-off) μετράται από τα μεσάνυχτα στη ζώνη ώρας των κρατήσεων</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Εκτελέστε την μεταξύ του λεπτού 05 και 55 μιας ώρας, ενώ η ώρα Αθήνας H είναι μεταξύ 01 και 22.</p>
+      <ol class="steps">
+        <li>Σημειώστε την τρέχουσα ώρα H στην Αθήνα. Στο QA Island Tour ορίστε το <strong>Cut-off (hours before)</strong> σε <code>23 − H</code>· αποθηκεύστε. Εκτελέστε το curl διαθεσιμότητας για αύριο.</li>
+        <li>Ορίστε το σε <code>24 − H</code>· αποθηκεύστε· εκτελέστε ξανά το curl και ανανεώστε το δημόσιο ημερολόγιο.</li>
+        <li>Στείλτε αίτημα κράτησης για αύριο (όπως στη BKG-023, slug <code>qa-island-tour</code>).</li>
+        <li>Αδειάστε την προθεσμία της εμπειρίας και βάλτε <code>24 − H</code> στο <strong>Default cut-off (hours before)</strong> στο Settings· εκτελέστε το curl. Έπειτα αδειάστε αυτή τη ρύθμιση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: αύριο <code>open</code> (λιγότερες ώρες από όσες απομένουν μέχρι τα μεσάνυχτα Αθήνας). Βήμα 2: αύριο <code>too_soon</code> και ο λόγος <code>Too close to book.</code>: η προθεσμία είναι τα μεσάνυχτα Αθήνας της αυριανής ημέρας μείον <code>24 − H</code> ώρες, που μόλις πέρασαν. Αν το βήμα 2 εξακολουθεί να δίνει <code>open</code>, η προθεσμία υπολογίζεται από τα μεσάνυχτα UTC (το παλιό σφάλμα των 2–3 ωρών): Αποτυχία. Βήμα 3: <code>409</code> <code>"&lt;tomorrow&gt; is too close — please choose a later one."</code>. Βήμα 4: η προεπιλογή του site εφαρμόζεται με τον ίδιο τρόπο (<code>too_soon</code>).</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/availability.ts</code> (<code>cutoffFor</code>, <code>zonedMidnight</code>) · docs/dev-guides/09-booking.md §10 (Timezones)</p>
+    </article>
+
+    <article class="tc" id="BKG-026" data-priority="P2">
+      <h3>Κράτηση έως N ημέρες μπροστά</h3>
+      <ol class="steps">
+        <li>Το QA Boat Day έχει <strong>Bookable up to (days ahead)</strong> <code>60</code>. Εκτελέστε το curl διαθεσιμότητας για τη σημερινή + 60 και τη σημερινή + 61.</li>
+        <li>Στείλτε αίτημα κράτησης για τη σημερινή + 61.</li>
+        <li>Ορίστε το πεδίο σε <code>0</code>, αποθηκεύστε και επαναλάβετε το βήμα 1 για τη σημερινή + 61. Επαναφέρετέ το σε 60.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: +60 <code>open</code>, +61 <code>too_far</code> (<code>Too far ahead to book.</code>). Βήμα 2: <code>409</code> <code>"&lt;date&gt; is too far ahead to book yet."</code>. Βήμα 3: με 0 (χωρίς όριο) η +61 είναι ανοιχτή.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/availability.ts</code> (<code>readDayRules</code>: το 0 σημαίνει χωρίς όριο)</p>
+    </article>
+
+    <article class="tc" id="BKG-027" data-priority="P3">
+      <h3>Παρελθοντικές ημερομηνίες και τα όρια του API διαθεσιμότητας</h3>
+      <ol class="steps">
+        <li>Εκτελέστε το curl διαθεσιμότητας για χθες.</li>
+        <li>Εκτελέστε το με <code>from</code> σήμερα και <code>to</code> σήμερα + 200· μετρήστε τις ημέρες που επιστρέφονται.</li>
+        <li>Εκτελέστε το με <code>from=2026-13-40</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>"status":"past"</code>. Βήμα 2: επιστρέφονται το πολύ 92 ημέρες. Βήμα 3: σφάλμα επικύρωσης <code>422</code>, όχι σφάλμα διακομιστή.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/quote.ts</code> (<code>eachDate(…, 92)</code>, <code>availabilityQuery</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-schedule">
+    <h2>Το ημερολόγιο Availability του διαχειριστικού</h2>
+    <p class="intro"><code>/admin/availability</code>. Η λίστα <strong>Experience</strong> περιέχει μία καταχώριση ανά δημοσιευμένη εμπειρία (ελληνικοί τίτλοι) και επιπλέον καταχωρίσεις <code>&lt;experience&gt; → &lt;option&gt;</code>· μια διαμονή με επιλογές εμφανίζεται μόνο μέσω των επιλογών της. Κάθε κελί ημέρας δείχνει <code>taken/capacity</code>, μια κουκκίδα όταν η ημέρα έχει εξαίρεση, <code>Closed</code>, μια παράκαμψη τιμής και μια σημείωση.</p>
+
+    <article class="tc" id="BKG-028" data-priority="P2">
+      <h3>Θέσεις ημερομηνίας (slots) και πλέγμα μήνα</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/admin/availability</code> και ανοίξτε τη λίστα <strong>Experience</strong>.</li>
+        <li>Επιλέξτε <code>QA Γύρος νησιού</code> και μεταβείτε στον μήνα της D της BKG-017.</li>
+        <li>Πατήστε τη D.</li>
+      </ol>
+      <ul class="exp">
+        <li>Η λίστα περιέχει τα QA Ημερήσια βόλτα, QA Γύρος νησιού, QA Ηλιοβασίλεμα, QA Βίλα, QA Ναύλωση σκάφους, καθώς και <code>QA Ναύλωση σκάφους → QA Yacht Alpha</code> και <code>→ QA Yacht Beta</code>, και <code>QA Σουίτες → QA Sea View</code> και <code>→ QA Garden</code>, αλλά όχι σκέτη καταχώριση <code>QA Σουίτες</code>. Τα πρόχειρα απουσιάζουν.</li>
+        <li>Επικεφαλίδα <code>Default capacity 20 per day</code>. Η D γράφει <code>18/20</code>· το υπόμνημα δείχνει Available, Full, Closed, Overbooked.</li>
+        <li>Το πλαϊνό πάνελ έχει τίτλο τη D, δείχνει <code>18 of 20 taken</code> και <code>18 confirmed</code>, ένα πλαίσιο <code>Close this date</code>, <code>Capacity</code> (placeholder 20, βοήθεια <code>Leave empty to use the default of 20.</code>), <code>Price override</code>, <code>Note</code>, <code>Save</code> και <code>Cancel</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/AvailabilityCalendar.tsx</code> · <code>src/cms/modules/booking/schedule.ts</code> (<code>listSchedulableSlots</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-029" data-priority="P2">
+      <h3>Μια παράκαμψη χωρητικότητας ανά ημερομηνία αλλάζει ό,τι μπορεί να κρατήσει το κοινό</h3>
+      <ol class="steps">
+        <li>Στο QA Γύρος νησιού επιλέξτε μια κενή ημερομηνία D3, ορίστε <strong>Capacity</strong> <code>3</code>, Note <code>QA small boat</code>, <strong>Save</strong>.</li>
+        <li>Εκτελέστε το curl διαθεσιμότητας για τη D3 με <code>persons=3</code> και <code>persons=4</code>· ελέγξτε το <code>booking_slots</code> για τη D3.</li>
+        <li>Ορίστε Capacity <code>25</code> και αποθηκεύστε· εκτελέστε το curl με <code>persons=10</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: η D3 δείχνει <code>0/3</code>, την κουκκίδα εξαίρεσης και τη σημείωση. Βήμα 2: 3 άτομα <code>open</code>, 4 <code>full</code>· μία γραμμή <code>exp:&lt;group&gt;</code>, <code>capacity</code> 3, <code>closed</code> 0, σημείωση <code>QA small boat</code>. Βήμα 3: η D3 δείχνει <code>0/25</code>· 10 άτομα <code>open</code> με <code>remaining 25</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/schedule.ts</code> (<code>setSlotOverride</code>) · <code>src/cms/modules/booking/availability.ts</code> (<code>resolveCapacity</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-030" data-priority="P2">
+      <h3>Κλείσιμο μιας ημερομηνίας (μεταφορά) και μιας διανυκτέρευσης (διαμονή)</h3>
+      <ol class="steps">
+        <li>Στο QA Γύρος νησιού τσεκάρετε το <strong>Close this date</strong> στη D4 και αποθηκεύστε. Ελέγξτε το δημόσιο ημερολόγιο και στείλτε αίτημα κράτησης για τη D4.</li>
+        <li>Στο QA Βίλα κλείστε μία διανυκτέρευση N· στη δημόσια σελίδα του QA Villa δοκιμάστε μια διαμονή που περιλαμβάνει την N, και μία που τελειώνει στην N (αναχώρηση N).</li>
+        <li>Στο QA Ημερήσια βόλτα (λειτουργία αιτήματος κράτησης) κλείστε τη D5 και έπειτα στείλτε αίτημα κράτησης για τη D5 με curl.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: το κελί της D4 γράφει <code>Closed</code>· δημόσιος λόγος <code>Not available.</code>· το αίτημα απαντά <code>409</code> <code>"&lt;D4&gt; is not available."</code>. Βήμα 2: η διαμονή που περιλαμβάνει την N δείχνει <code>&lt;N&gt; — Not available.</code> και το κουμπί υποβολής μένει απενεργοποιημένο· μια διαμονή που τελειώνει στην N επιτρέπεται (η ημέρα αναχώρησης δεν δεσμεύεται). Βήμα 3: η λειτουργία αιτήματος κράτησης δεν δεσμεύει τίποτα, οπότε το αίτημα γίνεται δεκτό ως <code>pending</code> (201) ακόμη και σε κλειστή ημερομηνία· η άρνηση έρχεται όταν το αποδεχτείτε: το <strong>Accept &amp; send payment instructions</strong> δείχνει <code>&lt;D5&gt; is not available.</code> στο πλαϊνό πάνελ. Καταγράψτε αν αυτό είναι αποδεκτό για την επιχείρηση.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/allocation.ts</code> (<code>allocateSlots</code>: closed → 409) · <code>src/cms/modules/booking/reservations.ts</code> (<code>createReservation</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-031" data-priority="P2">
+      <h3>Παρακάμψεις τιμής: βασική τιμή, επιλογή και τιμή ανά διανυκτέρευση</h3>
+      <ol class="steps">
+        <li>Στο QA Ημερήσια βόλτα ορίστε <strong>Price override</strong> <code>60</code> στη D6 και αποθηκεύστε. Ζητήστε προσφορά τιμής για τη D6 με 2 άτομα στη δημόσια σελίδα.</li>
+        <li>Στο <code>QA Ναύλωση σκάφους → QA Yacht Alpha</code> ορίστε παράκαμψη τιμής <code>450</code> στη D7. Ζητήστε προσφορά τιμής για τη D7 με Alpha και με Beta, 6 άτομα.</li>
+        <li>Στο QA Βίλα ορίστε <code>180</code> στη διανυκτέρευση N2. Ζητήστε προσφορά τιμής για διαμονή 2 διανυκτερεύσεων με έναρξη την N2 για 2 ενήλικες.</li>
+        <li>Διαβάστε τη βοήθεια του Price override σε κάθε πλαϊνό πάνελ.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>Price for this date — 2 persons</code> €120.00 (το κελί δείχνει <code>€60</code>). Βήμα 2: Alpha <code>QA Yacht Alpha</code> €450.00· Beta €700.00 (δεν επηρεάζεται). Βήμα 3: <code>Accommodation — 1 night</code> €180.00 και <code>Accommodation — 1 night</code> €100.00, συν QA Cleaning €30.00 και <code>QA City tax — 2 nights</code> €4.00, σύνολο €314.00. Βήμα 4: τα κείμενα βοήθειας διαφέρουν ανά είδος θέσης ημερομηνίας (βασική τιμή / τιμή αυτής της επιλογής / τιμή ανά διανυκτέρευση) και τελειώνουν με <code>In major units (e.g. 250). Leave empty to price it the usual way.</code> Το <code>booking_slots.price_override</code> αποθηκεύεται σε λεπτά (6000, 45000, 18000).</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/quote.ts</code> (<code>loadPriceOverrides</code>) · <code>src/cms/admin/AvailabilityCalendar.tsx</code> (<code>priceOverrideHelp</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-032" data-priority="P3">
+      <h3>Το Reset to default αφαιρεί τη γραμμή παράκαμψης</h3>
+      <ol class="steps">
+        <li>Ανοίξτε τη D3 της BKG-029 και πατήστε <strong>Reset to default</strong>. Κάντε το ίδιο για τις D4, D5, D6, D7, N και N2.</li>
+        <li>Εκτελέστε <code>SELECT COUNT(*) FROM booking_slots WHERE note IS NOT NULL OR capacity IS NOT NULL OR closed = 1 OR price_override IS NOT NULL;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τα κελιά χάνουν την κουκκίδα, τη σημείωση, την τιμή και το <code>Closed</code>· η χωρητικότητα επιστρέφει στην προεπιλογή. Η μέτρηση είναι 0 για αυτές τις ημερομηνίες (μια γραμμή χωρίς περιεχόμενο διαγράφεται, δεν αποθηκεύεται με τιμές NULL· μπορεί να παραμένουν γραμμές για ημερομηνίες που είχαν κατανεμηθεί, αλλά με κάθε στήλη παράκαμψης κενή). Το αρχείο ελέγχου (audit log) έχει εγγραφές <code>booking.schedule.set</code> και <code>booking.schedule.clear</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/schedule.ts</code> (<code>setSlotOverride</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-033" data-priority="P2">
+      <h3>Αναφορά υπερκρατήσεων: παράκαμψη χωρητικότητας κάτω από όσα έχουν ήδη κρατηθεί</h3>
+      <ol class="steps">
+        <li>Στο QA Γύρος νησιού ανοίξτε τη D της BKG-017 (18 κρατημένες θέσεις). Πληκτρολογήστε <code>10</code> στο <strong>Capacity</strong> και διαβάστε το πλαϊνό πάνελ πριν αποθηκεύσετε· έπειτα <strong>Save</strong>.</li>
+        <li>Εκτελέστε το API προγραμματισμού του διαχειριστικού: <code>curl -s -b "cms_session=$S" "$BASE/api/cms/booking/schedule?from=&lt;D&gt;&amp;to=&lt;D&gt;&amp;slotKey=exp:&lt;group&gt;"</code></li>
+        <li>Επαναφέρετε τη D στην προεπιλογή.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: πριν από την αποθήκευση εμφανίζεται μια πορτοκαλί σημείωση <code>18 booking(s) already hold this date. Saving a lower capacity will leave it overbooked, and it will be flagged on the calendar.</code>· η αποθήκευση επιτρέπεται. Το banner γράφει <code>1 date hold more bookings than the capacity allows</code> και <code>&lt;D&gt; (18/10). This happens when a capacity is lowered after bookings were taken.</code>· το κελί είναι πορτοκαλί. Βήμα 2: <code>"overbooked":[{"slotKey":"exp:…","slotDate":"&lt;D&gt;","capacity":10,"taken":18}]</code>. Βήμα 3: το banner εξαφανίζεται. (Σημειώστε τη γραμματική «1 date hold».)</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/allocation.ts</code> (<code>findOverbookedSlots</code>) · <code>src/cms/admin/AvailabilityCalendar.tsx</code></p>
+    </article>
+
+    <article class="tc" id="BKG-034" data-priority="P2">
+      <h3>Αναφορά υπερκρατήσεων: μια ημερομηνία χωρίς παράκαμψη κρίνεται βάσει της προεπιλογής</h3>
+      <ol class="steps">
+        <li>Στην εμπειρία QA Island Tour αλλάξτε το <strong>Places per day</strong> από 20 σε <code>15</code> και αποθηκεύστε (η D της BKG-017 έχει 18 κρατημένες θέσεις και καμία παράκαμψη).</li>
+        <li>Ανοίξτε το <code>/admin/availability</code> στο QA Γύρος νησιού, στον μήνα της D.</li>
+        <li>Επαναφέρετε το Places per day σε <code>20</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 2: επικεφαλίδα <code>Default capacity 15 per day</code>· το banner αναφέρει <code>&lt;D&gt; (18/15)</code>, παρόλο που το <code>booking_slots</code> δεν έχει χωρητικότητα για τη D. Βήμα 3: το banner έχει φύγει.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/availability.ts</code> (<code>overbookedFrom</code>) · <code>src/cms/modules/booking/schedule.ts</code> (το <code>scheduleReadRoute</code> περνά τις προεπιλογές)</p>
+    </article>
+
+    <article class="tc" id="BKG-035" data-priority="P3">
+      <h3>Η αναφορά υπερκρατήσεων αγνοεί τις ληγμένες δεσμεύσεις</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ρυθμισμένο Stripe (COM-051)· Settings → Booking → <strong>Payment method</strong> <code>Card (Stripe)</code>, <strong>Instant payment hold (minutes)</strong> <code>2</code>.</p>
+      <ol class="steps">
+        <li>Στο QA Island Tour κάντε κράτηση για 2 άτομα στη D της BKG-017 (18 επιβεβαιωμένες). Μεταφέρεστε στη σελίδα πληρωμής· μην πληρώσετε.</li>
+        <li>Μέσα σε 2 λεπτά ανοίξτε το <code>/admin/availability</code> στη D: σημειώστε το κελί.</li>
+        <li>Μετά από 3 λεπτά (μην εκτελέσετε την εκκαθάριση) ορίστε παράκαμψη χωρητικότητας <code>19</code> στη D και αποθηκεύστε· διαβάστε το banner. Ελέγξτε τη δέσμευση της νέας κράτησης.</li>
+        <li>Επαναφέρετε τη D, επαναφέρετε το Payment method σε <code>Manual / bank transfer</code> και αδειάστε τη δέσμευση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 2: <code>20/20</code> με <code>2 held</code> στο πλαϊνό πάνελ. Βήμα 3: το κελί δείχνει <code>18/19</code> και <strong>δεν</strong> υπάρχει banner υπερκράτησης: η ληγμένη γραμμή <code>held</code> (ακόμη <code>held</code>, με <code>expires_at</code> στο παρελθόν) δεν μετράει, με βάση το ρολόι της εφαρμογής, πριν εκτελεστεί η εκκαθάριση.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/allocation.ts</code> (<code>findOverbookedSlots</code>: το held μετράει μόνο όσο δεν έχει λήξει)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-quote">
+    <h2>Προσφορές τιμής</h2>
+    <p class="intro">Η φόρμα επανυπολογίζει την τιμή σε κάθε αλλαγή μέσω του <code>POST /api/cms/booking/quote</code>· ο διακομιστής δεν εμπιστεύεται ποτέ μια τιμή από τον browser. Οι ετικέτες των γραμμών είναι του μηχανισμού τιμολόγησης (αγγλικές και στις δύο γλώσσες).</p>
+
+    <article class="tc" id="BKG-036" data-priority="P2">
+      <h3>Τιμή ανά άτομο με πρόσθετο ανά άτομο</h3>
+      <ol class="steps">
+        <li>Στο <code>/en/booking/qa-boat-day</code> επιλέξτε D, Guests <code>2</code>, τσεκάρετε <code>QA Lunch</code>.</li>
+        <li>Αλλάξτε το Guests σε 3· ξετσεκάρετε το πρόσθετο.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>Base price — 2 persons × €50.00</code> €100.00, <code>QA Lunch — 2 persons × €15.00</code> €30.00, <code>Total</code> €130.00. Κατά τον επανυπολογισμό η ανάλυση τιμής θαμπώνει (το <code>Calculating…</code> εμφανίζεται μόνο όταν είναι κενή). Βήμα 2: 3 άτομα με γεύμα €195.00· χωρίς €150.00.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/pricing.ts</code> (<code>quoteBooking</code>, λειτουργία πολλαπλασιασμού)</p>
+    </article>
+
+    <article class="tc" id="BKG-037" data-priority="P2">
+      <h3>Τιμή περιόδου, και παράκαμψη ημερομηνίας πάνω από την περίοδο</h3>
+      <ol class="steps">
+        <li>Ορίστε προσωρινά το Bookable up to του QA Boat Day σε <code>0</code>. Ζητήστε προσφορά τιμής για την επόμενη 25η Δεκεμβρίου με 2 άτομα (με το ημερολόγιο ή με <code>curl -s -X POST "$BASE/api/cms/booking/quote" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.90.0.4' -d '{"slug":"qa-boat-day","locale":"en","date":"&lt;YYYY&gt;-12-25","persons":2}'</code>).</li>
+        <li>Βάλτε παράκαμψη τιμής <code>90</code> σε εκείνη την ημερομηνία στο Availability και ζητήστε ξανά προσφορά τιμής. Έπειτα επαναφέρετέ την και ορίστε ξανά το Bookable up to σε 60.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>Seasonal price — 2 persons</code>, σύνολο 14000 (€140.00). Βήμα 2: <code>Price for this date — 2 persons</code>, σύνολο 18000: η παράκαμψη του ημερολογίου υπερισχύει της περιόδου.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/pricing.ts</code> (προτεραιότητα τιμής μονάδας) · docs/dev-guides/09-booking.md §4.1</p>
+    </article>
+
+    <article class="tc" id="BKG-038" data-priority="P2">
+      <h3>Η τιμή της επιλογής αντικαθιστά τη βασική· σταθερή τιμή έως N άτομα</h3>
+      <ol class="steps">
+        <li>Στο <code>/en/booking/qa-yacht-charter</code> επιλέξτε D, <code>QA Yacht Alpha</code>, Guests 6.</li>
+        <li>Guests 8· έπειτα επιλέξτε <code>QA Yacht Beta</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>QA Yacht Alpha</code> €500.00, σύνολο €500.00 (η βασική τιμή 400 δεν προστίθεται). Βήμα 2: Alpha με 8 άτομα: €500.00 + <code>Additional persons (over 6) — 2 persons</code> €40.00 = €540.00· Beta: €740.00.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/pricing.ts</code> (<code>group_threshold</code>, κόστος επιλογής)</p>
+    </article>
+
+    <article class="tc" id="BKG-039" data-priority="P2">
+      <h3>Προσφορά τιμής διαμονής: διανυκτερεύσεις, επιπλέον επισκέπτες, παιδιά και χρεώσεις</h3>
+      <ol class="steps">
+        <li>Στο <code>/en/booking/qa-villa</code> επιλέξτε D → D+3 (εκτός 20–31 Δεκεμβρίου), Adults 2, Children 0.</li>
+        <li>Adults 3, Children 1.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>Accommodation — 3 nights × €100.00</code> €300.00, <code>QA Cleaning</code> €30.00, <code>QA City tax — 3 nights</code> €6.00, σύνολο €336.00. Βήμα 2: προστίθενται <code>Additional guests (over 2) — 1 guest × 3 nights</code> €60.00 και <code>Children (under 12) — 1 child × 3 nights</code> €30.00: σύνολο €426.00.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/stay.ts</code> (<code>quoteStay</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-040" data-priority="P2">
+      <h3>Διαμονή που διασχίζει το όριο μιας περιόδου, και η ελάχιστη διαμονή της περιόδου</h3>
+      <ol class="steps">
+        <li>Ζητήστε προσφορά τιμής για 18 → 22 Δεκεμβρίου του προσεχούς Δεκεμβρίου, 2 ενήλικες.</li>
+        <li>Ζητήστε προσφορά τιμής για 20 → 22 Δεκεμβρίου (2 διανυκτερεύσεις, με άφιξη μέσα στην περίοδο που έχει ελάχιστο 3). Κοιτάξτε την ανάλυση τιμής και τυχόν κόκκινη σημείωση· έπειτα υποβάλετε τη φόρμα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: δύο γραμμές διανυκτερεύσεων, <code>Accommodation — 2 nights</code> €200.00 και <code>Accommodation — 2 nights</code> €300.00, QA Cleaning €30.00, <code>QA City tax — 4 nights</code> €8.00· σύνολο €538.00. Βήμα 2: ο διακομιστής αρνείται την προσφορά τιμής (ελάχιστο 3 της περιόδου στην οποία πέφτει η διανυκτέρευση άφιξης), οπότε η ανάλυση τιμής γράφει <code>Price on request</code>, και η υποβολή δείχνει <code>The minimum stay is 3 night(s).</code> Η φόρμα δεν δείχνει σημείωση ελάχιστης διαμονής πριν από την υποβολή, επειδή γνωρίζει μόνο το γενικό ελάχιστο (2): καταγράψτε το ως κενό UX στο αποτέλεσμα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/stay.ts</code> (<code>minNightsFor</code>) · <code>src/components/booking/StayFields.tsx</code> (<code>stayRangeError</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-041" data-priority="P3">
+      <h3>Το API προσφοράς τιμής απορρίπτει αλλοιωμένα δεδομένα</h3>
+      <ol class="steps">
+        <li>Ζητήστε προσφορά τιμής για <code>qa-boat-day</code> με <code>"extraIds":["nope"]</code>.</li>
+        <li>Ζητήστε προσφορά τιμής για <code>qa-villa</code> με <code>"date":"&lt;D&gt;","endDate":"&lt;D+2&gt;","adults":4,"children":1</code>.</li>
+        <li>Ζητήστε προσφορά τιμής για <code>qa-villa</code> με <code>endDate</code> πριν από το <code>date</code>, και με <code>"persons":0</code> για <code>qa-boat-day</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>200</code> με <code>"quote":{"ok":false,"reason":"unknown_extra"}</code>. Βήμα 2: <code>"reason":"over_occupancy","maxOccupancy":4</code>. Βήμα 3: <code>"reason":"invalid_range"</code>· το <code>persons 0</code> είναι σφάλμα επικύρωσης <code>422</code>. Το endpoint προσφοράς τιμής δεν δημιουργεί ποτέ κράτηση.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/quote.ts</code> (<code>quoteBody</code>) · <code>src/cms/modules/booking/stay.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-form">
+    <h2>Έλεγχος της φόρμας κράτησης</h2>
+    <p class="intro">Payment method <code>Manual / bank transfer</code>. Συγκρίνετε το <code>SELECT MAX(id) FROM reservations;</code> πριν και μετά από κάθε άρνηση: μια άρνηση δεν πρέπει να αφήνει γραμμή.</p>
+
+    <article class="tc" id="BKG-042" data-priority="P2">
+      <h3>Υποχρεωτικά πεδία και το πλαίσιο των όρων</h3>
+      <ol class="steps">
+        <li>Στο <code>/en/booking/qa-boat-day</code>, πριν επιλέξετε ημερομηνία, αναζητήστε το κουμπί υποβολής.</li>
+        <li>Επιλέξτε D. Πατήστε <strong>Request this date</strong> με όλα κενά· έπειτα με όνομα και <code>not-an-email</code>· έπειτα με έγκυρο email αλλά χωρίς τσεκαρισμένο το πλαίσιο των όρων.</li>
+        <li>Τσεκάρετε τους όρους και υποβάλετε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: τα στοιχεία, η ανάλυση τιμής και το κουμπί είναι κρυμμένα μέχρι να επιλεγεί ημερομηνία. Βήμα 2: ο browser μπλοκάρει κάθε υποβολή στο πρώτο μη έγκυρο υποχρεωτικό πεδίο (όνομα, μορφή email, όροι)· δεν αποστέλλεται αίτημα. Βήμα 3: το πράσινο πλαίσιο <code>We have your request</code>, <code>Booking reference BKG-&lt;year of D&gt;-XXXXXXXX. A confirmation email is on its way.</code> και <code>View your booking</code> με σύνδεσμο προς το <code>/en/booking/lookup</code>.</p>
+      <p class="ref">Αναφ.: <code>src/components/booking/BookingForm.tsx</code> · <code>src/cms/modules/booking/reference.ts</code> (<code>formatBookingReference</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-043" data-priority="P3">
+      <h3>Ο διακομιστής επιβάλλει ό,τι επιβάλλει η φόρμα</h3>
+      <ol class="steps">
+        <li>Στείλτε αίτημα κράτησης για το QA Boat Day (όπως στη BKG-023, με έγκυρη ημερομηνία) χωρίς <code>acceptTerms</code>.</li>
+        <li>Στείλτε το με <code>"acceptTerms":true</code> αλλά χωρίς <code>answers</code>.</li>
+        <li>Στείλτε το με <code>"customer":{"name":"","email":"x"}</code>, και με <code>"date":"2026-02-30x"</code>.</li>
+        <li>Στείλτε το για χθες.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>400</code> <code>"message":"Please accept the terms to request this booking."</code>. Βήμα 2: <code>409</code> <code>"Please answer every question on the form."</code>. Βήμα 3: σφάλματα επικύρωσης <code>422</code>. Βήμα 4: <code>409</code> <code>"&lt;yesterday&gt; has already passed."</code>. Το <code>MAX(id)</code> μένει αμετάβλητο σε όλη τη διάρκεια.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/reservations.ts</code> (<code>createReservation</code>, <code>reservationRequestSchema</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-044" data-priority="P3">
+      <h3>Honeypot και όριο ρυθμού στα αιτήματα κράτησης</h3>
+      <ol class="steps">
+        <li>Στείλτε ένα έγκυρο αίτημα με <code>"_hp":"bot"</code>.</li>
+        <li>Στείλτε έξι αιτήματα μέσα σε ένα λεπτό από το ίδιο <code>X-Real-IP</code> (έγκυρα σώματα, διαφορετικά email).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>201</code> με <code>"reference":"BKG-0000-00000000"</code> και χωρίς να δημιουργηθεί γραμμή. Βήμα 2: τα πρώτα πέντε δημιουργούνται· το έκτο απαντά <code>429</code>. Στη συνέχεια διαγράψτε τα πέντε δοκιμαστικά αιτήματα (ερώτημα καθαρισμού στη BKG-096).</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/reservations.ts</code> (<code>bookingRequestRoute</code>, όριο ρυθμού 5/λεπτό)</p>
+    </article>
+
+    <article class="tc" id="BKG-045" data-priority="P3">
+      <h3>Μια ομάδα πάνω από το μέγιστο δεσμεύει τις ίδιες θέσεις που αποθηκεύει</h3>
+      <ol class="steps">
+        <li>Τρόπος πληρωμής χειροκίνητος. Στείλτε αίτημα κράτησης για το QA Island Tour σε μια κενή ημερομηνία με <code>"persons":15</code> (μέγιστο 10).</li>
+        <li>Ελέγξτε τα <code>persons</code> και <code>total</code> της κράτησης και τα <code>seats</code> της δέσμευσής της.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Είτε το αίτημα απορρίπτεται, είτε η κράτηση τιμολογείται και δεσμεύεται για τον ίδιο αριθμό ατόμων: <code>persons</code> = <code>seats</code> της δέσμευσης. Ο τρέχων κώδικας περιορίζει την τιμή σε 10 άτομα (<code>persons</code> 10, σύνολο 40000) αλλά δεσμεύει θέσεις με το αρχικό 15: αν το <code>seats</code> είναι 15, σημειώστε Αποτυχία (το ημερολόγιο τότε δείχνει 5 θέσεις κατειλημμένες για τις οποίες δεν πλήρωσε κανείς).</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/reservations.ts</code> (<code>slotRequestsFor</code> με <code>input.persons</code>) · <code>src/cms/modules/booking/pricing.ts</code> (<code>clampPersons</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-046" data-priority="P2">
+      <h3>Κανόνες διαμονής στη φόρμα: ελάχιστο, μέγιστο, ημέρα άφιξης, πληρότητα</h3>
+      <ol class="steps">
+        <li>Στο <code>/en/booking/qa-villa</code> επιλέξτε διαμονή 1 διανυκτέρευσης· έπειτα διαμονή 8 διανυκτερεύσεων.</li>
+        <li>Στο QA Villa ορίστε το <strong>Check-in days</strong> μόνο σε <code>Saturday</code>· αποθηκεύστε. Επιλέξτε άφιξη Τρίτη για 3 διανυκτερεύσεις. Έπειτα αδειάστε το Check-in days.</li>
+        <li>Επιλέξτε μια έγκυρη διαμονή 3 διανυκτερεύσεων, Adults 4, Children 1.</li>
+        <li>Υποβάλετε παρ' όλα αυτά με 5 επισκέπτες.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: κόκκινες σημειώσεις <code>The minimum stay for these dates is 2 night(s).</code> και <code>The maximum stay for these dates is 7 night(s).</code>· το κουμπί υποβολής είναι απενεργοποιημένο. Βήμα 2: <code>Check-in is not available on that day of the week.</code> Βήμα 3: τα πεδία επισκεπτών γίνονται κόκκινα με <code>This can take at most 4 guest(s).</code> Βήμα 4: ο διακομιστής απαντά <code>This can take at most 4 guest(s).</code> στην κόκκινη ειδοποίηση της φόρμας και δεν δημιουργείται τίποτα.</p>
+      <p class="ref">Αναφ.: <code>src/components/booking/StayFields.tsx</code> · <code>src/cms/modules/booking/availability.ts</code> (<code>stayStatus</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-request">
+    <h2>Λειτουργία αιτήματος κράτησης: αίτημα, αποδοχή, πληρωμή</h2>
+    <p class="intro">Το QA Boat Day ακολουθεί την προεπιλογή του site (πρώτα αίτημα). Payment method <code>Manual / bank transfer</code>, εκτός αν αναφέρεται διαφορετικά.</p>
+
+    <article class="tc" id="BKG-047" data-priority="P1">
+      <h3>Ένα αίτημα κράτησης δεν δεσμεύει τίποτα και ειδοποιεί και τις δύο πλευρές</h3>
+      <ol class="steps">
+        <li>Στο <code>/en/booking/qa-boat-day</code> στείλτε αίτημα κράτησης για τη D8 για 2 άτομα με QA Lunch (όνομα <code>QA Guest</code>, το γραμματοκιβώτιο του πελάτη, τηλέφωνο <code>6900000000</code>, σημείωση <code>QA note</code>).</li>
+        <li>Εκτελέστε τα ερωτήματα της κράτησης· ελέγξτε και τα δύο γραμματοκιβώτια.</li>
+      </ol>
+      <ul class="exp">
+        <li>Κράτηση <code>pending</code>, <code>mode</code> <code>request</code>, σύνολο 13000, <code>slot_label</code> <code>Marina A</code>, <code>expires_at</code> περίπου 72 ώρες μπροστά, <strong>καμία</strong> δέσμευση. Γραμμές: βασική 10000 και πρόσθετο 3000.</li>
+        <li>Πελάτης: <code>We have your request — BKG-…</code> με <code>We will check availability and come back to you shortly.</code>, και έπειτα μια σύνοψη (Booking reference, Date, Guests 2, Price breakdown, Total <code>€130.00</code>).</li>
+        <li>Επιχείρηση: <code>New booking BKG-… — QA Boat Day</code>, σώμα <code>QA Guest requested QA Boat Day.</code>, η ίδια σύνοψη και το <em>QA note</em>· η απάντηση πηγαίνει στον πελάτη.</li>
+        <li>Συμβάντα: <code>email.request_received</code> sent, <code>email.admin_new_request</code> sent.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/emails.ts</code> (<code>sendReservationEmails</code>) · <code>src/cms/modules/booking/lifecycle.ts</code> (<code>initialStatus</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-048" data-priority="P1">
+      <h3>Αποδοχή και αποστολή οδηγιών πληρωμής (χειροκίνητη πληρωμή)</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/admin/reservations</code>, πατήστε <strong>View</strong> στην κράτηση της BKG-047.</li>
+        <li>Πατήστε <strong>Accept &amp; send payment instructions</strong>· διαβάστε το παράθυρο διαλόγου· επιβεβαιώστε.</li>
+        <li>Εκτελέστε τα ερωτήματα· ελέγξτε το γραμματοκιβώτιο του πελάτη· κοιτάξτε το κελί της D8 στο Availability.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το πλαϊνό πάνελ εξηγεί <code>Accepting claims the date and asks the customer to pay — they are emailed your payment instructions. If someone else has already taken the date, this is refused.</code> Το παράθυρο διαλόγου: <code>The date is taken and the customer is emailed your payment instructions (Settings → Booking). They have 7 days to pay before the booking expires — record the payment here when it arrives.</code></li>
+        <li>Κατάσταση <code>awaiting_payment</code>· μία δέσμευση <code>exp:&lt;group&gt;</code> με 2 θέσεις σε κατάσταση <code>held</code> με <code>expires_at</code> = <code>expires_at</code> της κράτησης ≈ τώρα + 7 ημέρες. Η D8 γράφει <code>2/6</code>.</li>
+        <li>Email <code>Your booking is approved — complete payment — BKG-…</code> με <code>How to pay:</code> και το κείμενο των οδηγιών, και έπειτα η σύνοψη.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/reservations.ts</code> (<code>updateReservationStatus</code>) · <code>src/cms/modules/booking/lifecycle.ts</code> (<code>operatorPaymentDeadline</code>) · <code>src/cms/modules/booking/payments.ts</code> (<code>requestPayment</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-049" data-priority="P2">
+      <h3>Ανταγωνιστικά αιτήματα κράτησης: η δεύτερη αποδοχή απορρίπτεται</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Δώστε στη D9 παράκαμψη χωρητικότητας <code>4</code> για το QA Ημερήσια βόλτα.</p>
+      <ol class="steps">
+        <li>Από δύο browsers στείλτε αίτημα κράτησης για τη D9 στο QA Boat Day για 3 άτομα το καθένα (<code>QA First</code>, <code>QA Second</code>).</li>
+        <li>Ανοίξτε το πλαϊνό πάνελ του QA First.</li>
+        <li>Αποδεχτείτε το QA First. Έπειτα ανοίξτε το QA Second και αποδεχτείτε το.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: και τα δύο είναι <code>pending</code> (η λειτουργία αιτήματος κράτησης επιτρέπει σε πολλούς να ζητήσουν την ίδια ημερομηνία). Βήμα 2: ένα πορτοκαλί πλαίσιο <code>1 other request for this date</code> που αναφέρει τον κωδικό αναφοράς του QA Second, <code>3 pax</code> και <code>Awaiting your reply</code>. Βήμα 3: το QA First περνά σε <code>Awaiting payment</code>· η αποδοχή του QA Second δείχνει την κόκκινη ειδοποίηση <code>&lt;D9&gt; is no longer available.</code> στο πλαϊνό πάνελ και μένει <code>pending</code>, χωρίς δεσμεύσεις και χωρίς να σταλεί email.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/reservations.ts</code> (<code>competingReservations</code>) · <code>src/cms/modules/booking/allocation.ts</code> (<code>allocateSlots</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-050" data-priority="P2">
+      <h3>Χειροκίνητη καταγραφή μιας μερικής και έπειτα της υπόλοιπης πληρωμής</h3>
+      <ol class="steps">
+        <li>Στο πλαϊνό πάνελ της BKG-048 (αναμονή πληρωμής, σύνολο 130,00 €) πληκτρολογήστε <code>abc</code> στο <strong>Amount received (EUR)</strong> και πατήστε <strong>Record payment</strong>· έπειτα <code>200</code>· έπειτα <code>50</code>.</li>
+        <li>Επιβεβαιώστε το παράθυρο διαλόγου για τα 50. Διαβάστε το πάνελ· εκτελέστε τα ερωτήματα.</li>
+        <li>Καταγράψτε <code>80</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: <code>Enter an amount such as 120 or 120.50.</code>· <code>That is more than the balance due.</code>· για τα 50 το παράθυρο διαλόγου <code>Record 50,00 € as received? This does not charge the customer…</code></li>
+        <li>Βήμα 2: το Payments εμφανίζει <code>Manual</code> <code>captured</code> 50,00 €· <code>Paid so far</code> 50,00 €, <code>Balance due</code> 80,00 €· η κατάσταση μένει <code>Awaiting payment</code> (δεν είχε οριστεί προκαταβολή, οπότε μια μερική πληρωμή δεν εξασφαλίζει την ημερομηνία) και το <code>expires_at</code> δεν αλλάζει. Σημείωση: αυτή η κράτηση μπορεί ακόμη να λήξει κατά την εκκαθάριση, ενώ έχουν καταγραφεί χρήματα σε αυτήν.</li>
+        <li>Βήμα 3: κατάσταση <code>Paid</code>, <code>amount_paid</code> 13000, δεσμεύσεις <code>confirmed</code>, <code>expires_at</code> NULL, email <code>Payment received — BKG-…</code> (<code>Thank you — we have received your payment.</code> μαζί με τους όρους ακύρωσης).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/ReservationPayments.tsx</code> · <code>src/cms/modules/booking/payment-actions.ts</code> (<code>recordPaymentRefusal</code>, <code>parseMoneyInput</code>) · <code>src/cms/modules/booking/payments.ts</code> (<code>settlementFor</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-051" data-priority="P2">
+      <h3>Το Mark paid καταγράφει το εκκρεμές υπόλοιπο ως χειροκίνητη πληρωμή</h3>
+      <ol class="steps">
+        <li>Η αποδοχή του QA First της BKG-049 έχει ήδη γίνει (αναμονή πληρωμής, σύνολο 150,00 €). Ανοίξτε το πλαϊνό πάνελ του και πατήστε <strong>Mark paid</strong>· διαβάστε το παράθυρο διαλόγου· επιβεβαιώστε.</li>
+        <li>Κοιτάξτε το Payments· εκτελέστε τα ερωτήματα· ελέγξτε το γραμματοκιβώτιο.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάτω από το κουμπί: <code>Emails the customer a receipt. It does not charge them.</code> Παράθυρο διαλόγου: <code>This records the outstanding balance (150,00 €) as a manual payment and emails the customer a receipt. It does not move any money.</code> Στη συνέχεια το Payments δείχνει μια νέα γραμμή <code>Manual</code> <code>captured</code> 150,00 €, <code>Paid so far</code> 150,00 €, <code>Balance due</code> 0,00 €, κατάσταση <code>Paid</code>· το <code>reservation_payments</code> έχει γραμμή <code>manual</code> 15000· <code>amount_paid</code> 15000· δεσμεύσεις <code>confirmed</code>· email <code>Payment received — BKG-…</code>. Τα στοιχεία ελέγχου <strong>Mark paid</strong> και <strong>Record payment</strong> εξαφανίζονται.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/payment-actions.ts</code> (<code>markPaidPlan</code>) · <code>src/cms/modules/booking/reservations.ts</code> (<code>reservationUpdateRoute</code> → <code>markReservationPaid</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-052" data-priority="P3">
+      <h3>Καταγραφή πληρωμής σε αίτημα κράτησης που δεν έχει απαντηθεί</h3>
+      <ol class="steps">
+        <li>Στείλτε αίτημα κράτησης για μια νέα ημερομηνία D10 στο QA Boat Day (pending). Δώστε στη D10 παράκαμψη χωρητικότητας 2, έπειτα στείλτε ξανά αίτημα για τη D10 ως δεύτερος πελάτης για 2 άτομα και αποδεχτείτε αυτό το δεύτερο (παίρνει και τις δύο θέσεις).</li>
+        <li>Ανοίξτε το πλαϊνό πάνελ του πρώτου (pending, 2 άτομα). Προσφέρεται το <strong>Record payment</strong>; Καταγράψτε ολόκληρο το σύνολό του.</li>
+        <li>Εκτελέστε τα ερωτήματα για αυτό· ανοίξτε τη D10 στο Availability.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Μια πληρωμή σε αίτημα κράτησης δεν πρέπει να επιβεβαιώνει μια ημερομηνία που δεν δέσμευσε ποτέ. Ο τρέχων κώδικας προσφέρει το Record payment σε κράτηση pending και την εκκαθαρίζει σε <code>Confirmed</code> <strong>χωρίς</strong> γραμμές <code>reservation_holds</code>, οπότε η D10 δείχνει <code>2/2</code> ενώ υπάρχουν σε αυτήν δύο κρατήσεις (μία επιβεβαιωμένη, μία σε αναμονή πληρωμής) για 4 άτομα. Αν αυτό βλέπετε, σημειώστε Αποτυχία και επισυνάψτε τα ερωτήματα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/payment-actions.ts</code> (<code>canRecordPayment</code>) · <code>src/cms/modules/booking/payments.ts</code> (<code>settlementFor</code> με εναλλακτική το confirmed· ετυμηγορία <code>none</code>) · docs/dev-guides/09-booking.md §10</p>
+    </article>
+
+    <article class="tc" id="BKG-053" data-priority="P2">
+      <h3>Η αποδοχή με online πάροχο στέλνει με email σύνδεσμο πληρωμής</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ρυθμισμένο Stripe (COM-051). Settings → Booking → <strong>Payment method</strong> <code>Card (Stripe)</code>.</p>
+      <ol class="steps">
+        <li>Στείλτε αίτημα κράτησης για τη D11 στο QA Boat Day για 1 άτομο. Ανοίξτε το πλαϊνό πάνελ της.</li>
+        <li>Πατήστε <strong>Accept &amp; send payment link</strong>, επιβεβαιώστε.</li>
+        <li>Ελέγξτε το email και την κράτηση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Παράθυρο διαλόγου: <code>The date is taken and the customer is emailed a Card (Stripe) payment link. They have 7 days to pay before the booking expires and the date is released.</code> (η ετικέτα είναι του παρόχου). Email <code>Your booking is approved — complete payment — BKG-…</code> με <code>Complete your payment here:</code> και σύνδεσμο <code>&lt;site&gt;/en/booking/pay/BKG-…?t=&lt;32 chars&gt;</code>. Γραμμή: <code>awaiting_payment</code>, ορισμένο <code>payment_token_hash</code> (το token σε απλή μορφή δεν εμφανίζεται πουθενά στη βάση δεδομένων), <code>deposit_amount</code> 5000, ορισμένο <code>payment_link_sent_at</code>. Το πλαϊνό πάνελ δείχνει πλέον <strong>Resend payment link</strong> με <code>Emails the customer a new Card (Stripe) link, valid for 7 days. The previous link stops working.</code></p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/payments.ts</code> (<code>issuePaymentLink</code>) · <code>src/cms/admin/ReservationsTable.tsx</code> (<code>acceptMessage</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-instant">
+    <h2>Άμεσες κρατήσεις, δεσμεύσεις και λήξη</h2>
+
+    <article class="tc" id="BKG-054" data-priority="P1">
+      <h3>Άμεση κράτηση διαμονής με χειροκίνητη πληρωμή: επιβεβαιωμένη, το email δείχνει άφιξη → αναχώρηση</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Payment method <code>Manual / bank transfer</code>.</p>
+      <ol class="steps">
+        <li>Στο <code>/en/booking/qa-villa</code> κάντε κράτηση D → D+3, 2 ενήλικες, 1 παιδί (σύνολο €366.00: 300 + 30 + 6 + 30).</li>
+        <li>Επαναλάβετε στο <code>/booking/qa-villa</code> (ελληνικά) για ένα άλλο ελεύθερο εύρος 2 διανυκτερεύσεων.</li>
+        <li>Ελέγξτε το γραμματοκιβώτιο, τα ερωτήματα της κράτησης και τη λίστα Reservations.</li>
+      </ol>
+      <ul class="exp">
+        <li>Η φόρμα δείχνει το πράσινο πλαίσιο με τον κωδικό αναφοράς (ο τίτλος του εξακολουθεί να γράφει <code>We have your request</code>, παρόλο που η διαμονή είναι επιβεβαιωμένη: καταγράψτε το ως ζήτημα κειμένου). Κατάσταση <code>confirmed</code>, <code>mode</code> <code>instant</code>, <code>allocation_mode</code> <code>resource</code>, <code>nights</code> 3, <code>end_date</code> D+3, <code>adults</code> 2, <code>children</code> 1, <code>persons</code> 3· τρεις δεσμεύσεις στο <code>exp:&lt;group&gt;</code> για D, D+1, D+2 (όχι D+3), καθεμία με 1 θέση, <code>confirmed</code>.</li>
+        <li>Αγγλικό email <code>Your booking is confirmed — BKG-…</code>: <code>Your date is reserved.</code>, <code>How to pay:</code> με τις οδηγίες, μια γραμμή σύνοψης <strong>Stay</strong> που γράφει <code>&lt;check-in&gt; → &lt;check-out&gt; (3 nights)</code>, <code>Guests</code> 3, την ανάλυση τιμής και τους όρους ακύρωσης.</li>
+        <li>Ελληνικό email <code>Η κράτησή σας επιβεβαιώθηκε — BKG-…</code> με <strong>Διαμονή</strong> <code>… → … (2 νύχτες)</code>.</li>
+        <li>Η στήλη Date της λίστας δείχνει <code>&lt;D&gt; → &lt;D+3&gt; 3 nights</code>· η γραμμή έχει το σήμα <code>instant</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/lifecycle.ts</code> (<code>bookedDatesText</code>, <code>emailForNewReservation</code>) · <code>src/cms/modules/booking/emails.ts</code> (<code>summaryHtml</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-055" data-priority="P1">
+      <h3>Η άμεση κράτηση με Stripe δημιουργεί δέσμευση και ανοίγει τη σελίδα πληρωμής</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Payment method <code>Card (Stripe)</code>· Instant payment hold κενό (20 λεπτά).</p>
+      <ol class="steps">
+        <li>Στο <code>/en/booking/qa-island-tour</code> κάντε κράτηση για τη D12 για 2 άτομα (<strong>Book now — €80.00</strong>).</li>
+        <li>Κοιτάξτε τη σελίδα στην οποία καταλήγετε· εκτελέστε τα ερωτήματα· ελέγξτε το γραμματοκιβώτιο.</li>
+      </ol>
+      <ul class="exp">
+        <li>Ο browser πηγαίνει κατευθείαν στο <code>/en/booking/pay/BKG-…?t=…</code>: επικεφαλίδα <code>My booking</code>, υπέρτιτλος <code>QA Island Tour</code>, Booking reference, Date D12, Guests 2, Total €80.00, <code>Amount due</code> €80.00 και <strong>Pay now</strong>. Η σελίδα είναι <code>noindex</code>.</li>
+        <li>Γραμμή <code>awaiting_payment</code>, <code>expires_at</code> ≈ τώρα + 20 λεπτά· δέσμευση <code>held</code> με 2 θέσεις και το ίδιο <code>expires_at</code>· το <code>payment_token_expires_at</code> είναι ίσο με αυτό (ο σύνδεσμος δεν μπορεί να διαρκέσει περισσότερο από τη δέσμευση)· <code>deposit_amount</code> 8000.</li>
+        <li>Email <code>Complete your payment — BKG-…</code> (διατύπωση άμεσης κράτησης) με τον ίδιο σύνδεσμο.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/reservations.ts</code> (<code>createReservation</code>: awaiting_payment → <code>issuePaymentLink</code>) · <code>src/app/[locale]/booking/pay/[reference]/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="BKG-056" data-priority="P2">
+      <h3>Η διάρκεια της δέσμευσης προέρχεται από τη ρύθμιση, και μια ληγμένη δέσμευση παύει αμέσως να μετράει</h3>
+      <ol class="steps">
+        <li>Ορίστε <strong>Instant payment hold (minutes)</strong> <code>2</code>. Δώστε στο QA Γύρος νησιού παράκαμψη χωρητικότητας <code>2</code> στη D13.</li>
+        <li>Κάντε κράτηση για τη D13 για 2 άτομα στο QA Island Tour· μην πληρώσετε. Εκτελέστε το curl διαθεσιμότητας για τη D13 (<code>persons=1</code>).</li>
+        <li>Περιμένετε 3 λεπτά χωρίς να εκτελέσετε την εκκαθάριση. Εκτελέστε ξανά το curl και ελέγξτε την κράτηση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 2: <code>expires_at</code> ≈ τώρα + 2 λεπτά· D13 <code>full</code>, <code>remaining 0</code>. Βήμα 3: η D13 είναι <code>open</code> με <code>remaining 2</code>, παρόλο που η κράτηση είναι ακόμη <code>awaiting_payment</code> και η δέσμευση γράφει ακόμη <code>held</code>: μια ληγμένη δέσμευση παύει να μετράει πριν από την εκκαθάριση. Ο σύνδεσμος πληρωμής απαντά πλέον με τη σελίδα «δεν βρέθηκε».</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/allocation.ts</code> (<code>getDayStates</code>) · <code>src/cms/modules/booking/settings-read.ts</code> (<code>getPaymentHoldMinutes</code>, ελάχιστο 1)</p>
+    </article>
+
+    <article class="tc" id="BKG-057" data-priority="P1">
+      <h3>Η εργασία booking-expire λήγει την κράτηση, αποδεσμεύει τη θέση και ενημερώνει τον πελάτη</h3>
+      <ol class="steps">
+        <li>Μετά τη BKG-056 εκτελέστε την εκκαθάριση: <code>curl -s -X POST -H "x-cron-secret: $CRON" "$BASE/api/cms/cron/booking-expire"</code></li>
+        <li>Εκτελέστε τα ερωτήματα· ελέγξτε το γραμματοκιβώτιο· εκτελέστε ξανά την εκκαθάριση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>"status":"ran","result":{"expired":1}</code> (ή περισσότερες αν υπήρχαν άλλες παρωχημένες γραμμές). Βήμα 2: κατάσταση <code>expired</code>, <code>expires_at</code> NULL, δέσμευση <code>released</code>· συμβάν <code>status.expired</code> χωρίς χρήστη που το προκάλεσε· email <code>Your booking expired — BKG-…</code> με <code>The payment deadline passed, so the date has been released. Do get in touch if you would still like to book.</code> Η δεύτερη εκτέλεση αναφέρει <code>"expired":0</code> και δεν στέλνει τίποτα. Αδειάστε ξανά τη ρύθμιση της δέσμευσης.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/allocation.ts</code> (<code>expireStaleReservations</code>) · <code>src/app/api/cms/cron/[job]/route.ts</code> · SET-042</p>
+    </article>
+
+    <article class="tc" id="BKG-058" data-priority="P2">
+      <h3>Ένα αίτημα κράτησης που δεν απαντήθηκε λήγει κατά την εκκαθάριση</h3>
+      <ol class="steps">
+        <li>Στείλτε αίτημα κράτησης για τη D14 στο QA Boat Day (pending). Μεταφέρετε την προθεσμία του στο παρελθόν: <code>UPDATE reservations SET expires_at = '2000-01-01 00:00:00' WHERE reference = '&lt;ref&gt;';</code></li>
+        <li>Εκτελέστε την εκκαθάριση· ελέγξτε τη γραμμή και το γραμματοκιβώτιο.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>expired</code>· δεν υπήρχε δέσμευση, οπότε δεν αποδεσμεύεται τίποτα· email <code>Your request expired — BKG-…</code> με <code>We did not manage to confirm your request in time. Do get in touch if you are still interested.</code></p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/emails.ts</code> (<code>customerEmailBody</code>, expired από pending)</p>
+    </article>
+
+    <article class="tc" id="BKG-059" data-priority="P3">
+      <h3>Το παλαιότερο endpoint λήξης και το μυστικό του</h3>
+      <ol class="steps">
+        <li>Ορίστε <code>BOOKING_CRON_SECRET=short</code> στο <code>.env.local</code>· κάντε επανεκκίνηση. Εκτελέστε <code>curl -s -X POST -H 'x-cron-secret: short' "$BASE/api/cms/reservations/expire" -w ' %{http_code}\n'</code>.</li>
+        <li>Ορίστε μυστικό 40+ χαρακτήρων, κάντε επανεκκίνηση και επαναλάβετε με αυτό.</li>
+        <li>Χωρίς μυστικό αλλά με το cookie του διαχειριστικού: <code>curl -s -X POST -b "cms_session=$S" "$BASE/api/cms/reservations/expire"</code>. Στη συνέχεια αφαιρέστε τη μεταβλητή.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>401</code> (ένα μυστικό μικρότερο από 32 χαρακτήρες δεν εξουσιοδοτεί τίποτα). Βήματα 2 και 3: <code>{"ok":true,"data":{"expired":N}}</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/payments.ts</code> (<code>bookingExpireRoute</code>, <code>authorizeCronRequest</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-pay">
+    <h2>Online πληρωμή σε sandbox</h2>
+    <p class="intro">Ορίστε το Settings → Booking → <strong>Payment method</strong> στον πάροχο που ελέγχεται. Το Stripe εκτελείται μέσα στη σελίδα πληρωμής· το PayPal και η Viva κάνουν ανακατεύθυνση. Η εκκαθάριση γίνεται μόνο όταν φτάσει το webhook του παρόχου· περιμένετέ το πριν εκτελέσετε τα ερωτήματα.</p>
+
+    <article class="tc" id="BKG-060" data-priority="P1">
+      <h3>Stripe: η πλήρης πληρωμή εξοφλεί την κράτηση</h3>
+      <ol class="steps">
+        <li>Από μια κράτηση όπως της BKG-055 (QA Island Tour, 2 άτομα, €80.00), στη σελίδα πληρωμής πατήστε <strong>Pay now</strong>.</li>
+        <li>Εισαγάγετε την επιτυχή δοκιμαστική κάρτα του παρόχου και πατήστε <strong>Pay now — €80.00</strong>.</li>
+        <li>Μετά το webhook εκτελέστε τα ερωτήματα· ελέγξτε το γραμματοκιβώτιο· ανοίξτε ξανά τον σύνδεσμο πληρωμής.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: μια γραμμή πληρωμής <code>stripe</code> <code>pending</code> με <code>provider_ref</code> <code>pi_…</code>, ποσό 8000· ορισμένο <code>payment_started_at</code>.</li>
+        <li>Βήμα 2: η φόρμα αντικαθίσταται από το <code>We are confirming your payment. You will receive an email as soon as it clears — there is nothing more to do.</code></li>
+        <li>Βήμα 3: πληρωμή <code>captured</code>· κράτηση <code>paid</code>, <code>amount_paid</code> 8000, <code>expires_at</code> και <code>payment_token_hash</code> NULL· δέσμευση <code>confirmed</code>· συμβάντα <code>payment.captured</code>, <code>email.receipt</code>. Email <code>Payment received — BKG-…</code>. Ο παλιός σύνδεσμος δείχνει πλέον τη σελίδα «δεν βρέθηκε».</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/booking/BookingPayClient.tsx</code> · <code>src/cms/modules/booking/payments.ts</code> (<code>bookingPayStartRoute</code>, <code>captureReservationPaymentByRef</code>) · <code>src/cms/core/payments/webhooks.ts</code></p>
+    </article>
+
+    <article class="tc" id="BKG-061" data-priority="P2">
+      <h3>Stripe: απόρριψη, νέα προσπάθεια και η προστασία από διπλή έναρξη</h3>
+      <ol class="steps">
+        <li>Κάντε κράτηση στο QA Island Tour (1 άτομο). Στη σελίδα πληρωμής πατήστε <strong>Pay now</strong> και πληρώστε με τη δοκιμαστική κάρτα γενικής απόρριψης του παρόχου.</li>
+        <li>Στην ίδια φόρμα πληρώστε με την επιτυχή κάρτα.</li>
+        <li>Για μια νέα κράτηση, ανοίξτε τον σύνδεσμο πληρωμής σε δύο καρτέλες και πατήστε <strong>Pay now</strong> και στις δύο μέσα σε λίγα δευτερόλεπτα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: το κείμενο απόρριψης του παρόχου με κόκκινο· μετά το webhook η γραμμή πληρωμής είναι <code>failed</code> και η κράτηση μένει <code>awaiting_payment</code>. Βήμα 2: μήνυμα επιτυχίας· η ίδια γραμμή <code>pi_…</code> γίνεται <code>captured</code>· κράτηση <code>paid</code>. Βήμα 3: η δεύτερη καρτέλα δείχνει <code>A payment for this booking is already being started. Give it a moment, then try again.</code>· δημιουργήθηκε μόνο μία γραμμή πληρωμής σε εκκρεμότητα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/payments.ts</code> (<code>claimPaymentStart</code>, <code>PAYMENT_START_CLAIM_MS</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-062" data-priority="P2">
+      <h3>Πρώτα προκαταβολή, έπειτα το υπόλοιπο μέσω του συνδέσμου πληρωμής υπολοίπου</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Stripe· Settings → Booking → <strong>Deposit (%)</strong> <code>30</code>.</p>
+      <ol class="steps">
+        <li>Κάντε κράτηση στο QA Island Tour, 2 άτομα (€80.00). Στη σελίδα πληρωμής διαβάστε το ποσό· πληρώστε με την επιτυχή κάρτα.</li>
+        <li>Μετά το webhook ανοίξτε το πλαϊνό πάνελ της κράτησης.</li>
+        <li>Πατήστε <strong>Resend payment link</strong>, επιβεβαιώστε με <strong>Resend link</strong>. Ανοίξτε τον σύνδεσμο από το email.</li>
+        <li>Πληρώστε το υπόλοιπο με την επιτυχή κάρτα· περιμένετε το webhook.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: <code>Deposit due now</code> €24.00· <code>deposit_amount</code> 2400.</li>
+        <li>Βήμα 2: κατάσταση <code>Confirmed</code>, <code>Paid so far</code> 24,00 €, <code>Balance due</code> 56,00 €· δεσμεύσεις <code>confirmed</code>, <code>expires_at</code> NULL· email <code>Your booking is confirmed — BKG-…</code>.</li>
+        <li>Βήμα 3: νέο email <code>Complete your payment — BKG-…</code>· η σελίδα πληρωμής δείχνει <code>Amount due</code> €56.00 (όχι «Deposit due now»)· το <code>deposit_amount</code> είναι πλέον 8000· η κατάσταση μένει <code>confirmed</code> χωρίς προθεσμία.</li>
+        <li>Βήμα 4: κατάσταση <code>paid</code>, <code>amount_paid</code> 8000, δύο γραμμές stripe captured 2400 και 5600· email <code>Payment received — BKG-…</code>.</li>
+      </ul>
+      <p class="exp"><span class="exp-label">Στη συνέχεια:</span> Αδειάστε ξανά το Deposit (%). Το <strong>Deposit %</strong> της ίδιας της εμπειρίας υπερισχύει της τιμής του site· επαναλάβετε το βήμα 1 με Deposit % <code>50</code> στο QA Island Tour και το site στο 30 για να δείτε €40.00, και έπειτα αδειάστε το.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/payments.ts</code> (<code>resolveDepositAmount</code>, <code>amountDueFor</code>, <code>paymentLinkAmount</code>) · <code>src/cms/modules/booking/payment-actions.ts</code> (<code>canResendPaymentLink</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-063" data-priority="P2">
+      <h3>Η επιβάρυνση πληρωμής προστίθεται κατά την πληρωμή και δεν πιστώνεται</h3>
+      <ol class="steps">
+        <li>Stripe· <strong>Card surcharge (%)</strong> <code>4</code>. Κάντε κράτηση στο QA Island Tour για 2 άτομα· ελέγξτε το σύνολο της φόρμας και τη σελίδα πληρωμής.</li>
+        <li>Πληρώστε· μετά το webhook εκτελέστε τα ερωτήματα.</li>
+        <li>Αδειάστε ξανά την επιβάρυνση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: η φόρμα και η προσφορά τιμής εξακολουθούν να γράφουν €80.00 (καμία επιβάρυνση στην προσφορά τιμής)· η σελίδα πληρωμής δείχνει Amount due €80.00, <code>Payment fee</code> €3.20, <code>Total charged</code> €83.20, και το κουμπί του Stripe <code>Pay now — €83.20</code>. Βήμα 2: ποσό γραμμής πληρωμής 8320 με <code>surcharge</code> 320· <code>amount_paid</code> 8000· κατάσταση <code>paid</code>. Στο πλαϊνό πάνελ το ποσό αυτής της πληρωμής που μπορεί να επιστραφεί είναι 83,20 € (μαζί με την επιβάρυνση).</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/payments.ts</code> (<code>resolvePaymentTerms</code>) · docs/dev-guides/09-booking.md §4.1 (Surcharges)</p>
+    </article>
+
+    <article class="tc" id="BKG-064" data-priority="P2">
+      <h3>PayPal: έγκριση και επιστροφή</h3>
+      <ol class="steps">
+        <li>Payment method <code>PayPal</code>. Κάντε κράτηση στο QA Island Tour για 1 άτομο· στη σελίδα πληρωμής πατήστε <strong>Pay now</strong>.</li>
+        <li>Εγκρίνετε με τον αγοραστή sandbox· σημειώστε τη σελίδα στην οποία επιστρέφετε.</li>
+        <li>Μετά τα webhooks εκτελέστε τα ερωτήματα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: ο browser μεταβαίνει στο PayPal· μια γραμμή <code>paypal</code> <code>pending</code> με το id παραγγελίας του PayPal. Βήμα 2: επιστροφή στο <code>/en/booking/pay/BKG-…?t=…&amp;return=1</code>: <code>Thank you</code> / <code>We are confirming your payment…</code> μόλις το webhook έγκρισης την εκκαθαρίσει· αν φτάσει αργότερα, μπορεί πρώτα να δείτε ξανά τη σελίδα πληρωμής, και μια ανανέωση μετά το webhook δείχνει Thank you. Βήμα 3: γραμμή <code>captured</code> με ορισμένο <code>pp_capture</code>· κράτηση <code>paid</code>· ένα email απόδειξης.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/payments/webhooks.ts</code> (capture στο <code>CHECKOUT.ORDER.APPROVED</code>) · <code>src/cms/modules/booking/payments.ts</code> (<code>paymentReturnUrl</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-065" data-priority="P3">
+      <h3>PayPal: ακύρωση και επιστροφή</h3>
+      <ol class="steps">
+        <li>Κάντε κράτηση, πατήστε <strong>Pay now</strong>, και στο PayPal ακυρώστε και επιστρέψτε.</li>
+        <li>Πατήστε ξανά <strong>Pay now</strong> αμέσως· έπειτα μετά από 2 λεπτά.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Επιστρέφετε στη σελίδα πληρωμής (το token είναι ακόμη έγκυρο) με <strong>Pay now</strong>. Αμέσως: <code>A payment for this booking is already being started. Give it a moment, then try again.</code>· μετά από 2 λεπτά ξεκινά νέα παραγγελία PayPal και εμφανίζεται δεύτερη γραμμή <code>pending</code>. Η κράτηση μένει <code>awaiting_payment</code> και λήγει κατά την εκκαθάριση αν δεν πληρωθεί ποτέ.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/payments.ts</code> (<code>claimPaymentStart</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-066" data-priority="P2">
+      <h3>Viva: επιτυχία</h3>
+      <ol class="steps">
+        <li>Payment method <code>Viva.com (card)</code>. Κάντε κράτηση στο QA Island Tour για 1 άτομο· πατήστε <strong>Pay now</strong>· πληρώστε στο Smart Checkout της Viva με την κάρτα επιτυχίας demo.</li>
+        <li>Σημειώστε τη σελίδα στην οποία επιστρέφετε. Μετά το webhook εκτελέστε τα ερωτήματα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το <code>provider_ref</code> είναι ο 16ψήφιος κωδικός παραγγελίας· μετά το webhook η γραμμή είναι <code>captured</code> με το <code>viva_tx</code> να περιέχει το id της συναλλαγής (διαφορετικό από τον κωδικό παραγγελίας)· κράτηση <code>paid</code>, η απόδειξη στέλνεται με email. Η Viva επιστρέφει στην ανακατεύθυνση που ορίστηκε στην πηγή πληρωμής στη COM-058 (<code>/en/order</code>), όχι στη σελίδα πληρωμής της κράτησης: καταγράψτε το ως γνωστό κενό.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/payments/webhooks.ts</code> (Viva) · <code>src/cms/core/payments/viva.ts</code> (<code>confirmTransaction</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-067" data-priority="P3">
+      <h3>Η σελίδα πληρωμής απορρίπτει με τον ίδιο τρόπο λανθασμένους, χρησιμοποιημένους και κλειστούς συνδέσμους</h3>
+      <ol class="steps">
+        <li>Ανοίξτε έναν ενεργό σύνδεσμο πληρωμής με αλλαγμένο τον τελευταίο χαρακτήρα του <code>t</code>· χωρίς <code>t</code>· με τον κωδικό αναφοράς άλλης κράτησης.</li>
+        <li>Ανοίξτε τον σύνδεσμο μιας εξοφλημένης κράτησης, μιας ακυρωμένης και μιας ληγμένης.</li>
+        <li>Εκτελέστε <code>curl -s "$BASE/api/cms/booking/pay?reference=&lt;ref&gt;&amp;t=wrong" -H 'X-Real-IP: 10.90.0.5' -w ' %{http_code}\n'</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Σε κάθε περίπτωση η σελίδα είναι η ίδια σελίδα «δεν βρέθηκε» (καμία ένδειξη για το αν υπάρχει ο κωδικός αναφοράς). Το curl απαντά <code>404</code> <code>"That payment link is not valid."</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/payments.ts</code> (<code>redeemPaymentToken</code>) · <code>src/cms/modules/booking/reference.ts</code> (<code>tokenMatches</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-068" data-priority="P3">
+      <h3>Ένα webhook που αναπαράγεται ξανά πιστώνει μία φορά</h3>
+      <ol class="steps">
+        <li>Στο δοκιμαστικό dashboard του Stripe στείλτε ξανά το συμβάν <code>payment_intent.succeeded</code> της BKG-060 (ή, με το CLI, στείλτε ξανά αυτό το id συμβάντος).</li>
+        <li>Εκτελέστε τα ερωτήματα και μετρήστε τα email απόδειξης.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το webhook απαντά 200· εξακολουθεί να υπάρχει μία γραμμή stripe, <code>amount_paid</code> 8000, ένα συμβάν <code>payment.captured</code> και ένα email απόδειξης.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/payments.ts</code> (<code>captureReservationPaymentByRef</code>: η ίδια κατάσταση δεν κάνει τίποτα)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-concurrency">
+    <h2>Ταυτόχρονη πρόσβαση, υπερκράτηση και καθυστερημένες πληρωμές</h2>
+
+    <article class="tc" id="BKG-069" data-priority="P1">
+      <h3>Δύο browsers, οι τελευταίες θέσεις: ο ένας κερδίζει, ο άλλος λαμβάνει σαφή άρνηση</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Τρόπος πληρωμής χειροκίνητος. Παράκαμψη χωρητικότητας <code>2</code> στο QA Γύρος νησιού για τη D15.</p>
+      <ol class="steps">
+        <li>Στον browser A και στον browser B ανοίξτε το <code>/en/booking/qa-island-tour</code>, επιλέξτε D15, Guests 2, συμπληρώστε τα στοιχεία και τσεκάρετε τους όρους. Μην υποβάλετε ακόμη.</li>
+        <li>Υποβάλετε στον A. Έπειτα υποβάλετε στον B (το ημερολόγιό του εξακολουθεί να δείχνει τη D15 ελεύθερη).</li>
+        <li>Ανανεώστε τον B και κοιτάξτε τη D15. Επαναλάβετε την προσπάθεια του B στο <code>/booking/qa-island-tour</code> (ελληνικά).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> A: πλαίσιο επιτυχίας και κράτηση <code>confirmed</code> που δεσμεύει 2 θέσεις. B: κόκκινη ειδοποίηση <code>&lt;D15&gt; is no longer available.</code> στη φόρμα, καμία γραμμή κράτησης (το API απάντησε <code>409</code> <code>{"ok":false,"error":"conflict",…}</code> και έκανε rollback). Μετά την ανανέωση η D15 είναι απενεργοποιημένη (<code>Fully booked.</code>). Στην ελληνική σελίδα η ειδοποίηση είναι η ίδια αγγλική πρόταση (το ελληνικό κείμενο <code>errorUnavailable</code> υπάρχει στο <code>messages/el.json</code> αλλά δεν χρησιμοποιείται): καταγράψτε το ως σφάλμα μετάφρασης.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/allocation.ts</code> (<code>allocateSlots</code>: <code>SELECT … FOR UPDATE</code>) · <code>src/components/booking/BookingForm.tsx</code> (εμφάνιση σφάλματος)</p>
+    </article>
+
+    <article class="tc" id="BKG-070" data-priority="P2">
+      <h3>Πραγματικά ταυτόχρονα αιτήματα δεν προκαλούν ποτέ υπερκράτηση</h3>
+      <ol class="steps">
+        <li>Παράκαμψη χωρητικότητας <code>2</code> στη D16 για το QA Γύρος νησιού. Εκτελέστε δύο αιτήματα την ίδια στιγμή:
+<pre><code>for n in 11 12; do curl -s -X POST "$BASE/api/cms/booking/request" -H 'Content-Type: application/json' -H "X-Real-IP: 10.90.0.$n" -d "{\"slug\":\"qa-island-tour\",\"locale\":\"en\",\"date\":\"&lt;D16&gt;\",\"persons\":2,\"customer\":{\"name\":\"QA Race $n\",\"email\":\"qa.race$n@example.com\"},\"acceptTerms\":true}" -w " %{http_code}\n" &amp; done; wait</code></pre></li>
+        <li>Εκτελέστε <code>SELECT r.reference, r.status, h.seats, h.state FROM reservations r JOIN reservation_holds h ON h.reservation_id = r.id WHERE h.slot_date = '&lt;D16&gt;';</code> Επαναλάβετε τον βρόχο με 5 παράλληλα αιτήματα του 1 ατόμου το καθένα σε μια νέα ημερομηνία με χωρητικότητα 2.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ακριβώς ένα <code>201</code> και ένα <code>409</code> <code>"&lt;D16&gt; is no longer available."</code>· μία γραμμή με 2 θέσεις. Στη δεύτερη εκτέλεση πετυχαίνουν ακριβώς δύο. Το άθροισμα των θέσεων δεν υπερβαίνει ποτέ τη χωρητικότητα, και το banner του Availability δεν δείχνει καμία υπερκράτηση.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/allocation.ts</code> · docs/dev-guides/09-booking.md §4.3</p>
+    </article>
+
+    <article class="tc" id="BKG-071" data-priority="P2">
+      <h3>Επικαλυπτόμενες διαμονές: αρκεί μία κοινή διανυκτέρευση για άρνηση</h3>
+      <ol class="steps">
+        <li>Στον browser A και στον B ανοίξτε το <code>/en/booking/qa-villa</code>. Ο A επιλέγει D → D+3, ο B επιλέγει D+2 → D+5 (και τα δύο ελεύθερα).</li>
+        <li>Υποβάλετε στον A, έπειτα στον B. Έπειτα κάντε κράτηση D+3 → D+5 στον B.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ο A επιβεβαιώνεται. Ο B απορρίπτεται με <code>&lt;D+2&gt; is no longer available.</code> (αναφέρεται η κοινή διανυκτέρευση). Το D+3 → D+5 πετυχαίνει: η ημέρα αναχώρησης του A δεν δεσμεύτηκε ποτέ.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/availability.ts</code> (<code>stayNights</code>, σειρά κλειδώματος <code>slotDatePairs</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-072" data-priority="P2">
+      <h3>Μια πληρωμή αφού έληξε η δέσμευση (πριν από την εκκαθάριση) καταγράφεται, δεν πιστώνεται</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Stripe· Instant payment hold <code>2</code>.</p>
+      <ol class="steps">
+        <li>Κάντε κράτηση στο QA Island Tour για 2 άτομα στη D17. Στη σελίδα πληρωμής πατήστε <strong>Pay now</strong>, ώστε να εμφανιστεί η φόρμα κάρτας.</li>
+        <li>Περιμένετε 3 λεπτά (χωρίς εκκαθάριση). Πληρώστε με την επιτυχή κάρτα· περιμένετε το webhook.</li>
+        <li>Εκτελέστε τα ερωτήματα. Ανοίξτε το <code>/admin/reservations</code> και το πλαϊνό πάνελ.</li>
+      </ol>
+      <ul class="exp">
+        <li>Γραμμή πληρωμής <code>captured</code> 8000· η κράτηση παραμένει <code>awaiting_payment</code>, <code>amount_paid</code> 0, <code>attention</code> <code>"hold_lapsed"</code>, το token έχει καθαριστεί· η δέσμευση δεν επιβεβαιώνεται· συμβάν <code>payment.needs_action</code>· κανένα email απόδειξης.</li>
+        <li>Η γραμμή της λίστας έχει το κόκκινο σήμα <code>payment to resolve</code>. Το πλαϊνό πάνελ ανοίγει με ένα κόκκινο banner <code>Payment not applied — 80,00 € via stripe</code> και <code>A payment arrived after the hold on this date had lapsed, so the booking was not confirmed — the date may already be taken. Refund the payment, or rebook the customer by hand.</code> καθώς και <strong>Mark resolved</strong>.</li>
+        <li>Η εκτέλεση της εκκαθάρισης στη συνέχεια τη μεταφέρει σε <code>expired</code> (email <code>Your booking expired</code>)· η σήμανση και το σήμα παραμένουν.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/allocation.ts</code> (<code>confirmHoldsChecked</code>) · <code>src/cms/modules/booking/payments.ts</code> (<code>flagForAttention</code>) · <code>src/cms/modules/booking/payment-actions.ts</code> (<code>ATTENTION_MESSAGES</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-073" data-priority="P2">
+      <h3>Μια πληρωμή αφού η εκκαθάριση έληξε την κράτηση</h3>
+      <ol class="steps">
+        <li>Όπως στη BKG-072, αλλά μετά την αναμονή των 3 λεπτών εκτελέστε πρώτα την εκκαθάριση και έπειτα πληρώστε στη φόρμα κάρτας που είναι ακόμη ανοιχτή.</li>
+        <li>Εκτελέστε τα ερωτήματα· ανοίξτε το πλαϊνό πάνελ.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η κατάσταση μένει <code>expired</code>· πληρωμή <code>captured</code>· <code>amount_paid</code> 0· <code>attention</code> <code>"booking_closed"</code>· κείμενο banner <code>A payment arrived for a booking that was already cancelled or expired. It was recorded but not credited. Refund it, or rebook the customer by hand.</code> Δεν υπάρχει <strong>Cancel booking</strong> ούτε <strong>Record payment</strong>· προσφέρεται <strong>Refund</strong> για την πληρωμή stripe.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/payments.ts</code> (<code>settlementFor</code>: άρνηση)</p>
+    </article>
+
+    <article class="tc" id="BKG-074" data-priority="P3">
+      <h3>Μια πληρωμή σε ημερομηνία που στο μεταξύ γέμισε</h3>
+      <ol class="steps">
+        <li>Stripe, δέσμευση 20 λεπτών. Κάντε κράτηση στο QA Island Tour για 2 άτομα στη D18· πατήστε <strong>Pay now</strong>.</li>
+        <li>Στο Availability ορίστε τη χωρητικότητα της D18 σε <code>1</code> και αποθηκεύστε (το banner δείχνει <code>(2/1)</code>).</li>
+        <li>Πληρώστε με την επιτυχή κάρτα· μετά το webhook εκτελέστε τα ερωτήματα και ανοίξτε το πλαϊνό πάνελ.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Δεν πιστώνεται, παραμένει <code>awaiting_payment</code>, <code>attention</code> <code>"no_capacity"</code>, banner <code>A payment arrived but the date no longer has room for this booking, so it was not confirmed. Refund the payment, or rebook the customer by hand.</code> Στη συνέχεια επαναφέρετε τη D18.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/allocation.ts</code> (<code>confirmHoldsChecked</code>, <code>isOverCapacity</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-075" data-priority="P2">
+      <h3>Το Mark resolved βγάζει την κράτηση από το Needs action</h3>
+      <ol class="steps">
+        <li>Σημειώστε τον αριθμό στην κεφαλίδα του <code>/admin/reservations</code>. Ανοίξτε την κράτηση της BKG-074 και πατήστε <strong>Mark resolved</strong>· διαβάστε το παράθυρο διαλόγου· επιβεβαιώστε.</li>
+        <li>Εκτελέστε τα ερωτήματα· ελέγξτε το γραμματοκιβώτιο· ανανεώστε τη λίστα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Παράθυρο διαλόγου: <code>The booking leaves Needs action. Nothing is refunded and the customer is not emailed — use this only once you have dealt with the payment another way.</code> Στη συνέχεια το banner και το σήμα <code>payment to resolve</code> έχουν φύγει, το <code>attention</code> είναι NULL, το <code>amount_paid</code> και η γραμμή πληρωμής δεν αλλάζουν, δεν στέλνεται email, και ο αριθμός στην κεφαλίδα μειώνεται κατά ένα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/reservations.ts</code> (<code>resolveAttention</code>) · <code>src/cms/admin/ReservationsTable.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-reservations">
+    <h2>Η οθόνη Reservations</h2>
+
+    <article class="tc" id="BKG-076" data-priority="P1">
+      <h3>Η λίστα: στήλες, σήματα και σελιδοποίηση</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/admin/reservations</code>.</li>
+        <li>Με περισσότερες από 25 κρατήσεις, χρησιμοποιήστε το <strong>Next</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Επικεφαλίδα <code>Reservations</code>· όταν κάτι χρειάζεται ενέργεια, <code>N bookings need your action</code> πάνω δεξιά.</li>
+        <li>Στήλες Reference, Experience, Date, Party, Customer, Total, Status, και ένα κουμπί <strong>View</strong>. Οι άμεσες κρατήσεις φέρουν το <code>instant</code>· οι διαμονές δείχνουν <code>&lt;check-in&gt; → &lt;check-out&gt; N nights</code>· οι γραμμές αιτημάτων κράτησης δείχνουν την πρώτη απάντηση της φόρμας (π.χ. <code>Marina A</code>) μετά την ημερομηνία.</li>
+        <li>Τα σήματα κατάστασης γράφουν <code>Awaiting your reply</code>, <code>Awaiting payment</code>, <code>Confirmed</code>, <code>Paid</code>, <code>Cancelled</code>, <code>Expired</code>· οι σημασμένες γραμμές προσθέτουν <code>payment to resolve</code>.</li>
+        <li>Σελιδοποίηση: <code>N bookings · Page 1 of M</code> με Prev/Next· <code>?page=2</code> στο URL.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/reservations/page.tsx</code> · <code>src/cms/admin/ReservationsTable.tsx</code> (<code>RESERVATIONS_PAGE_SIZE = 25</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-077" data-priority="P2">
+      <h3>Τα φίλτρα και η αναζήτηση βρίσκονται στο URL</h3>
+      <ol class="steps">
+        <li>Επιλέξτε <strong>Status</strong> <code>Paid</code>· έπειτα <strong>Experience</strong> <code>QA Γύρος νησιού</code>· έπειτα ένα εύρος ημερομηνιών From/To που καλύπτει μόνο τη D12.</li>
+        <li>Καθαρίστε τα. Αναζητήστε <code>QA Guest</code>, έπειτα το email του πελάτη, έπειτα μέρος ενός κωδικού αναφοράς.</li>
+        <li>Αντιγράψτε το URL σε νέα καρτέλα.</li>
+        <li>Συνδυάστε ένα φίλτρο που δεν ταιριάζει με τίποτα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε αλλαγή ενημερώνει το URL (<code>status=paid</code>, <code>experience=&lt;group id&gt;</code>, <code>from=…&amp;to=…</code>, <code>search=…</code>) και επιστρέφει στη σελίδα 1· το εύρος ημερομηνιών φιλτράρει με βάση την ημερομηνία της κράτησης (την άφιξη για τις διαμονές), συμπεριλαμβανομένων και των δύο άκρων. Το URL που αντιγράφηκε αναπαράγει την ίδια λίστα. Χωρίς αποτέλεσμα: <code>No bookings match these filters.</code></p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/reservation-filters.ts</code></p>
+    </article>
+
+    <article class="tc" id="BKG-078" data-priority="P2">
+      <h3>Το Needs action εμφανίζει τα αιτήματα κράτησης και τις πληρωμές που δεν εφαρμόστηκαν, με μετρητή</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>Needs action</strong>. Συγκρίνετε με το <code>SELECT COUNT(*) FROM reservations WHERE status = 'pending' OR JSON_EXTRACT(metadata,'$.attention.reason') IS NOT NULL;</code></li>
+        <li>Συνδυάστε το με Status <code>Expired</code>. Πατήστε ξανά <strong>Needs action</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το κουμπί γίνεται χρυσό, το URL αποκτά <code>needsAction=1</code> (ή <code>true</code>)· η λίστα περιέχει κάθε κράτηση <code>Awaiting your reply</code> και κάθε σημασμένη (BKG-072, BKG-073), και το σύνολό της ισούται με τη μέτρηση SQL και με το <code>N bookings need your action</code> της κεφαλίδας. Με Expired μένουν μόνο οι σημασμένες ληγμένες. Ένα νέο πάτημα αφαιρεί το φίλτρο.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/reservations.ts</code> (<code>listReservations</code> needsAction) · <code>src/app/admin/(shell)/reservations/page.tsx</code> (μετρητής κεφαλίδας)</p>
+    </article>
+
+    <article class="tc" id="BKG-079" data-priority="P2">
+      <h3>Το API της λίστας: needsAction=false σημαίνει χωρίς φίλτρο</h3>
+      <ol class="steps">
+        <li><code>curl -s -b "cms_session=$S" "$BASE/api/cms/reservations?pageSize=1" | grep -o '"total":[0-9]*'</code></li>
+        <li>Επαναλάβετε με <code>&amp;needsAction=false</code>, <code>&amp;needsAction=0</code>, <code>&amp;needsAction=true</code>, <code>&amp;needsAction=1</code>, <code>&amp;needsAction=yes</code>.</li>
+        <li>Επαναλάβετε το βήμα 1 με <code>&amp;pageSize=101</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τα <code>false</code> και <code>0</code> επιστρέφουν το ίδιο σύνολο με την απουσία παραμέτρου (ποτέ το υποσύνολο του Needs action)· τα <code>true</code> και <code>1</code> επιστρέφουν τη μέτρηση της BKG-078· το <code>yes</code> είναι σφάλμα επικύρωσης <code>422</code>· το <code>pageSize=101</code> απορρίπτεται (μέγιστο 100). Οι απαντήσεις έχουν <code>items</code>, <code>page</code>, <code>pageSize</code>, <code>total</code>, <code>pageCount</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/reservations.ts</code> (<code>reservationsListQuery</code>, <code>queryBoolean</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-080" data-priority="P2">
+      <h3>Το πλαϊνό πάνελ: τιμή, προειδοποίηση απόκλισης, στοιχεία, πληρωμές και ιστορικό</h3>
+      <ol class="steps">
+        <li>Ανοίξτε την κράτηση της BKG-047 (QA Boat Day, 130,00 €).</li>
+        <li>Αλλάξτε το Base price του QA Boat Day σε <code>55</code> και αποθηκεύστε· ανοίξτε ξανά το πλαϊνό πάνελ. Επαναφέρετέ το σε 50.</li>
+      </ol>
+      <ul class="exp">
+        <li>Ο τίτλος είναι ο κωδικός αναφοράς. Ενότητες: <strong>Price</strong> (οι αποθηκευμένες γραμμές και το <code>Total</code>), <strong>Booking</strong> (Experience, Date, Party, Customer με email και τηλέφωνο, Notes <em>QA note</em>), <strong>Payments</strong> (<code>Paid so far</code>, <code>Balance due</code>, μία γραμμή ανά πληρωμή ή <code>No payments recorded yet.</code>), <strong>History</strong> (χρονοσφραγίδα + είδος, π.χ. <code>status.awaiting_payment</code>, <code>email.payment_link</code>).</li>
+        <li>Βήμα 2: μια πορτοκαλί σημείωση <code>The pricing for this experience changed after this booking was quoted. The customer was quoted 130,00 €; today's rules give 140,00 €.</code> Η αποθηκευμένη τιμή δεν αλλάζει.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/reservations.ts</code> (<code>priceDrift</code>) · <code>src/cms/admin/ReservationsTable.tsx</code></p>
+    </article>
+
+    <article class="tc" id="BKG-081" data-priority="P2">
+      <h3>Το Cancel booking αποδεσμεύει την ημερομηνία και δεν επιστρέφει χρήματα</h3>
+      <ol class="steps">
+        <li>Ανοίξτε μια κράτηση μεταφοράς <code>confirmed</code> (π.χ. από τη BKG-017) και πατήστε <strong>Cancel booking</strong>· διαβάστε το παράθυρο διαλόγου· επιβεβαιώστε.</li>
+        <li>Εκτελέστε τα ερωτήματα· ελέγξτε το γραμματοκιβώτιο και το κελί στο Availability.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάτω από το κουμπί: <code>Releases the date and emails the customer. It refunds nothing — use Refund under Payments.</code> Το παράθυρο διαλόγου καταστροφικής ενέργειας: <code>The date is released and the customer is emailed. No money is refunded — use Refund under Payments for that.</code> Κατάσταση <code>cancelled</code>, δεσμεύσεις <code>released</code>, οι θέσεις επιστρέφουν στο ημερολόγιο, το <code>amount_paid</code> δεν αλλάζει· email <code>Your booking was cancelled — BKG-…</code> (<code>Your booking has been cancelled.</code>).</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/reservations.ts</code> (<code>updateReservationStatus</code> → <code>releaseHolds</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-082" data-priority="P2">
+      <h3>Το Cancel booking κρύβεται όπου η μετάβαση δεν επιτρέπεται</h3>
+      <ol class="steps">
+        <li>Ανοίξτε μια κράτηση <code>expired</code> (BKG-057) και μία <code>cancelled</code> (BKG-081).</li>
+        <li>Ανοίξτε μία <code>pending</code>, μία <code>awaiting_payment</code>, μία <code>confirmed</code> και μία <code>paid</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ληγμένη και ακυρωμένη: κανένα <strong>Cancel booking</strong>, καμία κύρια ενέργεια, κανένα <strong>Record payment</strong>, κανένα <strong>Resend payment link</strong>. Οι άλλες τέσσερις δείχνουν όλες <strong>Cancel booking</strong>· η κύρια ενέργεια είναι <strong>Accept &amp; send payment …</strong> για την pending, <strong>Mark paid</strong> για την αναμονή πληρωμής και την επιβεβαιωμένη, καμία για την εξοφλημένη.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/ReservationsTable.tsx</code> (<code>nextAction</code>, <code>canTransition(…, 'cancelled')</code>) · <code>src/cms/modules/booking/lifecycle.ts</code> (<code>RESERVATION_TRANSITIONS</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-083" data-priority="P2">
+      <h3>Μεταβάσεις κατάστασης που απορρίπτει το API</h3>
+      <ol class="steps">
+        <li>Για μια κράτηση <code>paid</code>: <code>curl -s -X PATCH "$BASE/api/cms/reservations/&lt;id&gt;" -b "cms_session=$S" -H 'Content-Type: application/json' -d '{"status":"confirmed"}' -w ' %{http_code}\n'</code>· επίσης <code>"pending"</code>.</li>
+        <li>Για μια κράτηση <code>expired</code> στείλτε <code>"cancelled"</code>· για μια <code>cancelled</code> στείλτε <code>"awaiting_payment"</code>.</li>
+        <li>Για μια κράτηση <code>confirmed</code> με υπόλοιπο προς πληρωμή στείλτε <code>"awaiting_payment"</code>· ελέγξτε το <code>expires_at</code>.</li>
+        <li>Στείλτε <code>{}</code> και <code>{"status":"paid","resolveAttention":true}</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>409</code> <code>"A paid booking cannot become confirmed."</code> / <code>…cannot become pending.</code> Βήμα 2: <code>409</code> <code>"A expired booking cannot become cancelled."</code>, <code>"A cancelled booking cannot become awaiting_payment."</code> Βήμα 3: επιτρέπεται· κατάσταση <code>awaiting_payment</code> με <code>expires_at</code> NULL (η είσπραξη υπολοίπου δεν επιτρέπει ποτέ στην εκκαθάριση να αποδεσμεύσει μια επιβεβαιωμένη ημερομηνία)· στέλνεται email πληρωμής. Βήμα 4: <code>422</code> <code>invalid_input</code>, του οποίου τα <code>issues</code> περιέχουν <code>Send either a status or resolveAttention.</code> Σε καμία άρνηση δεν αλλάζει τίποτα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/lifecycle.ts</code> (<code>RESERVATION_TRANSITIONS</code>, <code>paymentDeadlineForMove</code>) · <code>src/cms/modules/booking/reservations.ts</code> (<code>statusBody</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-084" data-priority="P3">
+      <h3>Δύο διαχειριστές στο ίδιο πλαϊνό πάνελ</h3>
+      <ol class="steps">
+        <li>Συνδεθείτε ως δεύτερος διαχειριστής στον browser B. Ανοίξτε το πλαϊνό πάνελ της ίδιας pending κράτησης στον A και έπειτα στον B.</li>
+        <li>Στον B, δοκιμάστε τη μετάβαση μέσω API: <code>PATCH</code> με το cookie του B σε <code>{"status":"cancelled"}</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ο B βλέπει το banner κλειδώματος επεξεργασίας που αναφέρει τον A και κανένα κουμπί ενέργειας. Το PATCH του B απορρίπτεται επειδή ο A κατέχει το κλείδωμα (<code>409</code> <code>conflict</code>). Αφού ο A κλείσει το πλαϊνό πάνελ, ο B μπορεί να ενεργήσει. (Ο μηχανισμός κλειδώματος καλύπτεται στις λίστες ελέγχου 04/05· εδώ ελέγχεται ο τύπος κλειδώματος της κράτησης.)</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/ReservationsTable.tsx</code> (<code>useEditLock</code> τύπου <code>reservation</code>) · <code>src/cms/modules/booking/reservations.ts</code> (<code>assertNotLockedByOther</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-085" data-priority="P3">
+      <h3>Ρόλος μόνο ανάγνωσης στα Reservations και Availability</h3>
+      <ol class="steps">
+        <li>Συνδεθείτε με έναν ρόλο που έχει μόνο <strong>View bookings</strong> και <strong>View booking availability</strong> (η AUTH-055 τον δημιουργεί). Ανοίξτε το <code>/admin/reservations</code>, ένα πλαϊνό πάνελ, και το <code>/admin/availability</code>, μια ημέρα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Reservations: <code>You have read-only access to bookings.</code>· τα πλαϊνά πάνελ δείχνουν τιμή, στοιχεία, πληρωμές και ιστορικό, αλλά κανένα κουμπί ενέργειας, κανένα Record payment, κανένα Refund, κανένα Mark resolved. Availability: το πλαϊνό πάνελ της ημέρας δείχνει <code>You have read-only access to the schedule.</code>, απενεργοποιημένα πεδία, και <strong>Close</strong> αντί για Save/Cancel. Οι ίδιες οι αρνήσεις του API καλύπτονται στην AUTH-055.</p>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/reservations/page.tsx</code> (<code>canWrite</code>) · <code>src/cms/admin/AvailabilityCalendar.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-refunds">
+    <h2>Επιστροφές χρημάτων</h2>
+    <p class="intro">Οι επιστροφές χρημάτων προσφέρονται μόνο για online πληρωμές (οι γραμμές <code>Manual</code> δεν έχουν Refund: τα χρήματα κινήθηκαν εκτός συστήματος). Μια επιστροφή χρημάτων δεν αλλάζει ποτέ την κατάσταση της κράτησης· ακυρώστε την ξεχωριστά.</p>
+
+    <article class="tc" id="BKG-086" data-priority="P2">
+      <h3>Stripe: μερική επιστροφή χρημάτων, και έπειτα το υπόλοιπο</h3>
+      <ol class="steps">
+        <li>Ανοίξτε την εξοφλημένη κράτηση της BKG-063 (πληρωμή 83,20 € μαζί με την επιβάρυνση). Στο <strong>Refund amount (EUR)</strong> πληκτρολογήστε <code>90</code> και πατήστε <strong>Refund</strong>· έπειτα <code>20</code>.</li>
+        <li>Επιβεβαιώστε <strong>Refund 20,00 €</strong>. Περιμένετε το webhook <code>charge.refunded</code> του Stripe· εκτελέστε το ερώτημα πληρωμών· ανοίξτε ξανά το πλαϊνό πάνελ.</li>
+        <li>Επιστρέψτε το υπόλοιπο (αφήστε το πεδίο κενό).</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: <code>That is more than is left to refund on that payment.</code>· για τα 20 το παράθυρο διαλόγου <code>20,00 € will be returned to the customer through stripe. This cannot be undone. The booking's status does not change — cancel it separately if the booking is off.</code></li>
+        <li>Βήμα 2: μια νέα γραμμή <code>refunded</code> −2000 με <code>refund_of</code> = το id της χρέωσης (capture) και ref <code>re_…</code>· η γραμμή της χρέωσης δείχνει <code>20,00 € refunded</code>· <code>amount_paid</code> 6000· η κατάσταση παραμένει <code>paid</code>· συμβάν <code>payment.refunded</code>.</li>
+        <li>Βήμα 3: η φόρμα εξακολουθεί να προσφέρει τα υπόλοιπα 63,20 € και η επιστροφή χρημάτων πετυχαίνει. Αν μετά το webhook η κατάσταση της γραμμής χρέωσης έγινε <code>refunded</code> και η φόρμα Refund εξαφανίστηκε ενώ απέμεναν χρήματα, σημειώστε Αποτυχία (το webhook αντικατέστησε τη γραμμή χρέωσης).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/payments.ts</code> (<code>refundReservationPayment</code>) · <code>src/cms/core/payments/events.ts</code> (<code>charge.refunded</code>) · <code>src/cms/modules/booking/payment-actions.ts</code> (<code>refundableAmount</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-087" data-priority="P2">
+      <h3>Η επιστροφή χρημάτων του PayPal στοχεύει τη χρέωση (capture)</h3>
+      <ol class="steps">
+        <li>Ανοίξτε την κράτηση της BKG-064 και επιστρέψτε ολόκληρο το ποσό.</li>
+        <li>Εκτελέστε το ερώτημα πληρωμών· ελέγξτε τη συναλλαγή στο sandbox του PayPal.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η επιστροφή χρημάτων πετυχαίνει με βάση το <code>pp_capture</code> (όχι το id της παραγγελίας)· μια αρνητική γραμμή <code>refunded</code>· <code>amount_paid</code> 0· η κατάσταση δεν αλλάζει (<code>paid</code>)· το sandbox δείχνει τη χρέωση ως επιστραμμένη.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/payments/refunds.ts</code> (<code>refundTargetRef</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-088" data-priority="P2">
+      <h3>Η επιστροφή χρημάτων της Viva χρησιμοποιεί το id της συναλλαγής</h3>
+      <ol class="steps">
+        <li>Ανοίξτε την κράτηση της BKG-066 και επιστρέψτε 5,00 €.</li>
+        <li>Σε μια άλλη πληρωμή Viva της οποίας η γραμμή δεν έχει id συναλλαγής (δημιουργήστε μια τέτοια: <code>UPDATE reservation_payments SET metadata = JSON_REMOVE(metadata,'$.transactionId') WHERE id = &lt;id of an unrefunded captured viva row&gt;;</code>), δοκιμάστε επιστροφή χρημάτων.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: πετυχαίνει· το demo portal της Viva δείχνει την επιστροφή χρημάτων στη συναλλαγή της οποίας το id είναι το <code>viva_tx</code>· το <code>amount_paid</code> μειώνεται κατά 500. Μετά το webhook αντιλογισμού της Viva, ορίζεται το <code>metadata.reversalTransactionId</code> και το <code>transactionId</code> δεν αλλάζει. Βήμα 2: <code>That payment has no provider reference to refund against.</code> στο πλαϊνό πάνελ (409)· δεν επιστρέφεται τίποτα και η δέσμευση της ενέργειας (claim) απελευθερώνεται.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/payments/refunds.ts</code> (<code>REFUND_TARGET_KEY</code> viva) · <code>src/cms/modules/booking/payments.ts</code> · docs/dev-guides/09-booking.md §10 (Payments)</p>
+    </article>
+
+    <article class="tc" id="BKG-089" data-priority="P2">
+      <h3>Η επιστροφή χρημάτων μιας πληρωμής που δεν πιστώθηκε ποτέ αφήνει ανέπαφο το amount_paid</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Stripe· Deposit (%) <code>30</code>.</p>
+      <ol class="steps">
+        <li>Κάντε κράτηση στο QA Island Tour για 2 άτομα (€80.00) και πληρώστε την προκαταβολή €24.00 (επιβεβαιωμένη, <code>amount_paid</code> 2400).</li>
+        <li>Στο πλαϊνό πάνελ πατήστε <strong>Resend payment link</strong>. Ανοίξτε τον σύνδεσμο ως πελάτης και πατήστε <strong>Pay now</strong> (εμφανίζεται η φόρμα κάρτας για €56.00). Αφήστε την ανοιχτή.</li>
+        <li>Στο διαχειριστικό πατήστε <strong>Cancel booking</strong>. Έπειτα, στην καρτέλα του πελάτη, πληρώστε €56.00 με την επιτυχή κάρτα.</li>
+        <li>Μετά το webhook ελέγξτε το πλαϊνό πάνελ και τα ερωτήματα. Έπειτα επιστρέψτε την πληρωμή των 56,00 € (επιλέξτε την στο <strong>Payment to refund</strong>).</li>
+        <li>Εκτελέστε τα ερωτήματα και τη DB-091.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 4: κατάσταση <code>cancelled</code>, σήμανση <code>booking_closed</code>, banner <code>Payment not applied — 56,00 € via stripe</code>, <code>amount_paid</code> 2400 (τα 56 δεν πιστώθηκαν).</li>
+        <li>Βήμα 5: υπάρχει η γραμμή επιστροφής χρημάτων −5600, η σήμανση έχει καθαριστεί, και το <code>amount_paid</code> πρέπει να μείνει <strong>2400</strong>: τα χρήματα που επιστράφηκαν δεν είχαν μετρηθεί ποτέ. Ο τρέχων κώδικας αφαιρεί κάθε επιστροφή χρημάτων από το <code>amount_paid</code>· αν γράφει 0, σημειώστε Αποτυχία. Η DB-091 τότε εμφανίζει αυτή την κράτηση (άθροισμα πληρωμών 2400 έναντι <code>amount_paid</code> 0), που είναι η ασυμφωνία που η DB-091 ζητά να αναφερθεί.</li>
+      </ul>
+      <p class="exp"><span class="exp-label">Στη συνέχεια:</span> Επιστρέψτε την προκαταβολή αν θέλετε· αδειάστε ξανά το Deposit (%).</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/payments.ts</code> (<code>refundReservationPayment</code>: <code>amountPaid: Math.max(0, reservation.amountPaid - amount)</code>) · DB-091</p>
+    </article>
+
+    <article class="tc" id="BKG-090" data-priority="P3">
+      <h3>Τι απορρίπτει η φόρμα επιστροφής χρημάτων</h3>
+      <ol class="steps">
+        <li>Σε μια κράτηση μόνο με πληρωμές <code>Manual</code>, αναζητήστε φόρμα Refund.</li>
+        <li>Σε μια πληρωμή Stripe πληκτρολογήστε <code>0</code>, έπειτα <code>12.345</code>, έπειτα ένα ποσό πάνω από το ποσό που μπορεί να επιστραφεί.</li>
+        <li>Μέσω API επιστρέψτε ένα id πληρωμής που ανήκει σε άλλη κράτηση: <code>curl -s -X POST "$BASE/api/cms/reservations/&lt;id A&gt;/refund" -b "cms_session=$S" -H 'Content-Type: application/json' -d '{"paymentId":&lt;payment of B&gt;}' -w ' %{http_code}\n'</code></li>
+        <li>Επιστρέψτε μέσω API μια πληρωμή που έχει ήδη επιστραφεί πλήρως.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: καμία φόρμα Refund. Βήμα 2: <code>Enter an amount greater than zero.</code>· <code>Enter an amount such as 50 or 49.90.</code>· <code>That is more than is left to refund on that payment.</code> Βήμα 3: <code>404</code> <code>"Payment not found."</code>. Βήμα 4: <code>409</code> <code>"There is nothing left to refund on that payment."</code> (ή <code>"Only a captured payment can be refunded."</code> αν το webhook έχει ήδη σημειώσει τη γραμμή ως refunded).</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/payment-actions.ts</code> (<code>refundRefusal</code>) · <code>src/cms/modules/booking/payments.ts</code> (<code>refundReservationRoute</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-lookup">
+    <h2>Αναζήτηση κράτησης από τον επισκέπτη</h2>
+
+    <article class="tc" id="BKG-091" data-priority="P2">
+      <h3>Εύρεση κράτησης με κωδικό αναφοράς και email</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/en/booking/lookup</code>. Εισαγάγετε τον κωδικό αναφοράς της διαμονής της BKG-054 και το email του πελάτη με κεφαλαία· πατήστε <strong>Find booking</strong>.</li>
+        <li>Επαναλάβετε με μια κράτηση μεταφοράς σε <code>awaiting_payment</code>, και στο <code>/booking/lookup</code> (ελληνικά) με την ελληνική διαμονή.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Επικεφαλίδα <code>My booking</code>, εισαγωγή <code>Enter your booking reference and email.</code>, placeholder <code>BKG-2026-XXXXXXXX</code>. Κάρτα αποτελέσματος: τίτλος, Booking reference, <code>Status</code> <code>Confirmed</code>, <code>Date</code> <code>&lt;D&gt; → &lt;D+3&gt; (3 nights)</code>, <code>Guests</code> 3, <code>Total</code> €366.00. Μεταφορά: το Date είναι μία ημέρα και το Status <code>Awaiting payment</code>. Ελληνικά: <code>Επιβεβαιωμένη</code> και <code>… → … (2 νύχτες)</code>. Δεν εμφανίζεται σύνδεσμος πληρωμής ούτε token.</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/booking/lookup/BookingLookupClient.tsx</code> · <code>src/cms/modules/booking/reservations.ts</code> (<code>lookupReservation</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-092" data-priority="P3">
+      <h3>Λάθος email ή κωδικός αναφοράς δεν αποκαλύπτει τίποτα</h3>
+      <ol class="steps">
+        <li>Αναζητήστε έναν πραγματικό κωδικό αναφοράς με άλλο email· έπειτα έναν επινοημένο κωδικό αναφοράς με το σωστό email.</li>
+        <li>Εκτελέστε 21 αναζητήσεις μέσα σε ένα λεπτό από ένα <code>X-Real-IP</code> με curl: <code>curl -s -X POST "$BASE/api/cms/booking/lookup" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.90.0.20' -d '{"reference":"BKG-2026-AAAAAAAA","email":"x@example.com"}' -w ' %{http_code}\n'</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και οι δύο δείχνουν <code>No booking matches those details.</code> (το API απαντά <code>404</code> <code>"No booking matches that reference and email."</code> και για τις δύο). Το 21ο curl απαντά <code>429</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/reservations.ts</code> (<code>bookingLookupRoute</code>, 20/λεπτό)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-emails">
+    <h2>Ειδοποιήσεις προς τον πελάτη και την επιχείρηση</h2>
+
+    <article class="tc" id="BKG-093" data-priority="P2">
+      <h3>Ένα email ανά κατάσταση, στη γλώσσα της κράτησης</h3>
+      <ol class="steps">
+        <li>Από τις παραπάνω περιπτώσεις, συγκεντρώστε τα email προς τον πελάτη μιας αγγλικής και μιας ελληνικής κράτησης για κάθε συμβάν παρακάτω και συγκρίνετε τα θέματα (το καθένα τελειώνει με <code>— BKG-…</code>).</li>
+      </ol>
+      <table>
+        <thead><tr><th>Συμβάν</th><th>Αγγλικό θέμα</th><th>Ελληνικό θέμα</th></tr></thead>
+        <tbody>
+          <tr><td>Νέο αίτημα κράτησης (pending)</td><td><code>We have your request</code></td><td><code>Λάβαμε το αίτημά σας</code></td></tr>
+          <tr><td>Αποδοχή / νέα άμεση κράτηση με πάροχο πληρωμών</td><td><code>Your booking is approved — complete payment</code> / <code>Complete your payment</code></td><td><code>Η κράτησή σας εγκρίθηκε — ολοκληρώστε την πληρωμή</code> / <code>Ολοκληρώστε την πληρωμή σας</code></td></tr>
+          <tr><td>Επιβεβαίωση (προκαταβολή, άμεση κράτηση με χειροκίνητη πληρωμή)</td><td><code>Your booking is confirmed</code></td><td><code>Η κράτησή σας επιβεβαιώθηκε</code></td></tr>
+          <tr><td>Εξόφληση</td><td><code>Payment received</code></td><td><code>Απόδειξη πληρωμής</code></td></tr>
+          <tr><td>Ακύρωση</td><td><code>Your booking was cancelled</code></td><td><code>Η κράτησή σας ακυρώθηκε</code></td></tr>
+          <tr><td>Λήξη από αναμονή πληρωμής / από αίτημα κράτησης</td><td><code>Your booking expired</code> / <code>Your request expired</code></td><td><code>Η κράτησή σας έληξε</code> / <code>Το αίτημά σας έληξε</code></td></tr>
+        </tbody>
+      </table>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε γραμμή ταιριάζει. Κάθε email έχει τη σύνοψη (κωδικός αναφοράς, Date ή Stay, Guests, επιλογή αν υπάρχει, ανάλυση τιμής και σύνολο)· τα email επιβεβαίωσης και εξόφλησης προσθέτουν τους όρους ακύρωσης. Μια επιστροφή χρημάτων και το Mark resolved δεν στέλνουν τίποτα. Κάθε αποστολή εμφανίζεται στο History ως <code>email.&lt;which&gt;</code> χωρίς κόκκινο σήμα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/emails.ts</code> (<code>customerEmailBody</code>) · <code>src/cms/modules/booking/lifecycle.ts</code> (<code>emailForTransition</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-094" data-priority="P3">
+      <h3>Χωρίς διεύθυνση επιχείρησης, και ένα email πελάτη που απέτυχε</h3>
+      <ol class="steps">
+        <li>Αδειάστε το <strong>Notify these addresses</strong>, αποθηκεύστε, στείλτε ένα αίτημα κράτησης. Ανοίξτε το πλαϊνό πάνελ του.</li>
+        <li>Χαλάστε την εξερχόμενη αλληλογραφία (όπως στη λίστα ελέγχου 07, π.χ. με λάθος μυστικό αλληλογραφίας), στείλτε ένα ακόμη αίτημα κράτησης, ανοίξτε το πλαϊνό πάνελ του και τη λίστα. Επαναφέρετε την αλληλογραφία και τη διεύθυνση ειδοποίησης.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: το History δείχνει <code>email.admin_new_request</code> με το πορτοκαλί σήμα <code>nobody notified</code>· η πληροφορία του γράφει <code>No notification recipients are configured in Settings → Booking.</code> Βήμα 2: η κράτηση δημιουργείται κανονικά· η γραμμή της λίστας δείχνει ένα κόκκινο σήμα <code>not sent</code>· το History δείχνει το email του πελάτη με <code>not sent</code> και το κείμενο του σφάλματος· <code>email_status</code> <code>failed</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/emails.ts</code> (<code>sendAndRecord</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-module">
+    <h2>Module ανενεργό</h2>
+
+    <article class="tc" id="BKG-095" data-priority="P3">
+      <h3>Booking ανενεργό: τι προσθέτει αυτή η λίστα ελέγχου</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Εκτελέστε τις SET-038, ADM-038 και SET-042 (με <code>booking-expire</code>) για το πλευρικό μενού, τις οθόνες του διαχειριστικού, τη δημόσια λίστα και το cron. Αυτή η περίπτωση καλύπτει μόνο τις επιπλέον διευθύνσεις.</p>
+      <ol class="steps">
+        <li>Ξετσεκάρετε το <strong>Booking</strong> και αποθηκεύστε. Ανοίξτε τα <code>/en/booking/qa-boat-day</code>, <code>/en/booking/lookup</code>, έναν ενεργό σύνδεσμο <code>/en/booking/pay/BKG-…?t=…</code> και εκτελέστε:
+<pre><code>for p in "booking/quote" "booking/request" "booking/lookup" "booking/pay"; do curl -s -o /dev/null -w "$p %{http_code}\n" -X POST "$BASE/api/cms/$p" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.90.0.30' -d '{}'; done
+curl -s -o /dev/null -w "schedule %{http_code}\n" -b "cms_session=$S" "$BASE/api/cms/booking/schedule?from=2026-01-01&amp;to=2026-01-02"
+curl -s -o /dev/null -w "reservations %{http_code}\n" -b "cms_session=$S" "$BASE/api/cms/reservations"</code></pre></li>
+        <li>Τσεκάρετε ξανά το <strong>Booking</strong> και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Όλες οι σελίδες δείχνουν τη σελίδα «δεν βρέθηκε» και κάθε κλήση απαντά <code>404</code>. Μετά την επανενεργοποίηση, κάθε εμπειρία, κράτηση και παράκαμψη QA είναι ανέπαφη.</p>
+      <p class="ref">Αναφ.: <code>src/app/api/cms/booking/*/route.ts</code> · <code>src/app/[locale]/booking/**</code> · docs/dev-guides/09-booking.md §7</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-cleanup">
+    <h2>Καθαρισμός</h2>
+
+    <article class="tc" id="BKG-096" data-priority="P3">
+      <h3>Αφαίρεση των δεδομένων κρατήσεων QA και επαναφορά των ρυθμίσεων</h3>
+      <ol class="steps">
+        <li>Επαναφέρετε κάθε παράκαμψη QA στο Availability. Διαγράψτε τις έξι εμπειρίες QA και τους τρεις όρους QA στο διαχειριστικό.</li>
+        <li>Εκτελέστε:
+<pre><code>DELETE FROM reservations WHERE booking_slug LIKE 'qa-%' OR email LIKE 'qa.%@example.com';
+DELETE FROM booking_slots WHERE capacity IS NULL AND closed = 0 AND price_override IS NULL AND note IS NULL
+  AND NOT EXISTS (SELECT 1 FROM reservation_holds h WHERE h.slot_key = booking_slots.slot_key AND h.slot_date = booking_slots.slot_date);</code></pre>
+          (οι γραμμές, οι δεσμεύσεις, οι πληρωμές και τα συμβάντα διαγράφονται μαζί με την κράτησή τους).</li>
+        <li>Επαναφέρετε το Settings → Booking (Payment method, Deposit, επιβαρύνσεις, δέσμευση, προθεσμία κράτησης, διευθύνσεις ειδοποίησης), αφαιρέστε το <code>BOOKING_CRON_SECRET</code>, και επαναφέρετε τον διακόπτη Booking στην κατάσταση που είχε το site.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το <code>/en/booking</code> δεν εμφανίζει εμπειρίες QA· το <code>/admin/reservations</code> δεν εμφανίζει κρατήσεις QA· το <code>/admin/availability</code> δεν έχει θέσεις ημερομηνίας QA· οι ρυθμίσεις είναι όπως πριν από την εκτέλεση.</p>
+      <p class="ref">Αναφ.: αυτή η λίστα ελέγχου</p>
+    </article>
+  </section>
+
+</main>
+<footer class="page">Λίστα ελέγχου 09 από 12. Τα αποτελέσματα αποθηκεύονται μόνο σε αυτόν τον browser· χρησιμοποιήστε την εξαγωγή πριν καθαρίσετε τα δεδομένα του browser. Στη συνέχεια επαναφέρετε τον τρόπο πληρωμής των κρατήσεων, την προκαταβολή, τις επιβαρύνσεις και τη δέσμευση, αφαιρέστε τα κλειδιά sandbox που δεν πρέπει να παραμείνουν, και διαγράψτε τις εμπειρίες, τους όρους, τις παρακάμψεις και τις κρατήσεις QA (BKG-096).</footer>
+</body>
+</html>

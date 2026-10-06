@@ -1,0 +1,845 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Public site &amp; accessibility</title>
+<link rel="stylesheet" href="qa.css">
+<script src="qa.js" defer></script>
+</head>
+<body>
+<nav class="crumbs"><a href="index.html">CMS manual QA</a></nav>
+<header class="page">
+  <h1>11 · Public site, languages, accessibility &amp; performance</h1>
+  <p class="scope">The cross-cutting pass over the public site as a visitor sees it. Covered here: every public route loading in Greek and English, the address rules of the proxy (unprefixed Greek, <code>/en</code>, <code>/el</code> and <code>/home</code> redirects, no browser-language detection), header, footer and mobile menu links, the language switcher, translated interface text and <code>messages/*.json</code> parity, price, date and number formats per language, the home page sections and their empty states, images, the shared behaviour of public forms, an accessibility pass against WCAG 2.2 AA (keyboard, focus, skip link, landmarks, headings, contrast, zoom and reflow, reduced motion, screen readers), layout at five widths, browser coverage, Lighthouse and Core Web Vitals, caching headers, console and network errors, favicon and theme colour, print, and what happens with the database down or on a slow network. Covered elsewhere and referenced by ID: language switches in Settings (SET-044 to SET-049), module switches (SET-033 to SET-043), security headers and robots.txt (SET-073 to SET-078), CMS page rendering, publishing and preview (CON-004, CON-065, CON-094, CON-099), the admin bar (ADM-022 to ADM-034, ADM-060), head tags, hreflang, sitemap, structured data and 404 logging (MED-035 to MED-039, MED-060 to MED-062, MED-078 to MED-096), media file headers (MED-026 to MED-029), branding and colours (MED-030 to MED-034), the contact form (MKT-003 to MKT-015), newsletter signup (MKT-030 to MKT-036), the cookie banner (MKT-049 to MKT-058), popups (MKT-080 to MKT-094), shop, cart, checkout and accounts (COM-015 to COM-032, COM-095 to COM-103), booking pages and forms (BKG-011 to BKG-016, BKG-042 to BKG-046, BKG-091). You need: a production build of the site with commerce, booking, customer accounts, wishlist and newsletter on and the QA data of checklists 08 and 09; Chrome (with Lighthouse in developer tools), Firefox, Safari on a Mac or an iPhone, and Samsung Internet on an Android phone if available; NVDA on Windows and/or VoiceOver on macOS or iOS; a terminal with <code>curl</code> and <code>node</code>; and shell access to stop the database for one case.</p>
+</header>
+<main>
+
+  <section class="suite" id="suite-prep">
+    <h2>Before you start</h2>
+    <p class="intro">Checklist 01 must be done. Performance, caching and header cases need a production build (<code>npm run build</code> then <code>npm run start</code>, see SET-030), which answers on <code>http://localhost:3000</code>; the dev server (<code>npm run dev</code>, port 3002) is slower, sends no CSP and must not be used for Lighthouse. On a hosted environment use its address. Greek is the main language and has no prefix; English lives under <code>/en</code> (SET-044).</p>
+    <div class="callout">
+      <p><strong>Terminal.</strong> In the project folder run <code>BASE=http://localhost:3000</code>. A quick status check of one address is <code>curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$BASE/about"</code>.</p>
+      <p><strong>Windows.</strong> Unless a case says otherwise, run public cases in a private window where you are not signed in to the admin, so the admin bar does not appear. Where a case says “signed in as customer”, use the customer account from COM-095.</p>
+      <p><strong>Widths.</strong> Use the browser's responsive / device mode and type the width in. 320 px is the WCAG reflow width; 375 px is a small phone; 768 px is where the desktop header appears (Tailwind <code>md</code>); 1024 px and 1440 px are laptop and desktop.</p>
+    </div>
+
+    <article class="tc" id="PUB-001" data-priority="P2">
+      <h3>Prepare the site for this checklist</h3>
+      <ol class="steps">
+        <li>In <strong>Settings</strong> → <strong>Modules</strong> tick <strong>Commerce</strong>, <strong>Booking</strong>, <strong>Customer accounts</strong> and <strong>Newsletter</strong> and click <strong>Save settings</strong>. In <strong>Settings</strong> → <strong>Ecommerce</strong> → <strong>Wishlist</strong> switch the wishlist on.</li>
+        <li>In <strong>Settings</strong> → <strong>Languages</strong> check that EL and EN are both <strong>Public</strong>.</li>
+        <li>Make sure the pages <code>home</code>, <code>about</code>, <code>contact</code>, <code>privacy</code> and <code>terms</code> are published in both languages (run <code>npm run db:seed-site -- --force --publish-samples</code> as in SET-021 if they are still drafts).</li>
+        <li>Make sure at least one published product with an image, a category, a tag and one published booking experience exist in both languages (from checklists 08 and 09), and one customer account with a placed order (COM-101). Write down: product slug <code>&lt;p&gt;</code>, category slug <code>&lt;c&gt;</code>, tag slug <code>&lt;t&gt;</code>, experience slug <code>&lt;x&gt;</code>, order reference <code>&lt;ref&gt;</code>.</li>
+        <li>Create one page <code>QA EL Only</code> (slug <code>qa-el-only</code>), published in Greek only; leave its English version empty.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Every item above exists. The header of <code>/</code> shows Αρχική, Κρατήσεις, Κατάστημα, Σχετικά, Επικοινωνία, a heart (wishlist), an account icon and a cart icon.</p>
+      <p class="ref">Ref: <code>src/lib/nav.ts</code> (<code>navItems</code>) · <code>src/components/layout/Header.tsx</code> · <code>src/site-seed/data.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-routes">
+    <h2>Routes &amp; addresses</h2>
+    <p class="intro">Every public route lives under <code>src/app/[locale]/</code>. Module routes answer the not-found page when their module is off (SET-034, SET-038, SET-040); here all modules are on.</p>
+
+    <article class="tc" id="PUB-002" data-priority="P1">
+      <h3>Every public route loads in both languages</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> PUB-001 done. Browser console open (F12). Signed-out private window; for the account rows marked “customer”, sign in as the customer at <code>/account/login</code> first.</p>
+      <ol class="steps">
+        <li>Open each Greek address, then its English address. Tick the box when the page shows the heading in the right language, the header and footer, no raw message key (text like <code>account.loginTitle</code>), no endless “Φόρτωση…” / “Loading…”, and no red error in the console.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>EL</th><th>EN</th><th>Greek address</th><th>English address</th><th>Main heading (EL / EN)</th></tr></thead>
+          <tbody>
+          <tr><td><input type="checkbox" aria-label="Home EL loads"></td><td><input type="checkbox" aria-label="Home EN loads"></td><td><code>/</code></td><td><code>/en</code></td><td>title of the <code>home</code> page (site name if it has none)</td></tr>
+          <tr><td><input type="checkbox" aria-label="About EL loads"></td><td><input type="checkbox" aria-label="About EN loads"></td><td><code>/about</code></td><td><code>/en/about</code></td><td>title of the <code>about</code> page</td></tr>
+          <tr><td><input type="checkbox" aria-label="Contact EL loads"></td><td><input type="checkbox" aria-label="Contact EN loads"></td><td><code>/contact</code></td><td><code>/en/contact</code></td><td>Επικοινωνήστε μαζί μας / Get in touch (or the contact page's title)</td></tr>
+          <tr><td><input type="checkbox" aria-label="Privacy EL loads"></td><td><input type="checkbox" aria-label="Privacy EN loads"></td><td><code>/privacy</code></td><td><code>/en/privacy</code></td><td>title of the <code>privacy</code> page</td></tr>
+          <tr><td><input type="checkbox" aria-label="Terms EL loads"></td><td><input type="checkbox" aria-label="Terms EN loads"></td><td><code>/terms</code></td><td><code>/en/terms</code></td><td>title of the <code>terms</code> page</td></tr>
+          <tr><td><input type="checkbox" aria-label="Cookie policy EL loads"></td><td><input type="checkbox" aria-label="Cookie policy EN loads"></td><td><code>/legal/cookies</code></td><td><code>/en/legal/cookies</code></td><td>Πολιτική cookies / Cookie policy</td></tr>
+          <tr><td><input type="checkbox" aria-label="Shop EL loads"></td><td><input type="checkbox" aria-label="Shop EN loads"></td><td><code>/shop</code></td><td><code>/en/shop</code></td><td>Κατάστημα / Shop</td></tr>
+          <tr><td><input type="checkbox" aria-label="Product EL loads"></td><td><input type="checkbox" aria-label="Product EN loads"></td><td><code>/shop/&lt;p&gt;</code></td><td><code>/en/shop/&lt;p&gt;</code></td><td>product name in that language</td></tr>
+          <tr><td><input type="checkbox" aria-label="Category EL loads"></td><td><input type="checkbox" aria-label="Category EN loads"></td><td><code>/shop/category/&lt;c&gt;</code></td><td><code>/en/shop/category/&lt;c&gt;</code></td><td>category name</td></tr>
+          <tr><td><input type="checkbox" aria-label="Tag EL loads"></td><td><input type="checkbox" aria-label="Tag EN loads"></td><td><code>/shop/tag/&lt;t&gt;</code></td><td><code>/en/shop/tag/&lt;t&gt;</code></td><td>tag name</td></tr>
+          <tr><td><input type="checkbox" aria-label="Compare EL loads"></td><td><input type="checkbox" aria-label="Compare EN loads"></td><td><code>/shop/compare</code></td><td><code>/en/shop/compare</code></td><td>Σύγκριση / Compare</td></tr>
+          <tr><td><input type="checkbox" aria-label="Wishlist EL loads"></td><td><input type="checkbox" aria-label="Wishlist EN loads"></td><td><code>/wishlist</code></td><td><code>/en/wishlist</code></td><td>Η λίστα επιθυμιών μου / My wishlist</td></tr>
+          <tr><td><input type="checkbox" aria-label="Checkout EL loads"></td><td><input type="checkbox" aria-label="Checkout EN loads"></td><td><code>/checkout</code> (one item in the cart)</td><td><code>/en/checkout</code></td><td>Ολοκλήρωση παραγγελίας / Checkout</td></tr>
+          <tr><td><input type="checkbox" aria-label="Order lookup EL loads"></td><td><input type="checkbox" aria-label="Order lookup EN loads"></td><td><code>/order</code></td><td><code>/en/order</code></td><td>Παρακολούθηση παραγγελίας / Track your order</td></tr>
+          <tr><td><input type="checkbox" aria-label="Cart recover EL loads"></td><td><input type="checkbox" aria-label="Cart recover EN loads"></td><td><code>/cart/recover</code> (no token)</td><td><code>/en/cart/recover</code></td><td>Το καλάθι σας είναι άδειο. / Your cart is empty.</td></tr>
+          <tr><td><input type="checkbox" aria-label="Booking EL loads"></td><td><input type="checkbox" aria-label="Booking EN loads"></td><td><code>/booking</code></td><td><code>/en/booking</code></td><td>Κρατήσεις / Booking</td></tr>
+          <tr><td><input type="checkbox" aria-label="Experience EL loads"></td><td><input type="checkbox" aria-label="Experience EN loads"></td><td><code>/booking/&lt;x&gt;</code></td><td><code>/en/booking/&lt;x&gt;</code></td><td>experience title</td></tr>
+          <tr><td><input type="checkbox" aria-label="Booking lookup EL loads"></td><td><input type="checkbox" aria-label="Booking lookup EN loads"></td><td><code>/booking/lookup</code></td><td><code>/en/booking/lookup</code></td><td>Η κράτησή μου / My booking</td></tr>
+          <tr><td><input type="checkbox" aria-label="Sign in EL loads"></td><td><input type="checkbox" aria-label="Sign in EN loads"></td><td><code>/account/login</code></td><td><code>/en/account/login</code></td><td>Σύνδεση / Sign in</td></tr>
+          <tr><td><input type="checkbox" aria-label="Register EL loads"></td><td><input type="checkbox" aria-label="Register EN loads"></td><td><code>/account/register</code></td><td><code>/en/account/register</code></td><td>Δημιουργία λογαριασμού / Create an account</td></tr>
+          <tr><td><input type="checkbox" aria-label="Forgot EL loads"></td><td><input type="checkbox" aria-label="Forgot EN loads"></td><td><code>/account/forgot</code></td><td><code>/en/account/forgot</code></td><td>Ξέχασα τον κωδικό μου / Forgotten password</td></tr>
+          <tr><td><input type="checkbox" aria-label="Reset EL loads"></td><td><input type="checkbox" aria-label="Reset EN loads"></td><td><code>/account/reset</code> (no token)</td><td><code>/en/account/reset</code></td><td>Νέος κωδικός / New password</td></tr>
+          <tr><td><input type="checkbox" aria-label="Verify EL loads"></td><td><input type="checkbox" aria-label="Verify EN loads"></td><td><code>/account/verify</code> (no token)</td><td><code>/en/account/verify</code></td><td>Επιβεβαίωση email / Confirm your email</td></tr>
+          <tr><td><input type="checkbox" aria-label="Account EL loads"></td><td><input type="checkbox" aria-label="Account EN loads"></td><td><code>/account</code> (customer)</td><td><code>/en/account</code></td><td>Ο λογαριασμός μου / My account</td></tr>
+          <tr><td><input type="checkbox" aria-label="Orders EL loads"></td><td><input type="checkbox" aria-label="Orders EN loads"></td><td><code>/account/orders</code> (customer)</td><td><code>/en/account/orders</code></td><td>Οι παραγγελίες μου / My orders</td></tr>
+          <tr><td><input type="checkbox" aria-label="Order detail EL loads"></td><td><input type="checkbox" aria-label="Order detail EN loads"></td><td><code>/account/orders/&lt;ref&gt;</code> (customer)</td><td><code>/en/account/orders/&lt;ref&gt;</code></td><td>the order reference</td></tr>
+          <tr><td><input type="checkbox" aria-label="Addresses EL loads"></td><td><input type="checkbox" aria-label="Addresses EN loads"></td><td><code>/account/addresses</code> (customer)</td><td><code>/en/account/addresses</code></td><td>Οι διευθύνσεις μου / My addresses</td></tr>
+          <tr><td><input type="checkbox" aria-label="Profile EL loads"></td><td><input type="checkbox" aria-label="Profile EN loads"></td><td><code>/account/profile</code> (customer)</td><td><code>/en/account/profile</code></td><td>Τα στοιχεία μου / My details</td></tr>
+          <tr><td><input type="checkbox" aria-label="Account privacy EL loads"></td><td><input type="checkbox" aria-label="Account privacy EN loads"></td><td><code>/account/privacy</code> (customer)</td><td><code>/en/account/privacy</code></td><td>Δεδομένα και απόρρητο / Data and privacy</td></tr>
+          <tr><td><input type="checkbox" aria-label="404 EL loads"></td><td><input type="checkbox" aria-label="404 EN loads"></td><td><code>/qa-no-such-page</code></td><td><code>/en/qa-no-such-page</code></td><td>ends on <code>/page-not-found</code> or <code>/en/page-not-found</code>: Η σελίδα δεν βρέθηκε / Page not found</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Expected:</span> Every box can be ticked. The <code>&lt;html lang&gt;</code> is <code>el</code> on the Greek column and <code>en</code> on the English one. The pay page <code>/booking/pay/&lt;reference&gt;</code> is not in the table: without a valid token it shows the not-found page by design (BKG-067). The tick boxes are a working aid and are not saved; write any failing address in the notes.</p>
+      <p class="ref">Ref: <code>src/app/[locale]/**/page.tsx</code> · <code>messages/el.json</code>, <code>messages/en.json</code> · docs/dev-guides/01-architecture.md</p>
+    </article>
+
+    <article class="tc" id="PUB-003" data-priority="P2">
+      <h3>Address rules: /, /el, /home, trailing slash, browser language and cookie</h3>
+      <ol class="steps">
+        <li>Run each command and write down the status and redirect target:
+<pre><code>for p in / /en /el /el/about /home /en/home /en/ /about/; do
+  printf '%-12s ' "$p"; curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$BASE$p"; done
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' -H 'Accept-Language: en-US,en;q=0.9' "$BASE/"
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' -b 'NEXT_LOCALE=en' "$BASE/about"</code></pre></li>
+        <li>In a browser whose preferred language is English, open <code>/</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li><code>/</code> and <code>/en</code>: <code>200</code>, no redirect. There is no redirect from <code>/</code> to a language prefix; Greek is served at the root.</li>
+        <li><code>/el</code> → <code>/</code> and <code>/el/about</code> → <code>/about</code> (307 or 308). <code>/home</code> → <code>/</code> and <code>/en/home</code> → <code>/en</code> with <code>308</code>. <code>/en/</code> and <code>/about/</code> redirect once to the address without the slash.</li>
+        <li>Accept-Language English and the <code>NEXT_LOCALE=en</code> cookie both still give <code>200</code> with no redirect, and the browser in step 2 shows the Greek home (no language detection, as SET-045).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/proxy.ts</code> · <code>src/lib/i18n/routing.ts</code> (<code>localeDetection: false</code>) · <code>src/lib/i18n/config.ts</code> (<code>localePrefix: 'as-needed'</code>) · <code>next.config.ts</code> (<code>redirects</code>)</p>
+    </article>
+
+    <article class="tc" id="PUB-004" data-priority="P2">
+      <h3>Which not-found page each kind of missing address shows</h3>
+      <ol class="steps">
+        <li>In the browser open each address and note the final URL, whether the header and footer are there, whether the page is styled, and its language:
+          <code>/qa-nope</code>, <code>/en/qa-nope</code>, <code>/a/b/c</code>, <code>/shop/qa-no-product</code>, <code>/en/booking/qa-no-experience</code>, <code>/shop/category/qa-no-cat</code>, <code>/de/about</code>, <code>/qa.weird</code>.</li>
+        <li>Run <code>curl -s -o /dev/null -w '%{http_code}\n' "$BASE/shop/qa-no-product"</code> and the same for <code>/qa.weird</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Single- and multi-segment unknown paths redirect to <code>/page-not-found</code> (or <code>/en/page-not-found</code>), which has the header, footer, the heading Η σελίδα δεν βρέθηκε / Page not found and the buttons Αρχική, Επικοινωνία / Home, Contact (MED-062 covers the status codes and noindex).</li>
+        <li>Unknown product, experience or category: the site's not-found content with header and footer, HTTP <code>404</code>. If any of these renders unstyled, blank, or without header and footer, mark Fail and note which (the code comments warn that <code>notFound()</code> inside a dynamic segment can do this on Next 16).</li>
+        <li><code>/qa.weird</code> (a path with a dot, outside locale routing) shows the bare fallback: “404”, <code>Page not found</code>, <code>Return home</code>, in English on a Greek-default site, status <code>404</code>. <code>/de/about</code>: record where it ends; it must not show a server error.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/[locale]/[...rest]/page.tsx</code> · <code>src/app/[locale]/not-found.tsx</code> · <code>src/app/not-found.tsx</code> · <code>src/lib/i18n/page-not-found.ts</code></p>
+    </article>
+
+    <article class="tc" id="PUB-005" data-priority="P2">
+      <h3>Signed-out visitors are sent from account pages to sign-in</h3>
+      <ol class="steps">
+        <li>Signed out, run <code>curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$BASE/account/orders"</code> and the same for <code>/en/account/profile</code>.</li>
+        <li>In the browser open <code>/account</code>, then sign in as the customer.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: a redirect to <code>/account/login</code> and <code>/en/account/login</code> respectively (language kept). Step 2: the Σύνδεση form; after sign-in the account overview opens. No account page flashes its content before the redirect. Account pages carry <code>&lt;meta name="robots" content="noindex, nofollow"&gt;</code>.</p>
+      <p class="ref">Ref: <code>src/app/[locale]/account/require-customer.ts</code> · <code>src/app/[locale]/account/layout.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-nav">
+    <h2>Header, footer &amp; mobile menu</h2>
+
+    <article class="tc" id="PUB-006" data-priority="P1">
+      <h3>Header links resolve on desktop</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Window at 1440 px.</p>
+      <ol class="steps">
+        <li>On <code>/</code> click each header item in turn: the logo or site name, Αρχική, Κρατήσεις, Κατάστημα, Σχετικά, Επικοινωνία (menu), the <strong>Επικοινωνία</strong> button, the heart, the account icon, the cart icon.</li>
+        <li>Repeat on <code>/en</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Greek: <code>/</code>, <code>/</code>, <code>/booking</code>, <code>/shop</code>, <code>/about</code>, <code>/contact</code>, <code>/contact</code>, <code>/wishlist</code>, <code>/account/login</code> (or <code>/account</code> when signed in), and the cart icon opens the cart drawer instead of navigating.</li>
+        <li>English: the same targets under <code>/en</code>, labels Home, Booking, Shop, About, Contact, button <strong>Contact us</strong>.</li>
+        <li>No link ends on the not-found page. The logo link's accessible name is <code>Site — αρχική σελίδα</code> / <code>Site — home</code> (or the logo image's alt).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/layout/Header.tsx</code> · <code>src/lib/nav.ts</code> · <code>messages/*.json</code> (<code>nav</code>, <code>header</code>)</p>
+    </article>
+
+    <article class="tc" id="PUB-007" data-priority="P3">
+      <h3>Current page is marked in the navigation</h3>
+      <ol class="steps">
+        <li>Open <code>/about</code>, <code>/shop</code> and <code>/en/booking</code>. Look at the header menu item for the current section; inspect it for <code>aria-current</code>.</li>
+        <li>Look at the language switcher on the same pages.</li>
+      </ol>
+      <ul class="exp">
+        <li>The language switcher marks the current language in bold with <code>aria-current="page"</code>.</li>
+        <li>WCAG does not require it, but users expect the current menu item to be marked. Per the current code the header, mobile menu and footer links have no active style and no <code>aria-current</code>; record this as a usability observation (not a Fail) unless the design calls for it.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/layout/Header.tsx</code> · <code>src/components/layout/MobileMenu.tsx</code> · <code>src/components/layout/LanguageSwitcher.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-008" data-priority="P2">
+      <h3>Footer links and contact details</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> In Settings → Branding an email, a phone and at least one social link are filled in.</p>
+      <ol class="steps">
+        <li>On <code>/about</code> scroll to the footer. Click every link under <strong>Περιήγηση</strong>, then Απόρρητο, Όροι, Cookies at the bottom.</li>
+        <li>Click the email, phone and social links (cancel any mail or phone app that opens).</li>
+        <li>On <code>/about</code> click <strong>Σχετικά</strong> in the footer while scrolled down.</li>
+        <li>Repeat step 1 on <code>/en/about</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Περιήγηση lists Αρχική, Σχετικά, Επικοινωνία only (no Κατάστημα or Κρατήσεις even with those modules on; record whether the owner expects them). Legal: <code>/privacy</code>, <code>/terms</code>, <code>/legal/cookies</code>. All load; English links stay under <code>/en</code>.</li>
+        <li>Email is a <code>mailto:</code>, phone a <code>tel:</code> link; social links open in a new tab with <code>rel="noopener noreferrer"</code>.</li>
+        <li>Step 3: clicking the link for the page you are on scrolls to the top.</li>
+        <li>The copyright line reads <code>© &lt;current year&gt; Site. Με την επιφύλαξη παντός δικαιώματος.</code>. Note: it names “Site” from the message file, not the site name from Branding (see PUB-017).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/layout/Footer.tsx</code> · <code>src/components/layout/FooterLink.tsx</code> · <code>src/lib/nav.ts</code> (<code>NAV_ITEMS</code>, <code>LEGAL_LINKS</code>)</p>
+    </article>
+
+    <article class="tc" id="PUB-009" data-priority="P2">
+      <h3>Links inside shop, checkout, booking and account pages</h3>
+      <ol class="steps">
+        <li>On <code>/en/checkout</code> with an item, click the link in <code>I accept the terms.</code> (it opens a new tab).</li>
+        <li>Click the cookie banner's policy button (clear site data first to bring the banner back), the not-found page's two buttons, the breadcrumbs on a product and a category page, <strong>Back to shop</strong> on an empty checkout, and the <code>/booking/lookup</code> and <code>/order</code> links where they appear.</li>
+        <li>Optionally run a link checker (for example the <em>Check My Links</em> browser extension or <code>npx linkinator $BASE --recurse --skip '/api/'</code>) against the site.</li>
+      </ol>
+      <ul class="exp">
+        <li>Every link ends on a real page, not the not-found page.</li>
+        <li>Per the current code the checkout terms link goes to <code>/legal/terms</code>, which has no route (the terms page is <code>/terms</code>), so it lands on the not-found page: mark Fail if so.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/[locale]/checkout/CheckoutClient.tsx</code> (<code>href="/legal/terms"</code>) · <code>src/components/layout/CookieBanner.tsx</code> · <code>src/components/site/NotFoundContent.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-010" data-priority="P2">
+      <h3>Mobile menu: open, close, keyboard</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Window at 375 px, keyboard available (device mode in a desktop browser is fine).</p>
+      <ol class="steps">
+        <li>On <code>/about</code> the header shows the logo, the icons and a hamburger button. Tab to the hamburger and press Enter.</li>
+        <li>Press Tab repeatedly past the last item, then Shift+Tab.</li>
+        <li>Press Escape.</li>
+        <li>Open the menu again with the mouse and click <strong>Κατάστημα</strong>. Open it again and click <strong>EN</strong>.</li>
+        <li>Open it once more and try to scroll the page behind it.</li>
+      </ol>
+      <ul class="exp">
+        <li>The hamburger's name is <code>Άνοιγμα μενού</code> (<code>Open menu</code> in English). The menu covers the screen with the site name, a close button <code>Κλείσιμο μενού</code>, the menu items, the <strong>Επικοινωνία</strong> button, the EL | EN switcher and the site email.</li>
+        <li>Focus moves into the menu on open and Tab cycles only through the menu's controls. Escape closes it and focus returns to the hamburger.</li>
+        <li>Clicking a menu item navigates and closes the menu; EN loads <code>/en/about</code> (the equivalent page, PUB-012). The page behind does not scroll while the menu is open.</li>
+        <li>Closed, none of the menu's links can be reached by Tab.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/layout/MobileMenu.tsx</code> · <code>src/cms/admin/ui/use-dialog.ts</code></p>
+    </article>
+
+    <article class="tc" id="PUB-011" data-priority="P3">
+      <h3>Header across the breakpoints, and resizing with the menu open</h3>
+      <ol class="steps">
+        <li>On <code>/</code> resize from 320 px to 1440 px slowly and watch the header.</li>
+        <li>At 375 px open the mobile menu, then widen the window to 1024 px. Try to scroll the page.</li>
+      </ol>
+      <ul class="exp">
+        <li>Below 640 px the <strong>Επικοινωνία</strong> button is hidden; from 640 px it shows. Below 768 px the menu is the hamburger; from 768 px the inline menu and the EL | EN switcher show and the hamburger disappears. At no width do items overlap or wrap onto two lines.</li>
+        <li>Step 2: the menu disappears at 768 px. Record whether the page can still scroll; if scrolling stays locked until reload, mark Fail (the menu stays open in state while hidden).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/layout/Header.tsx</code> (<code>sm:inline-flex</code>, <code>md:block</code>, <code>md:hidden</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-lang">
+    <h2>Language switcher</h2>
+    <p class="intro">The switcher builds plain links that keep the path and swap only the language prefix, and forces a full page load. Slugs are the same in every language.</p>
+
+    <article class="tc" id="PUB-012" data-priority="P1">
+      <h3>Switching language keeps you on the equivalent page</h3>
+      <ol class="steps">
+        <li>On each Greek page below click <strong>EN</strong> in the header, check the address, then click <strong>EL</strong>: <code>/</code>, <code>/about</code>, <code>/contact</code>, <code>/legal/cookies</code>, <code>/shop</code>, <code>/shop/&lt;p&gt;</code>, <code>/shop/category/&lt;c&gt;</code>, <code>/booking/&lt;x&gt;</code>, <code>/account/login</code>.</li>
+        <li>Put an item in the cart, switch language, and open the cart.</li>
+      </ol>
+      <ul class="exp">
+        <li>EN goes to <code>/en</code>, <code>/en/about</code>, <code>/en/contact</code> and so on, never <code>/en/</code>; EL goes back to the unprefixed address, never <code>/el/…</code>. Each switch is a full page load and every text on the page (header, footer, cookie banner, cart) changes language at once; <code>&lt;html lang&gt;</code> changes too.</li>
+        <li>The switcher is a <code>nav</code> named <code>Αλλαγή γλώσσας</code> / <code>Switch language</code>; each link has <code>hreflang</code>.</li>
+        <li>The cart keeps its item across the switch (it is stored in the browser).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/layout/LanguageSwitcher.tsx</code> (<code>hrefFor</code>)</p>
+    </article>
+
+    <article class="tc" id="PUB-013" data-priority="P2">
+      <h3>Switching on a page that has no translation</h3>
+      <ol class="steps">
+        <li>Open <code>/qa-el-only</code> (PUB-001) and click <strong>EN</strong>.</li>
+        <li>Set the English version of a product to draft (keep Greek published), open it in Greek and click <strong>EN</strong>. Publish it again afterwards.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: the switcher still offers EN; the click goes to <code>/en/qa-el-only</code>, which redirects to <code>/en/page-not-found</code> (Page not found). There is no fallback to the Greek text and no message that the page exists only in Greek. Record this as the current behaviour; mark Fail only if the product owner expects a fallback or a hidden EN link.</li>
+        <li>Step 2: <code>/en/shop/&lt;p&gt;</code> shows the not-found content or redirects as COM-022 describes; it never shows the Greek product with English chrome.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/[locale]/[slug]/page.tsx</code> · <code>src/lib/cms/resolve-doc.ts</code> · <code>src/components/layout/LanguageSwitcher.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-014" data-priority="P3">
+      <h3>Query strings and anchors on switch; a single public language</h3>
+      <ol class="steps">
+        <li>Open <code>/shop?sort=price-asc&amp;page=2</code> (or apply a sort and a filter) and click <strong>EN</strong>.</li>
+        <li>Open <code>/booking/lookup</code>, type a reference, click <strong>EN</strong>.</li>
+        <li>Take EN off the public site (SET-047), reload <code>/about</code>, then put it back.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: the switcher link carries only the path, so sort, filters and page are dropped (<code>/en/shop</code>). Record it; mark Fail only if keeping filters is a requirement.</li>
+        <li>Step 2: typed form values are lost with the full reload; that is expected.</li>
+        <li>Step 3: with one public language the switcher disappears from the header and the mobile menu.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/layout/LanguageSwitcher.tsx</code> (<code>locales.length &lt; 2</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-i18n">
+    <h2>Translations &amp; formats</h2>
+
+    <article class="tc" id="PUB-015" data-priority="P1">
+      <h3>No raw message keys and no mixed languages</h3>
+      <ol class="steps">
+        <li>With a product in the cart, open the cart drawer, the cookie banner and its Preferences, the checkout (press Place order empty to see the errors), the contact form (submit empty), the booking form on <code>/booking/&lt;x&gt;</code>, the booking and order lookups (submit a wrong reference), the sign-in form (wrong password), and the not-found page. Do this on the Greek site, then on <code>/en</code>.</li>
+        <li>Read every visible text, button, placeholder, error message and tooltip. With a screen reader or the accessibility tree also read the accessible names of icon buttons.</li>
+      </ol>
+      <ul class="exp">
+        <li>No text looks like a key (<code>checkout.email</code>, <code>MISSING_MESSAGE</code>, <code>{year}</code>) and the server log shows no <code>MISSING_MESSAGE</code> warning.</li>
+        <li>The Greek site has no English sentences and the English site no Greek. Words that are the same in both files by design are allowed: <code>Email</code>, <code>Cookies</code>, <code>Blog</code>, <code>NEWSLETTER</code>, <code>name@example.com</code>.</li>
+        <li>Per the current code, record these as Fail if you see them: the Greek badge <code>Best seller</code> (<code>shop.badges.bestseller</code> is English in <code>el.json</code>), the English accessible names <code>Primary</code> (header and mobile menu), <code>Breadcrumb</code>, <code>Categories</code> and <code>… out of 5</code> (star ratings) on the Greek site, and the change from formal to informal Greek (<code>Ζήτησε καινούριο</code>, <code>Η λίστα σου είναι άδεια</code>) in account and wishlist texts.</li>
+      </ul>
+      <p class="ref">Ref: <code>messages/el.json</code> · <code>messages/en.json</code> · <code>src/components/layout/Header.tsx</code> · <code>src/components/shop/Breadcrumbs.tsx</code> · <code>src/components/shop/CategoryNav.tsx</code> · <code>src/components/shop/ReviewStars.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-016" data-priority="P2">
+      <h3>el.json and en.json have the same keys</h3>
+      <ol class="steps">
+        <li>In the project folder run:
+<pre><code>node -e '
+const f=(o,p="")=&gt;Object.entries(o).flatMap(([k,v])=&gt;v&amp;&amp;typeof v==="object"?f(v,p+k+"."):[p+k]);
+const el=f(require("./messages/el.json")), en=f(require("./messages/en.json"));
+console.log("el",el.length,"en",en.length);
+console.log("only el",el.filter(k=&gt;!en.includes(k)));
+console.log("only en",en.filter(k=&gt;!el.includes(k)));'</code></pre></li>
+        <li>Search both files for empty values: <code>grep -n '": ""' messages/*.json</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both files have the same number of keys (552 on the current branch) and both “only” lists are <code>[]</code>. No empty values. A different count or a non-empty list means a missing translation: mark Fail and list the keys.</p>
+      <p class="ref">Ref: <code>messages/el.json</code> · <code>messages/en.json</code> · <code>src/lib/i18n/request.ts</code></p>
+    </article>
+
+    <article class="tc" id="PUB-017" data-priority="P3">
+      <h3>Placeholder texts that do not follow Branding</h3>
+      <ol class="steps">
+        <li>Note the site name in Settings → Branding (for example <code>QA Brand</code> from MED-030).</li>
+        <li>On <code>/</code> and <code>/en</code> read the footer copyright, the home newsletter description, the logo link's accessible name, and the page source's <code>&lt;meta name="description"&gt;</code> of the home page.</li>
+        <li>Submit the contact form while mail is broken (MKT-018) and read the error.</li>
+      </ol>
+      <ul class="exp">
+        <li>Per the current code these come from the message files, not from Branding: <code>© &lt;year&gt; Site.</code>, <code>… από το Site …</code> / <code>… from Site …</code>, <code>Site — αρχική σελίδα</code> / <code>Site — home</code>, home description <code>Site</code>, and the contact error <code>… info@example.com.</code>. On a site going live these must be replaced by the real name and address; record each one that still says “Site” or <code>example.com</code> as a Fail for launch.</li>
+      </ul>
+      <p class="ref">Ref: <code>messages/*.json</code> (<code>footer.copyright</code>, <code>home.metaDescription</code>, <code>home.newsletter.description</code>, <code>header.logoAlt</code>, <code>contact.form.error</code>)</p>
+    </article>
+
+    <article class="tc" id="PUB-018" data-priority="P2">
+      <h3>Prices in euro, per language</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> A product priced <code>1234.5</code> and one priced <code>49.99</code> with a sale price (create them for this case), currency EUR.</p>
+      <ol class="steps">
+        <li>Open the shop listing, both product pages, the cart drawer and the checkout summary in Greek, then in English.</li>
+        <li>Open a booking experience and pick a date to see the price breakdown, in both languages.</li>
+      </ol>
+      <ul class="exp">
+        <li>Greek: <code>1.234,50 €</code> and <code>49,99 €</code>: decimal comma, dot for thousands, the euro sign after the number with a space.</li>
+        <li>English: <code>€1,234.50</code> and <code>€49.99</code>: sign first, decimal point, comma for thousands.</li>
+        <li>The same format everywhere on a page (listing, product, cart, checkout, booking form, booking pay page, order lookup, account orders, emails of checklists 08 and 09). Any <code>49.99 EUR</code>, <code>€49,99</code> or bare <code>49.99</code> on the Greek site is a Fail.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/lib/money.ts</code> (<code>formatPrice</code>) · <code>src/cms/modules/commerce/read.ts</code> · <code>src/cms/modules/commerce/orders.ts</code> (<code>formatMoney</code>)</p>
+    </article>
+
+    <article class="tc" id="PUB-019" data-priority="P2">
+      <h3>Dates per language</h3>
+      <ol class="steps">
+        <li>Open the booking calendar on <code>/booking/&lt;x&gt;</code>, pick a date, and read the date in the form summary; then open <code>/booking/lookup</code> with a reference. Do both in Greek and English.</li>
+        <li>Open <code>/account/orders</code> and a product with reviews, in both languages.</li>
+      </ol>
+      <ul class="exp">
+        <li>Greek dates use Greek month names and day-month order (for example <code>6 Μαΐ</code>, <code>6 Μαΐου 2026</code>); English uses day-month order too (<code>6 May</code>, <code>6 May 2026</code>). The calendar's month and weekday names follow the page language, and the week starts on Monday in both.</li>
+        <li>No date appears in ISO form (<code>2026-05-06</code>) or in US order (<code>5/6/2026</code>) on either site. Review dates on the English site use <code>en-US</code> formatting per the code (<code>May 6, 2026</code>); record it if it differs from the other English dates.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/booking/booking-form-types.ts</code> (<code>formatDay</code>) · <code>src/lib/content-dates.ts</code> · <code>src/components/shop/ProductReviews.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-020" data-priority="P3">
+      <h3>Other numbers per language</h3>
+      <ol class="steps">
+        <li>Give a product reviews averaging 4.5 (COM-105, COM-106). Open it on <code>/shop/&lt;p&gt;</code> and <code>/en/shop/&lt;p&gt;</code>.</li>
+        <li>Filter <code>/booking</code> down to exactly one experience, then to several, and read the result count in both languages. Read the guests counter in the booking form.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Counts read naturally in each language. Per the current code the message has no singular form (<code>{count} εμπειρίες</code> / <code>{count} experiences</code>), so one result reads <code>1 εμπειρίες</code> / <code>1 experiences</code>: mark Fail. The rating on the Greek site should read <code>4,5</code>; per the current code it prints <code>4.5</code> in both languages (<code>toFixed(1)</code>): mark Fail on the Greek site.</p>
+      <p class="ref">Ref: <code>src/components/shop/ProductShowcase.tsx</code> · <code>src/components/shop/ProductReviews.tsx</code> · <code>src/components/shop/ReviewStars.tsx</code> · <code>messages/*.json</code> (<code>booking.resultCount</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-home">
+    <h2>Home page sections</h2>
+    <p class="intro">The home page is the hero (from the page with slug <code>home</code>), the latest-content block, the newsletter section and the closing contact call to action. CON-094 covers editing the home page; MKT-032 the newsletter section.</p>
+
+    <article class="tc" id="PUB-021" data-priority="P2">
+      <h3>Home with nothing published</h3>
+      <ol class="steps">
+        <li>Set the <code>home</code> page to draft in both languages and switch the Newsletter module off.</li>
+        <li>Open <code>/</code> and <code>/en</code> signed out.</li>
+        <li>Restore both afterwards.</li>
+      </ol>
+      <ul class="exp">
+        <li>The hero heading is the site name from Branding, with the tagline under it if one is set, and the button <strong>Επικοινωνία</strong> / <strong>Contact us</strong> to <code>/contact</code>. No hero image and no empty image box.</li>
+        <li>The closing band reads <code>Επικοινωνήστε μαζί μας</code>, <code>Έχετε απορίες; Θα χαρούμε να βοηθήσουμε.</code> / <code>Get in touch</code>, <code>Questions? We are happy to help.</code> with a button to <code>/contact</code>.</li>
+        <li>No newsletter section and no empty strip where it was. No error, no raw key, no layout gap.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/[locale]/page.tsx</code> · <code>src/components/site/HomeSections.tsx</code> (<code>HomeHero</code>, <code>ContactCta</code>) · <code>src/components/site/HomeNewsletter.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-022" data-priority="P2">
+      <h3>Home with the home page published and a hero image</h3>
+      <ol class="steps">
+        <li>Publish <code>home</code> in both languages with different titles and body text, and a <strong>Hero image</strong>. Switch Newsletter on.</li>
+        <li>Open <code>/</code> and <code>/en</code>; inspect the hero image.</li>
+      </ol>
+      <ul class="exp">
+        <li>Each language shows its own title as the only <code>h1</code> and its own body. The image sits beside the text from 768 px and under it below that.</li>
+        <li>The image is served through <code>/_next/image</code> with a <code>srcset</code> and <code>sizes="(max-width: 768px) 100vw, 50vw"</code>, is loaded eagerly (it is the likely LCP element), and has <code>alt=""</code> (treated as decorative).</li>
+        <li>The newsletter section appears once, between the latest-content block (if any) and the contact band, and the footer has no second signup (MKT-032).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/site/HomeSections.tsx</code> (<code>HomeHero</code>)</p>
+    </article>
+
+    <article class="tc" id="PUB-023" data-priority="P3">
+      <h3>The latest-content block and its empty state</h3>
+      <ol class="steps">
+        <li>On <code>/</code> look for a section titled <code>Πρόσφατα</code> / <code>Latest</code>.</li>
+        <li>On a site generated with a blog, FAQ or case-studies collection (new-site skill), open <code>/</code> before anything is published in them, then after publishing one article.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1 on the CMS base: no such section, because the base registers none of the article, answer or case-study collections. That is correct.</li>
+        <li>Step 2: before publishing, the block shows <code>Νέο περιεχόμενο θα εμφανιστεί εδώ μόλις δημοσιευτεί.</code> / <code>New content will appear here once it is published.</code>; after, a group per collection with its title, a link to the listing and up to three items (CON-099).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/site/HomeSections.tsx</code> (<code>LatestContent</code>, <code>FAMILIES</code>) · <code>src/site.config.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-images">
+    <h2>Images</h2>
+
+    <article class="tc" id="PUB-024" data-priority="P2">
+      <h3>Responsive image sizes</h3>
+      <ol class="steps">
+        <li>Open a CMS page with a hero image (<code>/qa-seo</code> from MED-029 or <code>/about</code> with a hero) with developer tools → Network → Img, at 375 px and then at 1440 px, reloading each time with the cache disabled.</li>
+        <li>Do the same on <code>/shop</code>, a product page and <code>/booking</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>CMS page and home hero: the <code>w=</code> in the <code>/_next/image</code> request is smaller at 375 px than at 1440 px, and the response is AVIF or WebP.</li>
+        <li>Shop cards, product gallery, cart thumbnails and booking cards use the file URL <code>/api/cms/media/file/&lt;uuid&gt;</code> directly (no <code>srcset</code>), so a phone downloads the full stored image (up to 1600×1200, MED-004). Record the largest image weight on <code>/shop</code> at 375 px; above about 200 KB per card counts toward the performance findings in PUB-044.</li>
+        <li>No image is visibly stretched or squashed at either width.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/[locale]/[slug]/page.tsx</code> (<code>next/image</code>) · <code>src/components/shop/ProductCard.tsx</code> · <code>src/components/booking/BookingCard.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-025" data-priority="P2">
+      <h3>Lazy loading below the fold</h3>
+      <ol class="steps">
+        <li>With at least 12 products with images, open <code>/shop</code> at 375 px with Network → Img open and the cache disabled. Do not scroll; count the image requests. Then scroll to the bottom.</li>
+        <li>Repeat on <code>/booking</code> with several experiences.</li>
+      </ol>
+      <ul class="exp">
+        <li>Booking cards and the experience gallery carry <code>loading="lazy"</code>: images further down load only when scrolled near.</li>
+        <li>Per the current code product card images have no <code>loading="lazy"</code>, so all of them load at once; record the count and mark Fail if it slows the page noticeably (see PUB-044).</li>
+        <li>Above-the-fold heroes are never lazy (they use <code>priority</code>).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/shop/ProductCard.tsx</code> · <code>src/components/booking/BookingCard.tsx</code> · <code>src/app/[locale]/booking/[slug]/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-026" data-priority="P2">
+      <h3>Alt text on every image</h3>
+      <ol class="steps">
+        <li>On <code>/</code>, <code>/about</code>, <code>/shop</code>, a product page, <code>/booking</code>, an experience page, <code>/wishlist</code> (with an item) and the cart drawer, run in the console:
+<pre><code>[...document.images].map(i =&gt; [i.getAttribute('alt'), i.currentSrc.slice(-40)])</code></pre></li>
+        <li>Set an alt text on a product image in the media library (MED-019) and reload its product page.</li>
+      </ol>
+      <ul class="exp">
+        <li>No image lacks the <code>alt</code> attribute (<code>null</code> in the output).</li>
+        <li>Informative images have a meaningful alt: logo = site name, product image = its alt or the product name, gallery thumbnails = alt or <code>&lt;name&gt; 2</code>, cart and compare images = product name.</li>
+        <li><code>alt=""</code> appears only where the image is decorative or the name is written right next to it: home hero, booking cards, wishlist rows, testimonial avatars, popup image.</li>
+        <li>Step 2: the product image now uses the library alt text (see MED-021 for where it is and is not used).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/shop/ProductCard.tsx</code> · <code>src/components/shop/ProductShowcase.tsx</code> · <code>src/components/layout/Header.tsx</code> · <code>src/app/[locale]/wishlist/WishlistClient.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-forms">
+    <h2>Forms</h2>
+    <p class="intro">Applies to every public form: contact, newsletter (footer and home), cookie preferences, checkout, gift card and discount code, booking form, order and booking lookup, sign-in, register, forgot, reset, profile and addresses. Each form's own rules are tested in 07, 08 and 09.</p>
+
+    <article class="tc" id="PUB-027" data-priority="P2">
+      <h3>Every field has a visible label tied to it</h3>
+      <ol class="steps">
+        <li>On each form listed above click on each label's text.</li>
+        <li>In developer tools → Accessibility (Chrome) or the Accessibility inspector (Firefox), check each input's computed name.</li>
+      </ol>
+      <ul class="exp">
+        <li>Clicking a label puts the cursor in its field (or ticks its box). Every input, select and textarea has a name matching its visible label; placeholders are never the only label (the newsletter email has <code>Email</code> as its label, <code>name@example.com</code> only as placeholder).</li>
+        <li>Required fields are marked visibly (for example <code>*</code> in checkout) and not by colour alone. Email, name, phone and address fields carry a fitting <code>autocomplete</code> value.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/site/ContactForm.tsx</code> · <code>src/components/ui/Input.tsx</code> · <code>src/app/[locale]/checkout/CheckoutClient.tsx</code> · <code>src/components/account/AccountForms.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-028" data-priority="P2">
+      <h3>Error messages are shown at the field and announced</h3>
+      <ol class="steps">
+        <li>On <code>/contact</code> submit the form empty, then with <code>a@b</code> as email.</li>
+        <li>Do the same on <code>/en/checkout</code> (tick the terms and press Place order with empty fields), the booking form, <code>/account/register</code> and <code>/order</code>.</li>
+        <li>Repeat step 1 with a screen reader running.</li>
+      </ol>
+      <ul class="exp">
+        <li>Contact: under Όνομα and Μήνυμα <code>Το πεδίο είναι υποχρεωτικό.</code>, under Email <code>Εισάγετε μια έγκυρη διεύθυνση email.</code>; the fields get a red border and <code>aria-invalid="true"</code> and the message is linked with <code>aria-describedby</code>, so the screen reader reads it when you tab into the field.</li>
+        <li>Errors are text, not colour alone, in the page's language, and say how to fix the problem.</li>
+        <li>Per the current code no public form moves focus to the first invalid field after a failed submit, and the checkout fields have no <code>aria-invalid</code> or <code>aria-describedby</code>. Record which forms leave a screen-reader user without an announcement of the errors (WCAG 3.3.1, 4.1.3) and mark those Fail.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/site/ContactForm.tsx</code> · <code>src/app/[locale]/checkout/CheckoutClient.tsx</code> · <code>src/components/booking/BookingForm.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-029" data-priority="P2">
+      <h3>Submitting with the keyboard</h3>
+      <ol class="steps">
+        <li>On <code>/contact</code>, <code>/order</code>, <code>/booking/lookup</code>, <code>/account/login</code> and the footer newsletter, fill the fields with Tab only and press Enter in the last text field.</li>
+        <li>On the checkout tick the terms box with Space and submit with Enter on <strong>Place order</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Enter submits each form (a textarea takes Enter as a new line, which is correct; tab to the button and press Enter there). While sending, the button shows the busy text (<code>Αποστολή…</code>, <code>Αναζήτηση…</code>) and cannot be pressed twice. The result message (<code>Ευχαριστούμε — το μήνυμά σας στάλθηκε.</code>, lookup result, error) appears without a mouse and is announced by a screen reader (<code>role="status"</code> or <code>role="alert"</code>).</p>
+      <p class="ref">Ref: <code>src/components/site/ContactForm.tsx</code> · <code>src/app/[locale]/order/OrderLookupClient.tsx</code> · <code>src/app/[locale]/booking/lookup/BookingLookupClient.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-a11y">
+    <h2>Accessibility (WCAG 2.2 AA)</h2>
+    <p class="intro">Page types: home, CMS page, contact, shop listing, product, cart drawer, checkout, booking listing, experience with booking form, lookup pages, account pages, cookie policy, not-found. Optionally run the axe DevTools extension on each and attach its report; automated tools find only part of the problems, so do the manual steps too.</p>
+
+    <article class="tc" id="PUB-030" data-priority="P1">
+      <h3>Skip link</h3>
+      <ol class="steps">
+        <li>On <code>/about</code> click the address bar and press Tab once.</li>
+        <li>Press Enter, then Tab once more.</li>
+        <li>Repeat on <code>/en/shop</code> and, signed in as admin, on <code>/about</code> (with the admin bar).</li>
+      </ol>
+      <ul class="exp">
+        <li>The first Tab shows a dark box at the top left reading <code>Μετάβαση στο περιεχόμενο</code> (<code>Skip to content</code> in English).</li>
+        <li>Enter moves to the main content: the next Tab lands on the first link or control inside the page body, not on the header. Check this in Safari as well (some browsers do not move focus to a target without <code>tabindex</code>; if Safari's next Tab lands in the header, mark Fail for Safari).</li>
+        <li>With the admin bar, the skip link is still the first stop.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/[locale]/layout.tsx</code> (skip link, <code>&lt;main id="main-content"&gt;</code>)</p>
+    </article>
+
+    <article class="tc" id="PUB-031" data-priority="P2">
+      <h3>Keyboard-only use of every page type</h3>
+      <ol class="steps">
+        <li>Unplug or ignore the mouse. On each page type above Tab through the whole page, and use every control: menu, switcher, filters and sort, pagination, variation choice and quantity, add to cart, wishlist and compare buttons, cart drawer (open, change quantity, remove, close), checkout fields and shipping choice, booking calendar (arrow keys if supported, Enter to pick), guests and extras, cookie banner and preferences, popup close.</li>
+        <li>Complete one guest order with a manual payment method and one booking request with the keyboard only.</li>
+      </ol>
+      <ul class="exp">
+        <li>Everything a mouse can do can be done by keyboard; the order follows the visual order; nothing traps focus except open dialogs (cart drawer, mobile menu, cookie preferences, popup), which release it on Escape and return focus to the control that opened them.</li>
+        <li>No focus lands on invisible items (closed menu, closed drawer, honeypot field). Step 2 finishes with the confirmation page or message.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/ui/use-dialog.ts</code> · <code>src/components/shop/cart/CartDrawer.tsx</code> · <code>src/components/booking/BookingForm.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-032" data-priority="P2">
+      <h3>Focus is always visible</h3>
+      <ol class="steps">
+        <li>During PUB-031 watch the focus indicator on every stop, including links on the dark footer, the dark contact band, the cookie banner and the admin bar.</li>
+        <li>Check that the focused element is never hidden behind the sticky header, the cookie banner or the compare tray when tabbing down a long page.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Every stop shows an outline or ring with at least 3:1 contrast against its background (WCAG 2.4.7, 2.4.13 advisory). Header menu links rely on the browser's default outline; record the browser if it is invisible or faint. A focused element is never fully covered by a sticky header or banner (WCAG 2.2 2.4.11); if the cookie banner covers a focused footer link, mark Fail.</p>
+      <p class="ref">Ref: <code>src/components/layout/Header.tsx</code> · <code>src/components/ui/Button.tsx</code> · <code>src/components/layout/CookieBanner.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-033" data-priority="P2">
+      <h3>Landmarks and heading order</h3>
+      <ol class="steps">
+        <li>On each page type list landmarks and headings (NVDA: Insert+F7; VoiceOver: rotor; or the <em>HeadingsMap</em> extension and the accessibility tree).</li>
+        <li>On <code>/booking</code>, <code>/booking/&lt;x&gt;</code>, <code>/booking/lookup</code> run <code>document.querySelectorAll('main').length</code> in the console.</li>
+      </ol>
+      <ul class="exp">
+        <li>Each page has one banner (header), one main, one contentinfo (footer), and named navigation regions. The two footer column titles are <code>h2</code>.</li>
+        <li>Exactly one <code>h1</code> per page, matching the page title; headings go down one level at a time (<code>h1</code> → <code>h2</code> → <code>h3</code>) without skipping.</li>
+        <li>Per the current code the booking listing, experience, lookup and pay pages put a second <code>&lt;main&gt;</code> inside the layout's <code>&lt;main&gt;</code>, so step 2 prints <code>2</code>: mark Fail. The header and mobile menus are both named <code>Primary</code> in English on the Greek site (see PUB-015).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/[locale]/layout.tsx</code> · <code>src/app/[locale]/booking/page.tsx</code> · <code>src/app/[locale]/booking/[slug]/page.tsx</code> · <code>src/app/[locale]/booking/lookup/page.tsx</code> · <code>src/app/[locale]/booking/pay/[reference]/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-034" data-priority="P2">
+      <h3>Colour contrast of the brand colours</h3>
+      <ol class="steps">
+        <li>With the default palette, check with a contrast tool (developer tools colour picker, WebAIM checker or axe): body text, muted text, header links, footer text on navy, footer small print, buttons (primary, secondary, ghost), sale badge, error text, placeholder text, disabled buttons.</li>
+        <li>In Settings → Branding set a light accent colour that triggers the contrast warning (MED-033), save anyway, and recheck buttons and links. Reset afterwards.</li>
+      </ol>
+      <ul class="exp">
+        <li>Normal text at least 4.5:1, large text and UI parts (input borders, icons, focus rings) at least 3:1. Defaults: text <code>#111827</code> and muted <code>#4b5563</code> on white pass; <code>#9ca3af</code> (text-light) is below 4.5:1 and may only be used for decoration (the <code>|</code> between EL and EN) or disabled items; the input border <code>#e5e7eb</code> on white is below 3:1: record it (WCAG 1.4.11).</li>
+        <li>Step 2: record which elements fall below the limits with the owner's colours; the admin warns but does not prevent it.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/globals.css</code> (<code>@theme</code> colours) · <code>src/cms/core/brand/BrandStyle.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-035" data-priority="P2">
+      <h3>Zoom to 200%, text spacing, reflow at 320 px</h3>
+      <ol class="steps">
+        <li>At 1280 px window width, zoom the browser to 200% on the home, a product, checkout and an experience page.</li>
+        <li>Set the width to 320 px at 100% zoom on the same pages.</li>
+        <li>Apply larger text spacing (a bookmarklet or extension that sets line height 1.5, letter spacing 0.12em, word spacing 0.16em, paragraph spacing 2em).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> All content and functions remain available; at 200% the mobile header takes over and the menu works. At 320 px there is no horizontal scrolling except inside data tables (the compare table may scroll inside its own box). No text is clipped or overlapping under the larger spacing; buttons grow instead of cutting their labels (WCAG 1.4.4, 1.4.10, 1.4.12).</p>
+      <p class="ref">Ref: <code>src/app/globals.css</code> · <code>src/components/shop/compare/CompareClient.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-036" data-priority="P3">
+      <h3>Reduced motion is respected</h3>
+      <ol class="steps">
+        <li>Turn on reduced motion (Windows: Settings → Accessibility → Visual effects → Animation effects off; macOS/iOS: Reduce motion; or Chrome developer tools → Rendering → Emulate <code>prefers-reduced-motion: reduce</code>).</li>
+        <li>Open a booking experience and pick a date (the form sections that appear), open the mobile menu, the cart drawer, hover product cards, and scroll a long page with the sticky header.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The booking form sections appear without sliding in, and the sticky call-to-action button has no transition. Other effects are short colour or opacity fades, which are allowed. Record any slide, zoom (the product image scales slightly on hover) or smooth scroll that still runs; none must flash more than three times a second.</p>
+      <p class="ref">Ref: <code>src/app/globals.css</code> (<code>.booking-reveal</code>) · <code>src/components/ui/StickyAnchorCta.tsx</code> · <code>src/components/shop/ProductCard.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-037" data-priority="P2">
+      <h3>Screen reader: home page and cookie banner</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Fresh private window (banner shows). NVDA with Firefox or Chrome, or VoiceOver with Safari.</p>
+      <ol class="steps">
+        <li>Open <code>/</code>. Let the screen reader read from the top, then navigate by landmarks and headings.</li>
+        <li>Move to the cookie banner, open <strong>Προτιμήσεις</strong>, change a category and save.</li>
+      </ol>
+      <ul class="exp">
+        <li>The page title and language are right (Greek text is read with a Greek voice when one is installed). The skip link, logo link name, menu items, switcher and icon buttons (wishlist, account, cart with its count) all have spoken names.</li>
+        <li>The banner is a region named <code>Συγκατάθεση cookies</code>; its buttons are read with their text; the preferences toggle announces expanded or collapsed; each category switch announces its name and state, and the necessary one is announced as unavailable or always on.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/layout/CookieBanner.tsx</code> · <code>src/components/layout/Header.tsx</code> · MKT-049 to MKT-054</p>
+    </article>
+
+    <article class="tc" id="PUB-038" data-priority="P2">
+      <h3>Screen reader: product page</h3>
+      <ol class="steps">
+        <li>Open a variable product. Navigate its gallery, price, variation choice, quantity, <strong>Add to cart</strong>, wishlist and compare buttons, and reviews.</li>
+        <li>Choose a variation and add it to the cart.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Breadcrumbs are a named navigation. The price is read as one value (with the sale and original price distinguishable, not only by strike-through). Variation choices announce their name and selected state; an unavailable choice is announced as such. Adding to cart opens the drawer and the screen reader moves into it or announces the added item. The star rating is read as a number of stars (see PUB-015 for its language).</p>
+      <p class="ref">Ref: <code>src/components/shop/ProductShowcase.tsx</code> · <code>src/components/shop/cart/CartDrawer.tsx</code> · <code>src/components/shop/ReviewStars.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-039" data-priority="P2">
+      <h3>Screen reader: booking form</h3>
+      <ol class="steps">
+        <li>On <code>/booking/&lt;x&gt;</code> fill in the form with the screen reader: calendar, guests, extras, details, terms, submit. Submit once with a required field empty.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The calendar announces the month, each day's date and whether it is available or chosen; previous and next month buttons have names. When a date is picked, the newly shown sections and the price are announced or reachable in order. The guests control announces its value and limits. Errors are announced (see PUB-028). The final confirmation is announced.</p>
+      <p class="ref">Ref: <code>src/components/booking/BookingForm.tsx</code> · <code>src/components/booking/TransportFields.tsx</code> · <code>src/components/booking/booking-form-fields.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-040" data-priority="P2">
+      <h3>Screen reader: checkout</h3>
+      <ol class="steps">
+        <li>With two items in the cart, go through <code>/checkout</code> with the screen reader: contact details, shipping, method choice, gift card, discount code, account box, gift options, summary, terms, Place order. Apply a wrong discount code once.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Each group has a heading or legend that is read; radio groups (shipping methods, payment) announce their group name and the chosen option; totals update and the new total is readable after a change of method or code; the wrong-code message is announced. Record any field whose error is not announced (PUB-028).</p>
+      <p class="ref">Ref: <code>src/app/[locale]/checkout/CheckoutClient.tsx</code> · <code>src/components/checkout/GiftCardField.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-responsive">
+    <h2>Responsive layout &amp; browsers</h2>
+
+    <article class="tc" id="PUB-041" data-priority="P1">
+      <h3>No horizontal scroll at five widths</h3>
+      <ol class="steps">
+        <li>At each width in the table open the listed pages and scroll top to bottom. In the console run <code>document.documentElement.scrollWidth &gt; innerWidth</code>.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>OK</th><th>Width</th><th>Pages</th></tr></thead>
+          <tbody>
+          <tr><td><input type="checkbox" aria-label="320 px checked"></td><td>320 px</td><td><code>/</code>, <code>/about</code>, <code>/shop</code>, product, <code>/checkout</code>, experience, <code>/account</code>, not-found</td></tr>
+          <tr><td><input type="checkbox" aria-label="375 px checked"></td><td>375 px</td><td>same pages, plus cart drawer, cookie banner, mobile menu, compare tray</td></tr>
+          <tr><td><input type="checkbox" aria-label="768 px checked"></td><td>768 px</td><td>same pages; header switches to desktop here</td></tr>
+          <tr><td><input type="checkbox" aria-label="1024 px checked"></td><td>1024 px</td><td>same pages</td></tr>
+          <tr><td><input type="checkbox" aria-label="1440 px checked"></td><td>1440 px</td><td>same pages; content stays within the centred column</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Expected:</span> The console prints <code>false</code> on every page at every width. Nothing is cut off, overlapping or unreachable; tap targets on phones are at least 24×24 px (WCAG 2.5.8); long Greek words and long product names wrap instead of overflowing.</p>
+      <p class="ref">Ref: <code>src/components/layout/Header.tsx</code> · <code>src/app/globals.css</code></p>
+    </article>
+
+    <article class="tc" id="PUB-042" data-priority="P2">
+      <h3>Chrome, Firefox and Safari / iOS</h3>
+      <ol class="steps">
+        <li>In current Chrome, Firefox and Safari (macOS), and in Safari on an iPhone, repeat PUB-006, PUB-012 and a guest order and booking request (PUB-031 step 2, with the mouse or touch).</li>
+        <li>On the iPhone also check the mobile menu, the cart drawer, the date picker, the on-screen keyboard over checkout fields, and rotation to landscape.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The same result in every browser: fonts load, layout and icons match, the cart persists, forms submit, payment redirects and returns work. On iOS inputs do not zoom the page on focus (font size at least 16 px), the drawer and menu are not hidden under the browser bars, and the page does not jump when the keyboard opens. Record the browser versions.</p>
+      <p class="ref">Ref: docs/dev-guides/01-architecture.md</p>
+    </article>
+
+    <article class="tc" id="PUB-043" data-priority="P3">
+      <h3>Samsung Internet spot-check</h3>
+      <ol class="steps">
+        <li>On an Android phone with Samsung Internet open <code>/</code>, <code>/shop</code>, a product, add to cart, open <code>/checkout</code>, open an experience and pick a date. Switch the browser's dark mode on and repeat <code>/</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Pages look and behave as in Chrome on Android. With Samsung's forced dark mode, text remains readable and logos visible; record anything unreadable (the site has no dark theme of its own).</p>
+      <p class="ref">Ref: <code>src/app/globals.css</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-perf">
+    <h2>Performance</h2>
+    <p class="intro">Production build only. Run Lighthouse from Chrome developer tools → Lighthouse, mode Navigation, device Mobile, all categories, in a private window with no extensions, three runs per page, and record the median. On a non-production origin the SEO score loses points for the blocking robots rules (SET-076); ignore that one audit.</p>
+
+    <article class="tc" id="PUB-044" data-priority="P2">
+      <h3>Lighthouse mobile: home, listing and detail pages</h3>
+      <ol class="steps">
+        <li>Run Lighthouse on each page in the table and fill in the scores in the notes.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>OK</th><th>Page</th><th>Performance</th><th>Accessibility</th><th>Best practices</th><th>SEO</th></tr></thead>
+          <tbody>
+          <tr><td><input type="checkbox" aria-label="Home Lighthouse ok"></td><td><code>/</code></td><td>≥ 90</td><td>≥ 95</td><td>≥ 95</td><td>≥ 95</td></tr>
+          <tr><td><input type="checkbox" aria-label="About Lighthouse ok"></td><td><code>/about</code></td><td>≥ 90</td><td>≥ 95</td><td>≥ 95</td><td>≥ 95</td></tr>
+          <tr><td><input type="checkbox" aria-label="Shop Lighthouse ok"></td><td><code>/shop</code></td><td>≥ 80</td><td>≥ 95</td><td>≥ 95</td><td>≥ 95</td></tr>
+          <tr><td><input type="checkbox" aria-label="Booking Lighthouse ok"></td><td><code>/booking</code></td><td>≥ 80</td><td>≥ 95</td><td>≥ 95</td><td>≥ 95</td></tr>
+          <tr><td><input type="checkbox" aria-label="Product Lighthouse ok"></td><td><code>/shop/&lt;p&gt;</code></td><td>≥ 80</td><td>≥ 95</td><td>≥ 95</td><td>≥ 95</td></tr>
+          <tr><td><input type="checkbox" aria-label="Experience Lighthouse ok"></td><td><code>/booking/&lt;x&gt;</code></td><td>≥ 80</td><td>≥ 95</td><td>≥ 95</td><td>≥ 95</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Expected:</span> Every score meets its threshold (these are the targets for this checklist; agree different ones with the owner if needed). For any miss, copy the top three opportunities from the report into the notes (typical here: full-size product images, PUB-024; images without lazy loading, PUB-025).</p>
+      <p class="ref">Ref: docs/dev-guides/06-media-seo-structured-data.md · <code>next.config.ts</code> (<code>images</code>)</p>
+    </article>
+
+    <article class="tc" id="PUB-045" data-priority="P2">
+      <h3>Core Web Vitals targets</h3>
+      <ol class="steps">
+        <li>From the Lighthouse runs of PUB-044 note LCP and CLS, and the LCP element.</li>
+        <li>For INP open Chrome developer tools → Performance (live metrics), then on a product page change the variation, add to cart, open and close the drawer; on an experience page pick a date and change guests; on <code>/shop</code> apply a filter.</li>
+        <li>If the site is public and has traffic, also read the field data in PageSpeed Insights.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> LCP ≤ 2.5 s, CLS ≤ 0.1, INP ≤ 200 ms (Google's “good” limits) on every page. The LCP element is the hero image or the page heading, not a late-loading card. No layout shift when the cookie banner, admin bar, fonts (Inter with <code>display: swap</code>) or prices appear.</p>
+      <p class="ref">Ref: <code>src/lib/fonts.ts</code> · <code>src/components/site/HomeSections.tsx</code> (<code>priority</code>)</p>
+    </article>
+
+    <article class="tc" id="PUB-046" data-priority="P2">
+      <h3>Caching headers on pages, static files and images</h3>
+      <ol class="steps">
+        <li>Run:
+<pre><code>curl -s -I "$BASE/about" | grep -i cache-control
+JS=$(curl -s "$BASE/" | grep -o '/_next/static/[^"]*\.js' | head -1); curl -s -I "$BASE$JS" | grep -i cache-control
+FONT=$(curl -s "$BASE/" | grep -o '/_next/static/media/[^"]*\.woff2' | head -1); curl -s -I "$BASE$FONT" | grep -i cache-control
+curl -s -I "$BASE/favicon.svg" | grep -i cache-control</code></pre></li>
+        <li>In developer tools → Network, reload a page with a hero and a product list and read the <code>Cache-Control</code> of one <code>/_next/image</code> request and one <code>/api/cms/media/file/…</code> request. Reload again (without disabling the cache) and check what is served from cache.</li>
+      </ol>
+      <ul class="exp">
+        <li>HTML pages: not cached publicly (<code>private, no-cache, no-store, max-age=0, must-revalidate</code>), since every page is rendered per request.</li>
+        <li><code>/_next/static/…</code> scripts, styles and fonts: <code>public, max-age=31536000, immutable</code>. <code>/favicon.svg</code>: <code>public, max-age=86400, stale-while-revalidate=604800</code>. Media files: <code>public, max-age=31536000, immutable</code> (MED-026). <code>/_next/image</code>: public with a non-zero <code>max-age</code>; record the value.</li>
+        <li>The second reload serves static files and images from the browser cache (no new download).</li>
+      </ul>
+      <p class="ref">Ref: <code>next.config.ts</code> (<code>headers()</code>) · <code>src/app/[locale]/layout.tsx</code> (<code>dynamic = 'force-dynamic'</code>) · <code>src/app/api/cms/media/file/[uuid]/route.ts</code></p>
+    </article>
+
+    <article class="tc" id="PUB-047" data-priority="P1">
+      <h3>No console errors and no failed requests</h3>
+      <ol class="steps">
+        <li>With the console and Network tab open (Preserve log on), walk through: <code>/</code>, <code>/about</code>, <code>/contact</code>, <code>/shop</code>, a product, add to cart, <code>/checkout</code>, <code>/booking</code>, an experience with a date picked, <code>/account/login</code>, the not-found page; then accept the cookie banner. Do it in Greek and in English.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> No red console errors (no hydration mismatch, no CSP violation, no failed chunk, no <code>MISSING_MESSAGE</code>). No request with status 4xx or 5xx other than the intended ones (the <code>307</code> to the not-found page, <code>404</code> of a missing product). No request to a third-party host before consent; after Accept all, Google Analytics loads only when an ID is set (MKT-079). Record every error with its page.</p>
+      <p class="ref">Ref: <code>next.config.ts</code> (<code>PRODUCTION_CSP</code>) · <code>src/components/layout/AnalyticsLoader.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-048" data-priority="P3">
+      <h3>Fonts and third parties are self-hosted</h3>
+      <ol class="steps">
+        <li>On <code>/</code> in Network filter by Font, then by Domain (or use “Third-party” filter in Chrome).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Font files come from <code>/_next/static/media/</code> on the site itself; no request goes to <code>fonts.googleapis.com</code> or <code>fonts.gstatic.com</code>. Greek text uses Inter (the Greek subset is loaded), not a fallback font. No third-party request at all before cookie consent.</p>
+      <p class="ref">Ref: <code>src/lib/fonts.ts</code> (<code>next/font/google</code>, <code>subsets: ['latin', 'latin-ext', 'greek']</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-head">
+    <h2>Favicon, theme colour &amp; print</h2>
+
+    <article class="tc" id="PUB-049" data-priority="P3">
+      <h3>Favicon, theme colour and web manifest</h3>
+      <ol class="steps">
+        <li>Run <code>curl -s "$BASE/" | grep -o '&lt;link rel="icon"[^&gt;]*&gt;\|&lt;meta name="theme-color"[^&gt;]*&gt;\|&lt;link rel="manifest"[^&gt;]*&gt;\|&lt;link rel="apple-touch-icon"[^&gt;]*&gt;'</code>.</li>
+        <li>Look at the browser tab, and on Android Chrome at the address bar colour. On an iPhone add the site to the home screen.</li>
+        <li>Run <code>curl -s -o /dev/null -w '%{http_code}\n' "$BASE/manifest.webmanifest"</code> and the same for <code>/apple-touch-icon.png</code> and <code>/favicon.ico</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>An icon link to <code>/favicon.svg</code> (or the Branding favicon, MED-031) and <code>&lt;meta name="theme-color" content="#111827"&gt;</code> (the brand's dark colour; it follows Branding). The tab shows the icon; Android's bar uses the colour.</li>
+        <li>Per the current code there is no web manifest and no apple-touch icon, so step 3 gives the not-found result (not a server error) and the iPhone home-screen icon is a screenshot. Browsers that ask for <code>/favicon.ico</code> get a 404. Record these as observations; mark Fail only if the site is meant to be installable.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/lib/seo/metadata.ts</code> (<code>icons</code>) · <code>src/app/[locale]/layout.tsx</code> (<code>generateViewport</code>) · <code>public/favicon.svg</code></p>
+    </article>
+
+    <article class="tc" id="PUB-050" data-priority="P3">
+      <h3>Printing a page</h3>
+      <ol class="steps">
+        <li>Open print preview (Ctrl+P / Cmd+P) on <code>/about</code>, a product page, <code>/legal/cookies</code> and an account order page.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The site has no print stylesheet, so the page prints as on screen. Record whether the main text is complete and readable, whether the cookie banner, popup or cart drawer print over the content, and whether the dark footer wastes ink. Mark Fail only if content is cut off or unreadable; a print stylesheet is an improvement to raise with the owner.</p>
+      <p class="ref">Ref: <code>src/app/globals.css</code> (no <code>@media print</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-resilience">
+    <h2>Error resilience &amp; the admin bar</h2>
+
+    <article class="tc" id="PUB-051" data-priority="P3">
+      <h3>Database down</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Test environment only, with shell access. Warm the site first by opening <code>/</code>, <code>/about</code> and <code>/shop</code> once.</p>
+      <ol class="steps">
+        <li>Stop the database (for example <code>sudo systemctl stop mariadb</code>, or stop its container).</li>
+        <li>Open <code>/</code>, <code>/about</code>, <code>/en/about</code>, <code>/shop</code>, a product never opened before, <code>/contact</code>, and submit the contact form. Note the status (<code>curl -s -o /dev/null -w '%{http_code}\n'</code>), the time to answer and what is shown.</li>
+        <li>Start the database again and reload the same pages without restarting the app.</li>
+      </ol>
+      <ul class="exp">
+        <li>No page shows a stack trace, SQL, a host name, a password or a file path. The contact form shows its own error message.</li>
+        <li>There is no <code>error.tsx</code> or <code>global-error.tsx</code> in <code>src/app</code>, so a page that fails shows Next.js's plain default error page (unbranded, in English, no header or footer). Settings and document reads fail soft and cached reads keep serving, so some pages may still render with old content, and uncached CMS pages may land on the not-found page instead of an error. Record what each page showed; a missing friendly branded error page is a Fail to raise.</li>
+        <li>Step 3: every page works again without a restart.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/settings/index.ts</code> (<code>getSetting</code> catch) · <code>src/proxy.ts</code> (redirect lookup fails open) · <code>src/app/</code> (no <code>error.tsx</code>)</p>
+    </article>
+
+    <article class="tc" id="PUB-052" data-priority="P3">
+      <h3>Slow network (3G) usability</h3>
+      <ol class="steps">
+        <li>In Chrome developer tools → Network set throttling to <strong>Slow 4G</strong>, then <strong>3G</strong>, and disable the cache.</li>
+        <li>Open <code>/</code>, <code>/shop</code>, a product; add to cart; go to checkout; open an experience and pick a date; submit the contact form.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Text is readable before images finish (fonts swap in, no invisible text). Buttons give feedback while waiting (busy text, disabled state) and a double click does not submit twice. Client parts that fetch (cart, quotes, calendar availability) show a loading state (<code>Φόρτωση…</code>) rather than an empty or broken box. Nothing times out on 3G. Record the time until the page is usable.</p>
+      <p class="ref">Ref: <code>messages/*.json</code> (<code>ui.loading</code>) · <code>src/components/booking/BookingForm.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-053" data-priority="P3">
+      <h3>Pages without JavaScript</h3>
+      <ol class="steps">
+        <li>Disable JavaScript (developer tools → Settings → Debugger → Disable JavaScript) and open <code>/</code>, <code>/about</code>, <code>/shop</code>, a product and <code>/legal/cookies</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Content pages, the product text and prices are present (server-rendered) and links work. Interactive parts (cart, mobile menu, forms, cookie banner) may not work; record what is missing. No page is blank.</p>
+      <p class="ref">Ref: <code>src/app/[locale]/layout.tsx</code></p>
+    </article>
+
+    <article class="tc" id="PUB-054" data-priority="P1">
+      <h3>The admin bar only for signed-in admins</h3>
+      <ol class="steps">
+        <li>In a private window open <code>/</code>, <code>/shop/&lt;p&gt;</code> and <code>/en/booking/&lt;x&gt;</code>. Then sign in to the admin in that window and reload them. Then sign in as a shop customer in another private window and open the same pages.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Visitors and customers see no admin bar and no admin address in the source; a signed-in admin sees the bar with a working Edit link on the product and experience. Details are in ADM-022 to ADM-034; run those when this case fails.</p>
+      <p class="ref">Ref: <code>src/components/admin-bar/AdminBar.tsx</code> · <code>src/lib/admin-bar.ts</code> · ADM-022, ADM-023, ADM-024, ADM-026, ADM-027</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-cleanup">
+    <h2>Clean up</h2>
+
+    <article class="tc" id="PUB-055" data-priority="P3">
+      <h3>Put the site back</h3>
+      <ol class="steps">
+        <li>Delete the page <code>QA EL Only</code> and the two price-format products from PUB-018. Put the home page, Newsletter module, English product version and brand colours back as they were (PUB-013, PUB-021, PUB-034).</li>
+        <li>Make sure the database is running (PUB-051) and switch off reduced motion, text spacing, throttling and disabled JavaScript in the browser.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> None of the QA objects of this checklist remain; PUB-002 still passes.</p>
+      <p class="ref">Ref: this checklist</p>
+    </article>
+  </section>
+
+</main>
+<footer class="page">Checklist 11 of 12. Results are saved in this browser only; use Export before clearing browser data. Afterwards delete the QA page and products, restore the home page, modules and brand colours, and make sure the database is running again (PUB-055).</footer>
+</body>
+</html>

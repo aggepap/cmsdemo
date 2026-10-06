@@ -1,0 +1,1315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Media, SEO &amp; structured data</title>
+<link rel="stylesheet" href="qa.css">
+<script src="qa.js" defer></script>
+</head>
+<body>
+<nav class="crumbs"><a href="index.html">CMS manual QA</a></nav>
+<header class="page">
+  <h1>06 · Media, SEO &amp; structured data</h1>
+  <p class="scope">The media library (allowed and refused uploads, the 10 MB limit, conversion to WebP with an AVIF companion, duplicate detection, alt text, search, paging, delete, the picker in the editor, the public file URL and its caching headers), Branding (name, logo, favicon, share image, colours) on the site, in JSON-LD and in emails, the per-document SEO &amp; AEO panel and the tags it produces in the page head (title, description, canonical, Open Graph, Twitter, robots, hreflang), the SEO screen (redirects, 404 monitor, per-path meta overrides), the SEO fields manager, sitemap.xml, the robots.txt extras, Settings → Structured data and every JSON-LD part it controls, product and booking JSON-LD, and the Product Manager (Praion.ai) bridge as far as a tester can drive it with signed requests. Slug-change redirects written by the editor, the sitemap beyond 200 pages and robots.txt itself are in checklists 01 and 03 and are referenced by ID. You need a terminal with <code>curl</code>, <code>openssl</code>, <code>sha256sum</code>, <code>file</code> and ImageMagick (<code>magick</code> or <code>convert</code>); <code>jq</code> and <code>exiftool</code> help but are optional. You also need database client access and a browser with developer tools.</p>
+</header>
+<main>
+
+  <section class="suite" id="suite-prep">
+    <h2>Before you start</h2>
+    <p class="intro">Checklist 01 must be done (migrations, seeds, superadmin <code>qa-admin@example.com</code>), with EL and EN both ticked for <strong>Editing</strong> and <strong>Public</strong> in <strong>Settings</strong> → <strong>Languages</strong>. Sign in as <code>qa-admin@example.com</code> unless a case says otherwise. URLs use <code>http://localhost:3002</code> (<code>npm run dev</code>); on a hosted test environment use its address, and read <code>.data/uploads</code> as the <code>CMS_UPLOAD_DIR</code> of that environment. Uploaded files are stored under their uuid with no extension; the uuid is what the <strong>uuid</strong> button on a Media tile copies.</p>
+    <div class="callout">
+      <p><strong>Terminal helpers.</strong> In the project folder run <code>BASE=http://localhost:3002</code>, then paste these three lines. <code>H</code> prints the head tags of a public page, <code>LD</code> prints each JSON-LD block, <code>R</code> prints the status code and redirect target of an address. They send a crawler user agent, because Next.js streams metadata into the body for ordinary browsers; with <code>Googlebot</code> the tags are in <code>&lt;head&gt;</code>. (In view-source in a normal browser the same tags can appear near the end of the document: that is expected.)</p>
+<pre><code>H()  { curl -s -A Googlebot "$BASE$1" | grep -oE '&lt;title&gt;[^&lt;]*&lt;/title&gt;|&lt;meta (name|property)="[^"]*" content="[^"]*"|&lt;link rel="(canonical|alternate|icon)"[^&gt;]*&gt;'; }
+LD() { curl -s -A Googlebot "$BASE$1" | grep -o '&lt;script type="application/ld+json"&gt;[^&lt;]*&lt;/script&gt;' | sed -e 's/&lt;script[^&gt;]*&gt;//' -e 's#&lt;/script&gt;##'; }
+R()  { curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$BASE$1"; }</code></pre>
+      <p><strong>API calls with your session.</strong> Copy the <code>cms_session</code> cookie value into <code>S</code> as described in checklist 05 (“Using curl with a session”) and add <code>-b "cms_session=$S"</code>.</p>
+      <p><strong>Validating JSON-LD.</strong> The test environment is not reachable from Google, so validate the page source as code: run <code>curl -s -A Googlebot "$BASE/&lt;path&gt;" &gt; page.html</code>, open <code>https://search.google.com/test/rich-results</code>, choose <strong>Code</strong>, paste the whole file and click <strong>Test code</strong>. For types Google does not show as rich results (WebSite, TouristTrip, Accommodation…) use <code>https://validator.schema.org</code> → <strong>Code snippet</strong> → paste → <strong>Run test</strong>.</p>
+    </div>
+
+    <article class="tc" id="MED-001" data-priority="P2">
+      <h3>Make the test files</h3>
+      <ol class="steps">
+        <li>In an empty folder, for example <code>~/qa-media</code>, run (use <code>convert</code> instead of <code>magick</code> on ImageMagick 6):
+<pre><code>magick -size 4000x3000 plasma: photo-large.jpg
+magick -size 3000x4000 plasma: photo-portrait.jpg
+magick -size 800x600 gradient:navy-gold small.png
+magick -size 640x480 plasma: pic.gif
+magick -size 640x480 plasma: pic.webp
+magick -size 640x480 plasma: pic.avif
+magick -delay 30 -size 120x80 xc:red xc:blue xc:green anim.gif
+magick -size 7000x7000 xc:white bomb.png
+printf '%%PDF-1.4\n1 0 obj&lt;&lt;&gt;&gt;endobj\ntrailer&lt;&lt;&gt;&gt;\n%%%%EOF\n' &gt; doc.pdf
+printf '&lt;svg xmlns="http://www.w3.org/2000/svg"&gt;&lt;script&gt;alert(1)&lt;/script&gt;&lt;/svg&gt;' &gt; evil.svg
+cp evil.svg evil-renamed.png
+echo hello &gt; notes.txt
+printf '\xff\xd8\xff\xe0' &gt; broken.jpg; head -c 5000 /dev/urandom &gt;&gt; broken.jpg
+head -c 11000000 /dev/urandom &gt; big.jpg
+cp photo-large.jpg photo-large-copy.jpg</code></pre></li>
+        <li>Run <code>ls -l</code> and <code>file *</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> All 15 files exist (if your ImageMagick cannot write AVIF, <code>pic.avif</code> is missing: skip it in MED-005). <code>file</code> reports JPEG, PNG, GIF, Web/P, an AVIF/ISO media file, PDF and SVG as named; <code>broken.jpg</code> starts like a JPEG but is random bytes; <code>big.jpg</code> is about 11 MB of random data; <code>bomb.png</code> is small on disk but 49 million pixels.</p>
+      <p class="ref">Ref: <code>src/cms/core/media/mime.ts</code> (<code>ALLOWED_UPLOAD_MIME</code>) · <code>src/cms/core/media/normalize.ts</code> (<code>UPLOAD_MAX_PIXELS = 40_000_000</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-002" data-priority="P1">
+      <h3>Create the page used by the SEO cases</h3>
+      <ol class="steps">
+        <li>Open <strong>Pages</strong> → <strong>+ New</strong>. Title <code>QA SEO Page</code>, Slug <code>qa-seo</code>, a sentence of body text, <strong>Status — EL</strong> <code>published</code> (fill any required custom field left over from checklist 03). Click <strong>Create Page</strong>.</li>
+        <li>Add an EN version as in CON-045: <strong>EN</strong> tab → <strong>Copy from EL</strong>, title <code>QA SEO Page EN</code>, status <code>published</code>, <strong>Create EN</strong>.</li>
+        <li>Run <code>R /qa-seo</code> and <code>R /en/qa-seo</code>. Write down the EL and EN row ids: <code>SELECT id, locale FROM documents WHERE type = 'page' AND slug = 'qa-seo';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both addresses answer <code>200</code> with an empty redirect target. Two rows, <code>el</code> and <code>en</code>.</p>
+      <p class="ref">Ref: <code>src/app/[locale]/[slug]/page.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-upload">
+    <h2>Media library: uploading</h2>
+    <p class="intro">Open <strong>Media</strong> in the sidebar (<code>/admin/media</code>). <strong>Upload files</strong> accepts several files at once. The <strong>About uploads</strong> tip says: <code>PNG, JPEG, GIF, WebP, AVIF or PDF, up to 10 MB each.</code> The server decides the type from the file's bytes, never from its name or the browser's claim. Upload and delete need <strong>Edit media</strong>; the per-permission check is in checklist 05 (Roles &amp; permissions table).</p>
+
+    <article class="tc" id="MED-003" data-priority="P1">
+      <h3>A JPG is stored and served as WebP</h3>
+      <ol class="steps">
+        <li>Click <strong>Upload files</strong> and pick <code>photo-large.jpg</code>.</li>
+        <li>Click <strong>uuid</strong> on the new tile and paste it into the terminal: <code>U=&lt;pasted uuid&gt;</code>.</li>
+        <li>Run <code>SELECT original_name, mime, size, width, height, hash, alt_text, uploaded_by FROM media_files WHERE uuid = '&lt;uuid&gt;';</code></li>
+        <li>Run <code>ls -l .data/uploads/$U*</code>, <code>file .data/uploads/$U</code> and <code>sha256sum .data/uploads/$U</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>The tile appears first in the grid, named <code>photo-large.webp</code>, with its size and <code>1600×1200</code>. The count beside the search box rises by one. The <strong>uuid</strong> button briefly reads <code>copied</code>.</li>
+        <li>SQL: <code>original_name</code> <code>photo-large.webp</code>, <code>mime</code> <code>image/webp</code>, width 1600, height 1200, <code>alt_text</code> NULL, <code>uploaded_by</code> the superadmin's id. <code>size</code> equals the byte size of <code>.data/uploads/$U</code>, and <code>hash</code> equals its sha256.</li>
+        <li><code>file</code> reports <code>RIFF (little-endian) data, Web/P image</code>. A second file <code>$U.avif</code> exists and is smaller than the WebP (it is kept only when smaller; if it is missing, note the two sizes).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/media/service.ts</code> (<code>uploadMedia</code>) · <code>src/cms/core/media/normalize.ts</code> (<code>prepareUpload</code>, <code>webpName</code>) · <code>src/cms/core/media/storage.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-004" data-priority="P2">
+      <h3>Images are fitted inside 1600×1200 and never enlarged</h3>
+      <ol class="steps">
+        <li>Upload <code>photo-portrait.jpg</code> and <code>small.png</code> together.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Two tiles: <code>photo-portrait.webp</code> at <code>900×1200</code> and <code>small.webp</code> at <code>800×600</code> (unchanged). Both rows have mime <code>image/webp</code>.</p>
+      <p class="ref">Ref: <code>src/cms/core/media/normalize.ts</code> (<code>UPLOAD_MAX_WIDTH</code>, <code>UPLOAD_MAX_HEIGHT</code>, <code>withoutEnlargement</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-005" data-priority="P2">
+      <h3>GIF, WebP and AVIF are accepted; an animation keeps its frames</h3>
+      <ol class="steps">
+        <li>Upload <code>pic.gif</code>, <code>pic.webp</code>, <code>pic.avif</code> and <code>anim.gif</code>.</li>
+        <li>For the <code>anim</code> tile copy its uuid into <code>A</code> and run <code>ls .data/uploads/$A*</code> and <code>magick identify .data/uploads/$A</code>.</li>
+        <li>Click the <code>anim.webp</code> thumbnail.</li>
+      </ol>
+      <ul class="exp">
+        <li>Four tiles named <code>pic.webp</code> (three times, or fewer if two encode to identical bytes, in which case a duplicate notice appears) and <code>anim.webp</code>; every row has mime <code>image/webp</code>.</li>
+        <li>The animation has no <code>.avif</code> companion (only <code>$A</code> is listed); <code>identify</code> prints three frames. Its tile reads <code>120×80</code> (one frame's height).</li>
+        <li>The thumbnail opens <code>/api/cms/media/file/&lt;uuid&gt;</code> in a new tab and the image cycles red, blue, green.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/media/normalize.ts</code> (animated: no <code>rotate()</code>, no AVIF) · <code>src/cms/admin/MediaLibrary.tsx</code> (<code>Open … full size</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-006" data-priority="P2">
+      <h3>A PDF is stored as it is</h3>
+      <ol class="steps">
+        <li>Upload <code>doc.pdf</code>. Copy its uuid into <code>P</code>.</li>
+        <li>Run <code>SELECT original_name, mime, width, height FROM media_files WHERE uuid = '&lt;uuid&gt;';</code> and <code>cmp doc.pdf .data/uploads/$P &amp;&amp; echo same</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The tile shows the text <code>application/pdf</code> instead of a thumbnail and has no <strong>Alt text</strong> box. SQL: name <code>doc.pdf</code>, mime <code>application/pdf</code>, width and height NULL. <code>cmp</code> prints <code>same</code>; there is no <code>.avif</code> file.</p>
+      <p class="ref">Ref: <code>src/cms/core/media/normalize.ts</code> (PDF pass-through)</p>
+    </article>
+
+    <article class="tc" id="MED-007" data-priority="P1">
+      <h3>SVG is refused</h3>
+      <ol class="steps">
+        <li>Upload <code>evil.svg</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Red text beside the search box: <code>evil.svg: Unsupported file type. Allowed: image/png, image/jpeg, image/gif, image/webp, image/avif, application/pdf.</code> No tile is added and the count does not change. (Settings → Branding still describes the logo as “An SVG or a transparent PNG works best”; an SVG logo is refused the same way. Note it as a copy defect.)</p>
+      <p class="ref">Ref: <code>src/app/api/cms/media/upload/route.ts</code> (415) · <code>src/cms/core/media/mime.ts</code> (<code>sniffMime</code>) · <code>src/cms/admin/BrandSettings.tsx</code> (<code>MEDIA_FIELDS</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-008" data-priority="P3">
+      <h3>A renamed file or any other type is refused</h3>
+      <ol class="steps">
+        <li>Upload <code>evil-renamed.png</code>, then <code>notes.txt</code>.</li>
+        <li>With your session run <code>curl -s -w ' %{http_code}\n' -b "cms_session=$S" -F 'file=@evil-renamed.png;type=image/png' "$BASE/api/cms/media/upload"</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both uploads are refused with the same <code>Unsupported file type. Allowed: …</code> message prefixed by the file name. curl prints <code>{"ok":false,"error":"unsupported_media_type","message":"Unsupported file type. Allowed: image/png, image/jpeg, image/gif, image/webp, image/avif, application/pdf."} 415</code>: the declared <code>image/png</code> is ignored.</p>
+      <p class="ref">Ref: <code>src/cms/core/media/mime.ts</code> · <code>src/app/api/cms/media/upload/route.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-009" data-priority="P3">
+      <h3>A broken image or a pixel bomb is refused</h3>
+      <ol class="steps">
+        <li>Upload <code>broken.jpg</code>, then <code>bomb.png</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Each is refused with <code>&lt;name&gt;: This file could not be processed as an image.</code> (HTTP 415). No row and no file is stored; the server does not stall.</p>
+      <p class="ref">Ref: <code>src/cms/core/media/normalize.ts</code> (<code>MediaProcessingError</code>, <code>limitInputPixels</code>) · <code>src/app/api/cms/media/upload/route.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-010" data-priority="P2">
+      <h3>Files over 10 MB are refused</h3>
+      <ol class="steps">
+        <li>Upload <code>big.jpg</code> (about 11 MB).</li>
+        <li>Run <code>curl -s -w ' %{http_code}\n' -b "cms_session=$S" -F 'file=@big.jpg' "$BASE/api/cms/media/upload"</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The screen shows <code>big.jpg: File too large (max 10 MB)</code>. curl prints <code>{"ok":false,"error":"too_large","message":"File too large (max 10 MB)"} 413</code>. The size is checked before the type, so the random bytes never reach the type check.</p>
+      <p class="ref">Ref: <code>src/app/api/cms/media/upload/route.ts</code> (<code>MAX_BYTES</code>, <code>MULTIPART_OVERHEAD_BYTES</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-011" data-priority="P3">
+      <h3>One bad file in a selection does not stop the others</h3>
+      <ol class="steps">
+        <li>Delete the <code>small.webp</code> tile (MED-022 describes the dialog). Then select <code>evil.svg</code>, <code>small.png</code> and <code>notes.txt</code> in one go and upload.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>small.webp</code> appears in the grid. The red text names both refused files, joined by <code> · </code>: <code>evil.svg: Unsupported file type. …</code> · <code>notes.txt: Unsupported file type. …</code></p>
+      <p class="ref">Ref: <code>src/cms/admin/MediaLibrary.tsx</code> (<code>onFiles</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-012" data-priority="P2">
+      <h3>Uploading the same picture again reuses the stored file</h3>
+      <ol class="steps">
+        <li>Note the file count. Upload <code>photo-large-copy.jpg</code> (same bytes as <code>photo-large.jpg</code>, other name).</li>
+        <li>Run <code>SELECT COUNT(*), MIN(original_name) FROM media_files WHERE hash = (SELECT hash FROM media_files WHERE uuid = '&lt;uuid from MED-003&gt;');</code></li>
+        <li>Run <code>curl -s -o /dev/null -w '%{http_code}\n' -b "cms_session=$S" -F 'file=@photo-large.jpg' "$BASE/api/cms/media/upload"</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>A grey status line reads <code>photo-large-copy.jpg was already in the library — the existing file was used.</code> The count is unchanged and no new tile appears; the existing tile keeps the name <code>photo-large.webp</code> (and any alt text it has).</li>
+        <li>SQL: count 1. curl prints <code>200</code> (a new file answers <code>201</code>).</li>
+        <li>Uploading two duplicates at once gives <code>2 files were already in the library — the existing files were used: …</code> with both names. The picker shows the same wording (CON-039).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/media-upload-notice.ts</code> (<code>duplicateNotice</code>) · <code>src/cms/core/media/service.ts</code> (<code>findMediaByHash</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-013" data-priority="P3">
+      <h3>Camera data is stripped and rotation is applied</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> <code>exiftool</code> installed; otherwise mark Blocked.</p>
+      <ol class="steps">
+        <li>Run <code>magick -size 600x400 plasma: gps.jpg &amp;&amp; exiftool -overwrite_original -GPSLatitude=37.97 -GPSLatitudeRef=N -GPSLongitude=23.72 -GPSLongitudeRef=E -Orientation=6 -n gps.jpg</code>.</li>
+        <li>Upload <code>gps.jpg</code>. Copy its uuid into <code>G</code>. Run <code>exiftool -gps:all -Orientation .data/uploads/$G</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The tile reads <code>400×600</code> (turned upright). exiftool prints no GPS lines and no Orientation.</p>
+      <p class="ref">Ref: <code>src/cms/core/media/normalize.ts</code> (<code>rotate()</code>, re-encode) · docs/dev-guides/06-media-seo-structured-data.md §4.1</p>
+    </article>
+
+    <article class="tc" id="MED-014" data-priority="P3">
+      <h3>Uploads are audited; duplicates are not</h3>
+      <ol class="steps">
+        <li>Open <strong>Audit log</strong> and look at the latest entries.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> One <em>Uploaded a file</em> entry per stored file from the cases above, each with Subject the file's uuid and details <code>originalName</code>, <code>mime</code>, <code>size</code>. There is no entry for the duplicate uploads of MED-012 and none for refused files.</p>
+      <p class="ref">Ref: <code>src/app/api/cms/media/upload/route.ts</code> (<code>logAudit</code> unless duplicate) · <code>src/cms/core/audit-labels.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-015" data-priority="P3">
+      <h3>The upload endpoint refuses a cross-origin browser request</h3>
+      <ol class="steps">
+        <li>Run <code>curl -s -w ' %{http_code}\n' -b "cms_session=$S" -H 'Origin: https://evil.example' -F 'file=@small.png' "$BASE/api/cms/media/upload"</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>{"ok":false,"error":"forbidden","message":"Cross-origin request rejected."} 403</code>. Nothing is stored.</p>
+      <p class="ref">Ref: <code>src/app/api/cms/media/upload/route.ts</code> (<code>isSameOrigin</code> first) · <code>src/cms/core/api/same-origin.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-library">
+    <h2>Media library: browsing, alt text, delete and the picker</h2>
+
+    <article class="tc" id="MED-016" data-priority="P2">
+      <h3>Search by file name</h3>
+      <ol class="steps">
+        <li>Type <code>PHOTO</code> into <strong>Search by file name…</strong> and press Enter.</li>
+        <li>Search for <code>zzz-nothing</code> with the <strong>Search</strong> button.</li>
+        <li>Click <strong>Clear</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: only the <code>photo-…</code> tiles; the count reads <code>N matching</code> (case does not matter). Step 2: <code>No files match “zzz-nothing”.</code> and <code>0 matching</code>. Step 3: the search box empties, every file returns and the count reads <code>N files</code>. Typing alone does not filter; Enter or <strong>Search</strong> does.</p>
+      <p class="ref">Ref: <code>src/cms/admin/MediaLibrary.tsx</code> (<code>runSearch</code>) · <code>src/cms/core/media/service.ts</code> (<code>listMedia</code>, LIKE on <code>original_name</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-017" data-priority="P2">
+      <h3>“Load more files” after 200</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Test database only. The rows below have no bytes behind them, so their thumbnails are broken; that is expected.</p>
+      <ol class="steps">
+        <li>Run the SQL below, then reload <code>/admin/media</code>.</li>
+        <li>Scroll to the end and click <strong>Load more files</strong>.</li>
+        <li>Search for <code>qa-bulk-20</code>.</li>
+      </ol>
+<pre><code>INSERT INTO media_files (uuid, original_name, mime, size, width, height, hash, created_at)
+SELECT UUID(), CONCAT('qa-bulk-', n.i, '.webp'), 'image/webp', 100, 10, 10,
+       SHA2(CONCAT('qa-bulk-', n.i), 256), NOW() - INTERVAL 1 DAY - INTERVAL n.i MINUTE
+FROM (SELECT a.d + 10 * b.d + 100 * c.d + 1 AS i
+      FROM (SELECT 0 d UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+            UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) a
+      CROSS JOIN (SELECT 0 d UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+            UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) b
+      CROSS JOIN (SELECT 0 d UNION ALL SELECT 1 UNION ALL SELECT 2) c) n
+WHERE n.i &lt;= 205;</code></pre>
+      <p class="exp"><span class="exp-label">Expected:</span> 205 rows inserted. The page opens with exactly 200 tiles, your real uploads first (newest first), and the count shows the full total. After <strong>Load more files</strong> (button reads <code>Loading…</code> meanwhile) every file is shown and the button disappears. Step 3 lists <code>qa-bulk-20</code> and <code>qa-bulk-200</code>…<code>qa-bulk-205</code> (7 matching).</p>
+      <p class="ref">Ref: <code>src/cms/admin/MediaLibrary.tsx</code> (<code>PAGE_SIZE = 200</code>, <code>loadMore</code>) · <code>src/app/admin/(shell)/media/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MED-018" data-priority="P3">
+      <h3>List API page size: 200 by default, 500 at most</h3>
+      <ol class="steps">
+        <li>Run <code>curl -s -b "cms_session=$S" "$BASE/api/cms/media" | jq '{n: (.items|length), page, pageSize, total, pageCount}'</code>.</li>
+        <li>Repeat with <code>?limit=500</code>, <code>?limit=501</code>, <code>?limit=50&amp;offset=50</code> and <code>?search=qa-bulk-1</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Default: 200 items, <code>pageSize</code> 200, <code>pageCount</code> = total ÷ 200 rounded up.</li>
+        <li><code>limit=500</code>: every file up to 500, <code>pageSize</code> 500. <code>limit=501</code>: <code>422</code> with <code>"error":"invalid_input"</code>. <code>limit=50&amp;offset=50</code>: 50 items, <code>page</code> 2.</li>
+        <li><code>search=qa-bulk-1</code>: <code>total</code> counts only matching rows (<code>qa-bulk-1</code>, <code>-10</code>…<code>-19</code>, <code>-100</code>…<code>-199</code>: 111).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/routes/media.ts</code> (<code>mediaListQuery</code>, <code>MEDIA_PAGE_MAX</code>) · <code>src/cms/core/media/service.ts</code> (<code>mediaPageLimit</code>) · <code>src/cms/core/api/respond.ts</code> (<code>paginated</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-019" data-priority="P1">
+      <h3>Edit an image's alt text</h3>
+      <ol class="steps">
+        <li>On the <code>photo-large.webp</code> tile type <code>Purple and orange test pattern</code> into <strong>Alt text</strong>.</li>
+        <li>Click <strong>Save alt text</strong>. Reload the page.</li>
+        <li>Run <code>SELECT alt_text FROM media_files WHERE uuid = '&lt;uuid&gt;';</code> and open <strong>Audit log</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> While typing the status beside the button reads <code>Unsaved</code> (amber); the button is disabled when nothing changed. After saving: <code>Saving…</code>, then <code>Saved</code>. After reload the text is still there. SQL holds the text. Audit: <em>Changed a file’s alt text</em> with Subject the uuid and <code>altText</code> in the details.</p>
+      <p class="ref">Ref: <code>src/cms/admin/MediaAltText.tsx</code> (<code>altTextStatus</code>) · <code>src/cms/core/routes/media.ts</code> (<code>mediaUpdateRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-020" data-priority="P3">
+      <h3>Alt text limits and bad ids</h3>
+      <ol class="steps">
+        <li>Replace the alt text with three spaces and save. Run the SQL of MED-019.</li>
+        <li>Paste 600 characters into the box.</li>
+        <li>Run <code>curl -s -w ' %{http_code}\n' -b "cms_session=$S" -X PATCH -H 'Content-Type: application/json' -d "{\"altText\":\"$(printf 'a%.0s' $(seq 513))\"}" "$BASE/api/cms/media/$U"</code>.</li>
+        <li>Send <code>-d '{"altText":"x"}'</code> to <code>/api/cms/media/00000000-0000-4000-8000-000000000000</code> and to <code>/api/cms/media/not-a-uuid</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: saved; SQL <code>alt_text</code> is NULL, not spaces.</li>
+        <li>Step 2: the box stops at 512 characters.</li>
+        <li>Step 3: <code>422</code> <code>"error":"invalid_input"</code>. Step 4: <code>404</code> <code>{"ok":false,"error":"not_found","message":"No such media file."}</code> and <code>400</code> <code>"message":"Invalid media id."</code>.</li>
+        <li>Put the alt text from MED-019 back.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/routes/media.ts</code> · <code>src/cms/core/api/params.ts</code> (<code>uuidParam</code>) · <code>src/cms/admin/MediaAltText.tsx</code> (<code>ALT_TEXT_MAX = 512</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-021" data-priority="P2">
+      <h3>Where the library alt text is and is not used</h3>
+      <ol class="steps">
+        <li>On QA SEO Page click <strong>Choose image…</strong> under <strong>Hero image</strong>. Look at the <code>photo-large.webp</code> tile in the picker, pick it, <strong>Save EL</strong>.</li>
+        <li>Run <code>curl -s -A Googlebot "$BASE/qa-seo" | grep -o '&lt;img[^&gt;]*alt="[^"]*"' | head -3</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The picker tile shows <code>Alt: Purple and orange test pattern</code> (tiles without one show <em>No alt text</em>). On the public page the hero <code>&lt;img&gt;</code> has <code>alt="QA SEO Page"</code> (the page title), not the library alt text. <strong>Known gap:</strong> the Media screen says the alt text “Applies wherever this image appears without alt text of its own”, but no public template reads <code>media_files.alt_text</code> yet; only the picker and the Product Manager feed use it. Record Pass if the behaviour matches and keep the gap on the open-items list.</p>
+      <p class="ref">Ref: <code>src/cms/admin/fields/MediaPicker.tsx</code> (<code>MediaPickerTile</code>) · <code>src/app/[locale]/[slug]/page.tsx</code> (<code>alt={title}</code>) · docs/dev-guides/06-media-seo-structured-data.md §4.3</p>
+    </article>
+
+    <article class="tc" id="MED-022" data-priority="P2">
+      <h3>Delete a file</h3>
+      <ol class="steps">
+        <li>On one of the <code>pic.webp</code> tiles copy its uuid into <code>D</code>, click <strong>delete</strong> and read the dialog. Click <strong>Cancel</strong>, then <strong>delete</strong> again and confirm with <strong>Delete</strong>.</li>
+        <li>Run <code>ls .data/uploads/$D*</code>, <code>R /api/cms/media/file/$D</code> and <code>SELECT COUNT(*) FROM media_files WHERE uuid = '&lt;uuid&gt;';</code></li>
+        <li>Open <strong>Audit log</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Dialog title <code>Delete this file?</code>, text <code>Any content still pointing at it will lose the image. This cannot be undone.</code>, buttons <strong>Cancel</strong> and <strong>Delete</strong>. Cancel keeps the tile. After Delete the tile is gone and the count drops by one. Both the WebP and the <code>.avif</code> file are gone (<code>ls</code>: no such file), the URL answers <code>404</code>, the count is 0. Audit: <em>Deleted a file</em> with the uuid.</p>
+      <p class="ref">Ref: <code>src/cms/admin/MediaLibrary.tsx</code> (<code>remove</code>) · <code>src/cms/core/media/service.ts</code> (<code>deleteMedia</code>) · <code>src/cms/admin/ui/ConfirmDialog.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MED-023" data-priority="P3">
+      <h3>Deleting an image that is in use is not prevented (known gap)</h3>
+      <ol class="steps">
+        <li>Upload <code>small.png</code> again if needed, set it as the Hero image of QA SEO Page, <strong>Save EL</strong>, and open <code>/qa-seo</code> signed out.</li>
+        <li>In Media delete that <code>small.webp</code> tile. Reload <code>/qa-seo</code>.</li>
+        <li>Open QA SEO Page in the editor.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected (known gap):</span> The delete dialog gives only the generic warning; nothing says the file is used, and the delete succeeds. The public page shows a broken image, and the editor's Hero image field shows a broken thumbnail with the old uuid. Nothing tracks where a file is used (<code>media_usages</code> is unused). Clear the field and save afterwards. Mark Pass if it behaves like this and keep the gap on the open-items list.</p>
+      <p class="ref">Ref: docs/dev-guides/06-media-seo-structured-data.md §10 (“Deleting media does not check usage”) · <code>src/cms/db/adapters/mysql/schema/media.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-024" data-priority="P3">
+      <h3>The picker shows the newest 200 only and accepts a PDF</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> The 205 bulk rows of MED-017 still exist.</p>
+      <ol class="steps">
+        <li>On QA SEO Page open <strong>Choose image…</strong> under <strong>Hero image</strong> and scroll to the end of the grid.</li>
+        <li>Pick the <code>doc.pdf</code> tile, <strong>Save EL</strong>, and open <code>/qa-seo</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: exactly 200 tiles, no search box and no “load more”, so older files cannot be reached from the picker. Step 2: the save succeeds and the public page shows a broken image, because an image field accepts any library file. Record both as observations (usability gaps, not blockers). Clear the field and save again.</p>
+      <p class="ref">Ref: <code>src/cms/admin/fields/MediaPicker.tsx</code> (<code>listMedia({ limit: 200 })</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-025" data-priority="P3">
+      <h3>Remove the bulk rows</h3>
+      <ol class="steps">
+        <li>Run <code>DELETE FROM media_files WHERE original_name LIKE 'qa-bulk-%';</code> and reload Media.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> 205 rows deleted; the count drops by 205 and <strong>Load more files</strong> is gone.</p>
+      <p class="ref">Ref: <code>src/cms/db/adapters/mysql/schema/media.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-serve">
+    <h2>Serving files</h2>
+    <p class="intro">Every file has one public URL, <code>/api/cms/media/file/&lt;uuid&gt;</code>, readable without signing in. Set <code>U</code> to the uuid of <code>photo-large.webp</code>.</p>
+
+    <article class="tc" id="MED-026" data-priority="P1">
+      <h3>Public file URL and its caching headers</h3>
+      <ol class="steps">
+        <li>Run <code>curl -s -D - -o /dev/null "$BASE/api/cms/media/file/$U"</code> (no cookie).</li>
+      </ol>
+      <ul class="exp">
+        <li>Status <code>200</code>, <code>Content-Type: image/webp</code>, <code>Cache-Control: public, max-age=31536000, immutable</code>, <code>Vary: Accept</code>, <code>X-Content-Type-Options: nosniff</code>, <code>X-Frame-Options: DENY</code>.</li>
+        <li><code>Content-Security-Policy</code> contains <code>sandbox</code> (the route sets <code>default-src 'none'; sandbox; frame-ancestors 'none'</code>; if the site-wide policy appears instead, record the value).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/api/cms/media/file/[uuid]/route.ts</code> · <code>next.config.ts</code> (<code>headers()</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-027" data-priority="P2">
+      <h3>AVIF is served only to clients that ask for it by name</h3>
+      <ol class="steps">
+        <li>Run <code>for a in 'image/avif,image/webp,*/*' 'image/*' 'image/avif;q=0,image/webp' ''; do curl -s -D - -o /dev/null -H "Accept: $a" "$BASE/api/cms/media/file/$U" | grep -i '^content-type'; done</code></li>
+        <li>Repeat the first Accept value for the <code>anim.webp</code> uuid (<code>$A</code>).</li>
+        <li>Open the URL of <code>$U</code> in Chrome and check the response type in developer tools → Network.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1 prints <code>image/avif</code>, then <code>image/webp</code> three times (a wildcard or <code>q=0</code> does not count). Step 2: <code>image/webp</code> (animations have no AVIF). Step 3: Chrome gets <code>avif</code>.</p>
+      <p class="ref">Ref: <code>src/cms/core/media/variants.ts</code> (<code>acceptsAvif</code>, <code>readForAccept</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-028" data-priority="P3">
+      <h3>Unknown files, PDFs and rows with an unexpected type</h3>
+      <ol class="steps">
+        <li>Run <code>curl -s -w ' %{http_code}\n' "$BASE/api/cms/media/file/00000000-0000-4000-8000-000000000000"</code> and the same with <code>../../etc/passwd</code> URL-encoded as <code>..%2F..%2Fetc%2Fpasswd</code>.</li>
+        <li>Run <code>curl -s -D - -o /dev/null "$BASE/api/cms/media/file/$P"</code> (the PDF).</li>
+        <li>Run <code>UPDATE media_files SET mime = 'text/html' WHERE uuid = '&lt;PDF uuid&gt;';</code>, repeat step 2, then set the mime back to <code>application/pdf</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>Not found 404</code> both times. Step 2: <code>Content-Type: application/pdf</code> and no <code>Vary</code> header. Step 3: <code>Content-Type: application/octet-stream</code> with <code>Content-Disposition: attachment</code>, so a browser downloads it instead of rendering it.</p>
+      <p class="ref">Ref: <code>src/app/api/cms/media/file/[uuid]/route.ts</code> (<code>isAllowedMime</code>) · <code>src/cms/core/media/storage.ts</code> (path containment)</p>
+    </article>
+
+    <article class="tc" id="MED-029" data-priority="P3">
+      <h3>Images on pages go through the Next.js image optimiser</h3>
+      <ol class="steps">
+        <li>Set <code>photo-large.webp</code> as the Hero image of QA SEO Page and save. In a signed-out window open <code>/qa-seo</code>, developer tools → Network → Img, reload.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The hero request is <code>/_next/image?url=%2Fapi%2Fcms%2Fmedia%2Ffile%2F&lt;uuid&gt;&amp;w=…&amp;q=75</code>, status 200, type <code>avif</code> (Chrome) or <code>webp</code>. Record its <code>Cache-Control</code>. No request to the file route fails.</p>
+      <p class="ref">Ref: <code>next.config.ts</code> (<code>images.formats</code>) · <code>src/app/[locale]/[slug]/page.tsx</code> (<code>next/image</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-brand">
+    <h2>Branding</h2>
+    <p class="intro">Open <strong>Settings</strong> → <strong>Branding</strong> (<code>/admin/settings?tab=Branding</code>). It has <strong>Identity</strong>, <strong>Logo and images</strong> and <strong>Colours</strong> sections and saves with <strong>Save branding</strong>. Write down the current values first so you can put them back.</p>
+
+    <article class="tc" id="MED-030" data-priority="P2">
+      <h3>Site name and tagline reach the site</h3>
+      <ol class="steps">
+        <li>Set <strong>Site name</strong> <code>QA Brand</code> and <strong>Tagline</strong> <code>Tested daily</code>, remove any <strong>Logo</strong>, click <strong>Save branding</strong>.</li>
+        <li>Open <code>/</code> signed out. Run <code>H /qa-seo</code>, <code>H /page-not-found</code> and <code>LD /qa-seo</code>.</li>
+        <li>Run <code>SELECT value FROM site_settings WHERE `key` = 'brand.identity';</code></li>
+      </ol>
+      <ul class="exp">
+        <li><code>Saved.</code> appears. The header shows the text <code>QA Brand</code> where the logo would be.</li>
+        <li><code>og:site_name</code> is <code>QA Brand</code>. The not-found page's title ends <code>| QA Brand</code>. In the first JSON-LD block the Organization and WebSite <code>name</code> are <code>QA Brand</code> and the Organization has <code>"slogan":"Tested daily"</code>.</li>
+        <li>SQL: JSON with <code>"name":"QA Brand"</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/BrandSettings.tsx</code> · <code>src/cms/core/brand/index.ts</code> (<code>getBrand</code>) · <code>src/lib/seo/metadata.ts</code> (<code>siteMetadata</code>) · <code>src/lib/seo/schemas.ts</code> (<code>organizationSchema</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-031" data-priority="P2">
+      <h3>Logo, dark logo and favicon</h3>
+      <ol class="steps">
+        <li>Under <strong>Logo</strong>, <strong>Logo on dark backgrounds</strong> and <strong>Favicon</strong> click <strong>Choose image…</strong>, pick <code>small.webp</code> (logo), <code>pic.webp</code> (dark logo) and <code>anim.webp</code> (favicon). <strong>Save branding</strong>.</li>
+        <li>Open <code>/</code> signed out. Inspect the header logo and the footer logo. Run <code>H /</code> and <code>LD /</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Header: <code>&lt;img src="/api/cms/media/file/&lt;logo uuid&gt;" alt="QA Brand"&gt;</code>. Footer: the dark logo, same alt. Head: <code>&lt;link rel="icon" href="/api/cms/media/file/&lt;favicon uuid&gt;"&gt;</code> (without a favicon it is <code>/favicon.svg</code>). JSON-LD Organization <code>logo</code> is the absolute URL <code>http://localhost:3002/api/cms/media/file/&lt;logo uuid&gt;</code>. The admin keeps working with the same brand.</p>
+      <p class="ref">Ref: <code>src/components/layout/Header.tsx</code> · <code>src/components/layout/Footer.tsx</code> · <code>src/lib/seo/metadata.ts</code> (<code>icons</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-032" data-priority="P2">
+      <h3>The default share image fills pages without their own</h3>
+      <ol class="steps">
+        <li>Set <strong>Default share image</strong> to <code>photo-portrait.webp</code>, save. On QA SEO Page clear the Hero image and the SEO <strong>Social image</strong>, <strong>Save EL</strong>.</li>
+        <li>Run <code>H /qa-seo | grep -E 'og:image|twitter:image'</code> and <code>H /contact | grep og:image</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both pages have <code>og:image</code> and <code>twitter:image</code> = <code>http://localhost:3002/api/cms/media/file/&lt;portrait uuid&gt;</code> (absolute).</p>
+      <p class="ref">Ref: <code>src/lib/seo/metadata.ts</code> (<code>brand.ogImageUrl</code> fallback)</p>
+    </article>
+
+    <article class="tc" id="MED-033" data-priority="P2">
+      <h3>Colours: saved palette, contrast warning, reset</h3>
+      <ol class="steps">
+        <li>Under <strong>Colours</strong> set <strong>Accent</strong> to <code>#c0392b</code>. Watch the <strong>Preview</strong>. Click <strong>Save branding</strong>.</li>
+        <li>Open <code>/</code> signed out and run <code>curl -s "$BASE/" | grep -o '&lt;style id="brand-palette"&gt;[^&lt;]*'</code>.</li>
+        <li>Set <strong>Main text</strong> to <code>#f0f0f0</code>.</li>
+        <li>Click <strong>Reset colours to the neutral defaults</strong>, then <strong>Save branding</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>The preview changes while you edit; the site changes only after saving, on the next reload. The style tag contains <code>--color-warm-gold:#c0392b;</code>, and gold buttons on the site turn red.</li>
+        <li>Step 3: an amber box <code>Some text may be hard to read:</code> lists <code>Main text on Page background is …:1 — below the 4.5:1 needed to read comfortably.</code> and the same for <code>Raised surface</code>. Saving is still possible.</li>
+        <li>Step 4: the swatches return to the defaults and the site loses the red accent after saving.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/BrandSettings.tsx</code> (<code>contrastProblems</code>) · <code>src/cms/core/brand/policy.ts</code> (<code>PALETTE_TOKENS</code>, <code>paletteCss</code>) · <code>src/cms/core/brand/BrandStyle.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MED-034" data-priority="P3">
+      <h3>The logo and colours reach emails</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Outgoing mail configured (Azure Graph settings, see checklist 07) and a Logo set; otherwise mark Blocked.</p>
+      <ol class="steps">
+        <li>Submit the contact form at <code>/contact</code> so a notification email is sent to the address in <strong>Settings</strong> → <strong>Notifications</strong>.</li>
+        <li>Open the email and view its source.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The body starts with the logo, <code>&lt;img src="http://localhost:3002/api/cms/media/file/&lt;logo uuid&gt;" alt="QA Brand" height="40" …&gt;</code> (an absolute URL), above a thin border. Coloured elements use the saved palette. Without a logo the email has no image header and is still delivered.</p>
+      <p class="ref">Ref: <code>src/cms/core/email/brand.ts</code> (<code>applyEmailBrand</code>) · <code>src/cms/core/brand/index.ts</code> (<code>getEmailBrand</code>) · <code>src/cms/core/email/graph.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-panel">
+    <h2>SEO panel and the page head</h2>
+    <p class="intro">Every page editor has an <strong>SEO &amp; AEO</strong> section with the tabs <strong>General</strong>, <strong>Social</strong>, <strong>AEO</strong> and <strong>Advanced</strong> (tab keyboard behaviour is ADM-043). Values are per language: save each language with its own <strong>Save EL</strong> / <strong>Save EN</strong>. Use QA SEO Page (<code>/qa-seo</code>, <code>/en/qa-seo</code>). Before this section clear the Default share image if you want to see pages with no image at all.</p>
+
+    <article class="tc" id="MED-035" data-priority="P1">
+      <h3>Head tags of a page with no SEO values</h3>
+      <ol class="steps">
+        <li>Make sure QA SEO Page has nothing filled in on any SEO tab. Run <code>H /qa-seo</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li><code>&lt;title&gt;QA SEO Page&lt;/title&gt;</code> (the page title, with no site-name suffix).</li>
+        <li><code>&lt;link rel="canonical" href="http://localhost:3002/qa-seo"&gt;</code>.</li>
+        <li>Three alternates: <code>el</code> → <code>http://localhost:3002/qa-seo</code>, <code>en</code> → <code>http://localhost:3002/en/qa-seo</code>, <code>x-default</code> → <code>http://localhost:3002/en/qa-seo</code>.</li>
+        <li><code>og:title</code> <code>QA SEO Page</code>, <code>og:url</code> the canonical, <code>og:site_name</code> the brand name, <code>og:locale</code> <code>el_GR</code>, <code>og:locale:alternate</code> <code>en_US</code>, <code>og:type</code> <code>website</code>. <code>twitter:card</code> <code>summary_large_image</code> and <code>twitter:title</code> <code>QA SEO Page</code>.</li>
+        <li><code>&lt;meta name="robots" content="index, follow"&gt;</code>. Each tag appears once.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/lib/seo/metadata.ts</code> (<code>localizedMetadata</code>) · <code>src/app/[locale]/[slug]/page.tsx</code> (<code>generateMetadata</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-036" data-priority="P2">
+      <h3>SEO title and meta description, with their counters</h3>
+      <ol class="steps">
+        <li>On <strong>General</strong> type <code>Short</code> into <strong>SEO title</strong>; then replace it with 70 characters; then with <code>QA SEO title for testing</code>.</li>
+        <li>Type 40 characters into <strong>Meta description</strong>, then <code>A meta description that is long enough to sit inside the recommended range of characters.</code></li>
+        <li><strong>Save EL</strong>. Run <code>H /qa-seo</code> and <code>H /en/qa-seo</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>The counter under SEO title reads <code>5 / 60 — a little short</code> (amber), then <code>70 / 60 — will be cut off</code> (amber), then <code>24 / 60</code> (grey). Meta description: <code>40 / 160 — a little short</code>, then a grey count.</li>
+        <li><code>/qa-seo</code>: <code>&lt;title&gt;QA SEO title for testing&lt;/title&gt;</code>, <code>&lt;meta name="description"&gt;</code> with the text, and <code>og:title</code>, <code>og:description</code>, <code>twitter:title</code>, <code>twitter:description</code> equal to them.</li>
+        <li><code>/en/qa-seo</code> still shows <code>QA SEO Page EN</code>: the values are per language.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/seo/fields.ts</code> (<code>seoTitle</code> counter 10–60, <code>metaDescription</code> 50–160) · <code>src/cms/admin/ui/CharCounter.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MED-037" data-priority="P2">
+      <h3>Social title, description, image and Twitter card</h3>
+      <ol class="steps">
+        <li>On <strong>Social</strong> fill <strong>Social title</strong> <code>QA share title</code>, <strong>Social description</strong> <code>QA share text</code>, pick <code>photo-large.webp</code> as <strong>Social image</strong>, set <strong>Twitter card</strong> to <code>Small thumbnail</code>. <strong>Save EL</strong>.</li>
+        <li>Run <code>H /qa-seo</code>.</li>
+        <li>Clear the Social image, set a Hero image instead, save and repeat.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>og:title</code> and <code>twitter:title</code> <code>QA share title</code>; <code>og:description</code> and <code>twitter:description</code> <code>QA share text</code>; <code>&lt;title&gt;</code> is still the SEO title. <code>og:image</code> and <code>twitter:image</code> are <code>http://localhost:3002/api/cms/media/file/&lt;uuid&gt;</code>; <code>twitter:card</code> is <code>summary</code>. Step 3: the image falls back to the Hero image's URL.</p>
+      <p class="ref">Ref: <code>src/cms/core/seo/fields.ts</code> (social tab) · <code>src/cms/core/seo/document.ts</code> (<code>documentSeo</code>) · <code>src/app/[locale]/[slug]/page.tsx</code> (<code>ogUuid</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-038" data-priority="P2">
+      <h3>The English version's head tags</h3>
+      <ol class="steps">
+        <li>Run <code>H /en/qa-seo</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>&lt;title&gt;QA SEO Page EN&lt;/title&gt;</code>, canonical <code>http://localhost:3002/en/qa-seo</code>, the same three alternates as MED-035 (el, en, x-default), <code>og:locale</code> <code>en_US</code> with <code>og:locale:alternate</code> <code>el_GR</code>, <code>og:url</code> the EN canonical. No EL social values leak in.</p>
+      <p class="ref">Ref: <code>src/lib/seo/metadata.ts</code> (<code>localeRelPath</code>, <code>OG_LOCALE</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-039" data-priority="P2">
+      <h3>hreflang follows the public languages</h3>
+      <ol class="steps">
+        <li>In <strong>Settings</strong> → <strong>Languages</strong> untick <strong>Public</strong> for EN, <strong>Save settings</strong>.</li>
+        <li>Run <code>H /qa-seo | grep alternate</code> and <code>curl -s "$BASE/sitemap.xml" | grep -c '/en/'</code>.</li>
+        <li>Tick EN Public again and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 2: two alternates only, <code>el</code> → <code>http://localhost:3002/qa-seo</code> and <code>x-default</code> → <code>http://localhost:3002/qa-seo</code>; no <code>og:locale:alternate</code>. The sitemap count is <code>0</code>. After step 3 the <code>en</code> alternates return.</p>
+      <p class="ref">Ref: <code>src/lib/seo/metadata.ts</code> (<code>getLocaleSettings</code>, x-default rule) · <code>src/app/sitemap.ts</code> (same rule)</p>
+    </article>
+
+    <article class="tc" id="MED-040" data-priority="P2">
+      <h3>Search engine visibility (robots)</h3>
+      <ol class="steps">
+        <li>On <strong>Advanced</strong> open <strong>Search engine visibility</strong> and read the options. Choose <code>No index, follow</code>, <strong>Save EL</strong>.</li>
+        <li>Run <code>H /qa-seo | grep robots</code>, <code>H /en/qa-seo | grep robots</code> and <code>curl -s "$BASE/sitemap.xml" | grep -o '&lt;loc&gt;[^&lt;]*qa-seo&lt;/loc&gt;'</code>.</li>
+        <li>Choose <code>No index, no follow</code>, save and repeat step 2. Run <code>SELECT locale, noindex, nofollow FROM documents WHERE type = 'page' AND slug = 'qa-seo';</code></li>
+        <li>Set it back to <code>Index, follow (default)</code> and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Options: <code>Index, follow (default)</code>, <code>No index, follow</code>, <code>Index, no follow</code>, <code>No index, no follow</code>. Step 2: EL has <code>content="noindex, follow"</code>, EN still <code>index, follow</code>. The sitemap should list only <code>http://localhost:3002/en/qa-seo</code>. Per the current code a slug is listed in every language as soon as one language is indexable, so <code>http://localhost:3002/qa-seo</code> (noindex) is likely still listed: if so, mark Fail. Step 3: <code>noindex, nofollow</code>; SQL EL 1/1, EN 0/0. The page itself still answers <code>200</code>.</p>
+      <p class="ref">Ref: <code>src/cms/core/seo/fields.ts</code> (<code>ROBOTS_OPTIONS</code>, <code>robotsColumns</code>) · <code>src/cms/core/seo/document.ts</code> (<code>seoRestrictsRobots</code>) · <code>src/app/sitemap.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-041" data-priority="P2">
+      <h3>“List in the sitemap” removes a page from sitemap.xml only</h3>
+      <ol class="steps">
+        <li>Untick <strong>List in the sitemap</strong> on the EL and on the EN tab (save each).</li>
+        <li>Run <code>curl -s "$BASE/sitemap.xml" | grep -c 'qa-seo'</code> and <code>H /qa-seo | grep robots</code>.</li>
+        <li>Tick both again and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 2: <code>0</code>; robots still <code>index, follow</code>; the page answers 200. After step 3 the page is listed again (EL and EN entries).</p>
+      <p class="ref">Ref: <code>src/cms/core/seo/fields.ts</code> (<code>includeInSitemap</code>) · <code>src/app/sitemap.ts</code> (<code>documentRoutes</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-042" data-priority="P2">
+      <h3>Canonical URL override</h3>
+      <ol class="steps">
+        <li>On <strong>Advanced</strong> set <strong>Canonical URL</strong> to <code>/qa-original</code>, save. Run <code>H /qa-seo | grep -E 'canonical|og:url'</code>.</li>
+        <li>Set it to <code>https://example.com/original</code>, save, repeat.</li>
+        <li>Run <code>SELECT canonical_path, JSON_UNQUOTE(JSON_EXTRACT(data, '$.seo.canonicalUrl')) FROM documents WHERE type = 'page' AND slug = 'qa-seo' AND locale = 'el';</code> and <code>R /qa-seo</code>.</li>
+        <li>Clear the field and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: canonical and <code>og:url</code> <code>http://localhost:3002/qa-original</code>. Step 2: <code>https://example.com/original</code>. Step 3: <code>canonical_path</code> stays <code>/qa-seo</code> (the routing address is not the canonical override) and the page still answers 200. The hreflang alternates do not change.</p>
+      <p class="ref">Ref: <code>src/cms/core/seo/fields.ts</code> (<code>canonicalUrl</code>, data storage) · <code>src/lib/seo/metadata.ts</code> (<code>effectiveCanonical</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-043" data-priority="P3">
+      <h3>The editor's Canonical URL has no format check</h3>
+      <ol class="steps">
+        <li>Set <strong>Canonical URL</strong> to <code>//evil.example/x</code>, save. Run <code>H /qa-seo | grep canonical</code>.</li>
+        <li>Set it to <code>javascript:alert(1)</code>, save, repeat.</li>
+        <li>Clear the field and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The page editor should refuse both, as the SEO screen's override form does (MED-070). Per the current code the field is plain text: both saves succeed. Record the canonical tag printed for each. If the page publishes an off-site canonical (<code>evil.example</code>) or a <code>javascript:</code> value, mark Fail.</p>
+      <p class="ref">Ref: <code>src/cms/core/seo/fields.ts</code> (<code>f.text('canonicalUrl')</code>) · <code>src/cms/core/routes/seo.ts</code> (<code>publishableUrl</code>, used only by the override form)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-redirects">
+    <h2>SEO screen: redirects</h2>
+    <p class="intro">Open <strong>SEO</strong> in the sidebar (<code>/admin/seo</code>). The <strong>Redirects</strong> form has <strong>Source</strong>, <strong>Target</strong>, <strong>Status code</strong>, a kind select (<code>literal</code>, <code>wildcard</code>, <code>regex</code>) and <strong>Add</strong>. Redirects run on the full public path, including a language prefix, before the site handles the request. There is no bulk import: rules are added one at a time. Automatic slug-change redirects are CON-016 to CON-022.</p>
+
+    <article class="tc" id="MED-044" data-priority="P1">
+      <h3>Create a 301 redirect and follow it</h3>
+      <ol class="steps">
+        <li>Source <code>/qa-old</code>, Target <code>/qa-seo</code>, Status code <code>301 — permanent</code>, kind <code>literal</code>, click <strong>Add</strong>.</li>
+        <li>Run <code>R /qa-old</code> three times. Reload the SEO screen.</li>
+        <li>Run <code>SELECT source, target, status_code, kind, active, hits, reason FROM seo_redirects WHERE source = '/qa-old';</code> and open <strong>Audit log</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The form empties and a row appears: <code>/qa-old → /qa-seo</code>, Code <code>301</code>, Kind <code>literal</code>, Active <code>active</code>. curl prints <code>301 http://localhost:3002/qa-seo</code>. After reload Hits reads <code>3</code>. SQL: active 1, hits 3, reason NULL. Audit: <em>Added a redirect</em>.</p>
+      <p class="ref">Ref: <code>src/cms/admin/SeoManager.tsx</code> · <code>src/cms/core/routes/seo.ts</code> (<code>redirectCreateRoute</code>) · <code>src/proxy.ts</code> · <code>src/cms/core/seo/resolve.ts</code> (<code>bumpRedirectHit</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-045" data-priority="P2">
+      <h3>302, 307 and 308</h3>
+      <ol class="steps">
+        <li>Open the <strong>Status code</strong> select and hover the <strong>About status codes</strong> tip in the table header.</li>
+        <li>Add <code>/qa-temp</code> → <code>/qa-seo</code> with <code>302 — temporary</code>, <code>/qa-t307</code> with <code>307 — temporary, keeps method</code>, <code>/qa-t308</code> with <code>308 — permanent, keeps method</code>.</li>
+        <li>Run <code>R</code> on each source and <code>curl -s -o /dev/null -w '%{http_code}\n' -X POST "$BASE/qa-t307"</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The select lists <code>301 — permanent</code>, <code>302 — temporary</code>, <code>307 — temporary, keeps method</code>, <code>308 — permanent, keeps method</code>; the tip explains each. curl prints <code>302</code>, <code>307</code>, <code>308</code> with target <code>http://localhost:3002/qa-seo</code>; the POST also gets <code>307</code>.</p>
+      <p class="ref">Ref: <code>src/cms/admin/SeoManager.tsx</code> (<code>STATUS_CODE_HELP</code>) · <code>src/cms/core/routes/seo.ts</code> (status 301/302/307/308)</p>
+    </article>
+
+    <article class="tc" id="MED-046" data-priority="P2">
+      <h3>Wildcard redirects</h3>
+      <ol class="steps">
+        <li>Choose kind <code>wildcard</code> and read the hint under the form. Add <code>/qa-docs/*</code> → <code>/qa-seo</code>.</li>
+        <li>Run <code>R /qa-docs</code>, <code>R /qa-docs/a</code>, <code>R /qa-docs/a/b/c</code>, <code>R /qa-docsx</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Hint: <code>wildcard — end the source with /* to catch everything below it, e.g. /docs/* .</code> The first three answer <code>301 http://localhost:3002/qa-seo</code> (the rest of the path is not carried over to the target); <code>/qa-docsx</code> is not redirected (it ends on the not-found page).</p>
+      <p class="ref">Ref: <code>src/cms/core/seo/match.ts</code> (<code>redirectMatches</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-047" data-priority="P3">
+      <h3>A wildcard must end with /*</h3>
+      <ol class="steps">
+        <li>Add <code>/qa-files</code> → <code>/qa-seo</code> with kind <code>wildcard</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> A red message at the top: <code>A wildcard source has to end with "/*" — for example "/docs/*" to catch everything under /docs.</code> No row is added; the form keeps what you typed.</p>
+      <p class="ref">Ref: <code>src/cms/core/routes/seo.ts</code> (<code>checkKindShape</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-048" data-priority="P2">
+      <h3>Regex redirects, and patterns that would stall the site</h3>
+      <ol class="steps">
+        <li>Choose kind <code>regex</code>, read the hint. Add <code>^/qa-rx-[0-9]+$</code> → <code>/qa-seo</code>. Run <code>R /qa-rx-42</code> and <code>R /qa-rx-abc</code>.</li>
+        <li>Add <code>^/(a+)+$</code> → <code>/qa-seo</code> (regex).</li>
+        <li>Add <code>^/qa-(</code> → <code>/qa-seo</code> (regex).</li>
+      </ol>
+      <ul class="exp">
+        <li>Hint: <code>regex — a JavaScript regular expression. Avoid a repeat inside a repeat, such as (a+)+ , which would stall every request.</code> <code>/qa-rx-42</code> → <code>301</code>; <code>/qa-rx-abc</code> is not redirected.</li>
+        <li>Step 2 refused: <code>A pattern like this can take seconds to match some paths, and while it does the whole site stops answering — matching runs on every request. Avoid a repeat inside a repeat, such as (a+)+ or (.*)*: write (a+) or [a-z]+ instead.</code></li>
+        <li>Step 3 refused with a message starting <code>That is not a valid regular expression:</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/routes/seo.ts</code> (<code>regexIsSafe</code>, <code>nestedQuantifier</code>, 25 ms probe) · <code>src/cms/core/seo/match.ts</code> (256-character cap)</p>
+    </article>
+
+    <article class="tc" id="MED-049" data-priority="P1">
+      <h3>Redirect loops are refused</h3>
+      <ol class="steps">
+        <li>Add <code>/qa-loop</code> → <code>/qa-loop</code>.</li>
+        <li>Add <code>/qa-a</code> → <code>/qa-b</code>. Then add <code>/qa-b</code> → <code>/qa-a</code>.</li>
+        <li>Add <code>/qa-seo</code> → <code>/qa-old</code> (the rule from MED-044 sends <code>/qa-old</code> to <code>/qa-seo</code>).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Steps 1, the second rule of step 2, and step 3 are refused with <code>This would create a redirect loop — following it comes back to where it started.</code> Only <code>/qa-a → /qa-b</code> is added.</p>
+      <p class="ref">Ref: <code>src/cms/core/seo/match.ts</code> (<code>redirectWouldLoop</code>, 20 hops) · <code>src/cms/core/routes/seo.ts</code> (<code>SELF_LOOP</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-050" data-priority="P3">
+      <h3>Switching a rule back on cannot close a loop</h3>
+      <ol class="steps">
+        <li>Click <code>active</code> on <code>/qa-a → /qa-b</code> so it reads <code>disabled</code>.</li>
+        <li>Add <code>/qa-b</code> → <code>/qa-a</code> (allowed: the other rule is off).</li>
+        <li>Click <code>disabled</code> on <code>/qa-a → /qa-b</code> to turn it on. Run <code>R /qa-a</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 3 is refused with the loop message and the rule stays <code>disabled</code>; <code>/qa-a</code> is not redirected. The screen says turning a rule on is checked like writing one. Per the current code a toggle sends only <code>active</code> and the server skips the loop check, so both rules may end up active and <code>R /qa-a</code> answers <code>301 …/qa-b</code> (and <code>/qa-b</code> back to <code>/qa-a</code>): mark that Fail. Delete both rules afterwards.</p>
+      <p class="ref">Ref: <code>src/cms/core/routes/seo.ts</code> (<code>redirectUpdateRoute</code>: check only when source or target is sent) · <code>src/cms/admin/SeoManager.tsx</code> (<code>toggleRedirect</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-051" data-priority="P2">
+      <h3>Targets must be a site path or an http(s) address</h3>
+      <ol class="steps">
+        <li>Add <code>/qa-ext</code> → <code>https://example.com/landing</code>. Run <code>R /qa-ext</code>.</li>
+        <li>Try the targets <code>//evil.example/x</code>, <code>javascript:alert(1)</code>, <code>qa-seo</code> and <code>https://exa mple.com</code> for source <code>/qa-bad</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>301 https://example.com/landing</code>. Step 2: the first three are refused with <code>Redirect target must be an absolute http(s) URL or a path starting with "/".</code>; the last with <code>Redirect target is not a valid URL.</code> No <code>/qa-bad</code> row exists.</p>
+      <p class="ref">Ref: <code>src/cms/core/routes/seo.ts</code> (<code>publishableUrl</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-052" data-priority="P3">
+      <h3>A second rule with the same source and kind</h3>
+      <ol class="steps">
+        <li>Add <code>/qa-old</code> → <code>/qa-other</code>, kind <code>literal</code>.</li>
+        <li>Add <code>/qa-old/</code> → <code>/qa-other</code>, kind <code>literal</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both are refused with <code>Already exists.</code> (the trailing slash is stripped before saving, so step 2 is the same source). The server log has a <code>[cms/api] duplicate key</code> line.</p>
+      <p class="ref">Ref: <code>seo_redirects</code> unique <code>(source, kind)</code> · <code>src/cms/core/api/handler.ts</code> (409 <code>conflict</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-053" data-priority="P2">
+      <h3>Change a rule's target in place</h3>
+      <ol class="steps">
+        <li>Click the target <code>/qa-seo</code> of <code>/qa-temp</code> (tooltip <code>Click to change where this goes</code>), type <code>/contact</code>, press Enter. Run <code>R /qa-temp</code>.</li>
+        <li>Click it again, type <code>/xyz</code>, press Escape.</li>
+        <li>Click it again, type <code>/qa-temp</code>, press Enter.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: the row shows <code>/contact</code>, the hit count is kept, and curl prints <code>302 http://localhost:3002/contact</code>. Audit: <em>Edited a redirect</em>. Step 2: the edit is abandoned and <code>/contact</code> stays. Step 3: refused with the loop message; the target stays <code>/contact</code>.</p>
+      <p class="ref">Ref: <code>src/cms/admin/SeoManager.tsx</code> (<code>saveTarget</code>) · <code>src/cms/core/routes/seo.ts</code> (<code>redirectUpdateRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-054" data-priority="P2">
+      <h3>Disable, enable and delete a rule</h3>
+      <ol class="steps">
+        <li>Click <code>active</code> on <code>/qa-t308</code>. Run <code>R /qa-t308</code>. Click <code>disabled</code> and run it again.</li>
+        <li>Click <strong>Delete</strong> on <code>/qa-t308</code>, read the dialog, confirm. Run <code>R /qa-t308</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> While disabled the address is not redirected and the row keeps its Hits; enabled again it answers <code>308</code>. Dialog: <code>Delete the redirect for /qa-t308?</code> / <code>/qa-t308 will stop redirecting to /qa-seo and go back to 404ing for everyone. This cannot be undone.</code> with <strong>Delete redirect</strong>. Afterwards the row is gone and the address is not redirected. Audit: <em>Deleted a redirect</em>.</p>
+      <p class="ref">Ref: <code>src/cms/admin/SeoManager.tsx</code> (<code>toggleRedirect</code>, <code>removeRedirect</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-055" data-priority="P2">
+      <h3>The oldest matching rule wins</h3>
+      <ol class="steps">
+        <li>Add <code>/qa-sec/*</code> → <code>/qa-seo</code> (wildcard), then <code>/qa-sec/page</code> → <code>/contact</code> (literal).</li>
+        <li>Run <code>R /qa-sec/page</code>. Hover the <strong>About the order</strong> tip beside <code>#</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>301 http://localhost:3002/qa-seo</code>: the older wildcard wins over the newer, more specific rule. The table numbers rules in this order (the wildcard has the lower number) and the tip reads <code>Rules are checked in this order, and the first one that matches a path wins.</code> Delete both rules afterwards.</p>
+      <p class="ref">Ref: <code>src/cms/core/seo/resolve.ts</code> (<code>loadActiveRedirects</code> ordered by id) · docs/dev-guides/06-media-seo-structured-data.md §4.6</p>
+    </article>
+
+    <article class="tc" id="MED-056" data-priority="P2">
+      <h3>The language prefix is part of the source</h3>
+      <ol class="steps">
+        <li>Run <code>R /en/qa-old</code>.</li>
+        <li>Add <code>/en/qa-old</code> → <code>/en/qa-seo</code> and run it again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: not redirected (the <code>/qa-old</code> rule covers the Greek address only); it ends on <code>/en/page-not-found</code>. Step 2: <code>301 http://localhost:3002/en/qa-seo</code>.</p>
+      <p class="ref">Ref: <code>src/proxy.ts</code> (redirects before next-intl) · docs/dev-guides/06-media-seo-structured-data.md §8 “Recipe: add a redirect”</p>
+    </article>
+
+    <article class="tc" id="MED-057" data-priority="P3">
+      <h3>Old addresses with a file extension are never redirected</h3>
+      <ol class="steps">
+        <li>Add <code>/qa-legacy.html</code> → <code>/qa-seo</code> and <code>/qa-legacy.php</code> → <code>/qa-seo</code>.</li>
+        <li>Run <code>R /qa-legacy.html</code> and <code>R /qa-legacy.php</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both rules save. A migrating site needs these to answer <code>301</code>. Per the current code the request handler skips every path containing a dot, so they are not redirected (record the status) and Hits stays 0: mark Fail and note it as a gap for site migrations. Delete both rules.</p>
+      <p class="ref">Ref: <code>src/proxy.ts</code> (<code>matcher</code> excludes <code>.*\..*</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-058" data-priority="P3">
+      <h3>Trailing slash, query string and encoded characters</h3>
+      <ol class="steps">
+        <li>Run <code>R /qa-old/</code> and <code>R '/qa-old?utm_source=x'</code>.</li>
+        <li>Add <code>/qa-καλημέρα</code> → <code>/qa-seo</code>. Run <code>R /qa-%CE%BA%CE%B1%CE%BB%CE%B7%CE%BC%CE%AD%CF%81%CE%B1</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both addresses in step 1 end at <code>/qa-seo</code> (for <code>/qa-old/</code> Next.js may first answer <code>308</code> to <code>/qa-old</code>, which then answers <code>301</code>); record whether the query string is kept (the target is used as stored, so it is expected to be dropped). Step 2: <code>301</code> to <code>/qa-seo</code> (the path is decoded before matching). Delete the Greek rule.</p>
+      <p class="ref">Ref: <code>src/cms/core/seo/match.ts</code> (<code>comparablePath</code>) · <code>src/proxy.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-059" data-priority="P3">
+      <h3>Search and “Show more” in the SEO tables</h3>
+      <ol class="steps">
+        <li>Add throw-away rules until there are more than 25: <code>for i in $(seq 1 26); do curl -s -o /dev/null -b "cms_session=$S" -H 'Content-Type: application/json' -d "{\"source\":\"/qa-x$i\",\"target\":\"/qa-seo\"}" "$BASE/api/cms/seo/redirects"; done</code>. Reload and look below the Redirects table.</li>
+        <li>Type <code>qa-x1</code> into <strong>Search redirects</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> 25 rows are shown with <code>Showing 25 of N</code> and a <strong>Show more redirects (… left)</strong> button that adds up to 25 more. Typing filters immediately (source, target or notes) and the count updates, e.g. <code>Showing 11 of N</code>. The 404 and override tables behave the same (<strong>Search 404 paths</strong>, <strong>Search paths</strong>).</p>
+      <p class="ref">Ref: <code>src/cms/admin/SeoManager.tsx</code> (<code>PAGE = 25</code>, <code>SearchBox</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-404">
+    <h2>SEO screen: 404 monitor</h2>
+    <p class="intro">Addresses that match no page are logged with the path as the Greek site spells it (without <code>/en</code>) plus the language. The table shows the latest 100 by last visit. Use a signed-out terminal.</p>
+
+    <article class="tc" id="MED-060" data-priority="P1">
+      <h3>An unknown address is logged and its hits count up</h3>
+      <ol class="steps">
+        <li>Run <code>R /qa-missing</code> three times.</li>
+        <li>Reload the SEO screen and find the row under <strong>404 monitor</strong>.</li>
+        <li>Run <code>SELECT path, locale, hits, first_seen, last_seen, ignored FROM seo_404_log WHERE path LIKE '/qa-missing%';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> curl prints <code>307 http://localhost:3002/page-not-found</code> each time. Row <code>/qa-missing (el)</code>, Hits <code>3</code>, Last seen today's date. SQL: one row, locale <code>el</code>, hits 3, ignored 0.</p>
+      <p class="ref">Ref: <code>src/app/[locale]/[slug]/page.tsx</code> (<code>log404</code>) · <code>src/cms/core/seo/resolve.ts</code> (<code>log404</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-061" data-priority="P2">
+      <h3>Deep addresses and English addresses are logged too</h3>
+      <ol class="steps">
+        <li>Run <code>R /qa-missing/a/b/c</code>, <code>R /contact/qa-nothing</code>, <code>R /en/qa-missing</code> and <code>R /en/qa-missing/deeper</code>.</li>
+        <li>Reload the SEO screen and repeat the SQL of MED-060 with <code>OR path = '/contact/qa-nothing'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Greek addresses redirect to <code>/page-not-found</code>, English ones to <code>/en/page-not-found</code>. New rows: <code>/qa-missing/a/b/c (el)</code>, <code>/contact/qa-nothing (el)</code>, <code>/qa-missing (en)</code>, <code>/qa-missing/deeper (en)</code>, each with 1 hit. The Greek <code>/qa-missing</code> row still has 3: the same path in another language is a separate row.</p>
+      <p class="ref">Ref: <code>src/app/[locale]/[...rest]/page.tsx</code> (catch-all, <code>log404</code>) · <code>seo_404_log</code> unique <code>(path, locale)</code></p>
+    </article>
+
+    <article class="tc" id="MED-062" data-priority="P2">
+      <h3>What a missing address answers to a crawler</h3>
+      <ol class="steps">
+        <li>Run <code>curl -s -o /dev/null -w '%{http_code}\n' -L -A Googlebot "$BASE/qa-missing"</code> and <code>H /page-not-found</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The final status is <code>200</code> (a 307 to <code>/page-not-found</code>, which answers 200), and the not-found page has <code>&lt;meta name="robots" content="noindex, nofollow"&gt;</code>, a title <code>… | &lt;brand&gt;</code> and no canonical tag. No real HTTP 404 is sent, so search engines see a “soft 404”; record this as an SEO observation for the open-items list.</p>
+      <p class="ref">Ref: <code>src/app/[locale]/page-not-found/page.tsx</code> · <code>src/lib/i18n/page-not-found.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-063" data-priority="P2">
+      <h3>Create a redirect from a 404 entry</h3>
+      <ol class="steps">
+        <li>On the <code>/qa-missing (el)</code> row click <strong>→ redirect</strong>. Read the note under the table.</li>
+        <li>Run <code>R /qa-missing</code>.</li>
+        <li>Click the new rule's target <code>/</code>, change it to <code>/qa-seo</code>, press Enter, and run <code>R /qa-missing</code> again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> A rule <code>/qa-missing → /</code>, 301, literal appears under Redirects; the 404 row turns shaded and its button reads <strong>unignore</strong>. The note reads <code>“→ redirect” creates a 301 from the path to / and ignores the entry — set the real target above.</code> Step 2: <code>301 http://localhost:3002/</code>. Step 3: <code>301 http://localhost:3002/qa-seo</code>. Clicking <strong>→ redirect</strong> again on the same row shows <code>Already exists.</code></p>
+      <p class="ref">Ref: <code>src/cms/admin/SeoManager.tsx</code> (<code>redirectFrom404</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-064" data-priority="P3">
+      <h3>“→ redirect” on an English entry</h3>
+      <ol class="steps">
+        <li>On the <code>/qa-missing/deeper (en)</code> row click <strong>→ redirect</strong>.</li>
+        <li>Run <code>R /en/qa-missing/deeper</code> and <code>R /qa-missing/deeper</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The English address that was actually requested should now redirect. Per the current code the rule is created with the logged path <code>/qa-missing/deeper</code> (no <code>/en</code>), so the English address still ends on <code>/en/page-not-found</code> while the Greek address, which nobody asked for, is redirected: mark Fail. Delete that rule.</p>
+      <p class="ref">Ref: <code>src/cms/admin/SeoManager.tsx</code> (<code>createRedirect({ source: nf.path, … })</code>) · <code>src/app/[locale]/[...rest]/page.tsx</code> (unprefixed path) · <code>src/proxy.ts</code> (prefixed matching)</p>
+    </article>
+
+    <article class="tc" id="MED-065" data-priority="P2">
+      <h3>Ignore, unignore and delete an entry</h3>
+      <ol class="steps">
+        <li>On <code>/qa-missing/a/b/c (el)</code> click <strong>ignore</strong>. Run <code>R /qa-missing/a/b/c</code> and reload.</li>
+        <li>Click <strong>unignore</strong>.</li>
+        <li>Click <strong>delete</strong>, read the dialog, confirm. Run <code>R /qa-missing/a/b/c</code> and reload.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Ignored rows are shaded, stay in the list and keep counting (Hits 2 after the reload). Unignore removes the shading. Dialog: <code>Delete the log entry for /qa-missing/a/b/c?</code> / <code>Only the record of these hits is removed — the path itself is unaffected. Use "ignore" to keep the entry but hide it.</code> with <strong>Delete entry</strong>. After the next visit the path is logged again with 1 hit. Audit: <em>Updated a 404 entry</em>, <em>Deleted a 404 entry</em>.</p>
+      <p class="ref">Ref: <code>src/cms/admin/SeoManager.tsx</code> (<code>toggle404</code>, <code>remove404</code>) · <code>src/cms/core/routes/seo.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-066" data-priority="P3">
+      <h3>User agent and referrer samples</h3>
+      <ol class="steps">
+        <li>Run <code>curl -s -o /dev/null -A 'QA-Agent/1.0' -e 'https://referrer.example/page' "$BASE/qa-missing-ua"</code>.</li>
+        <li>Run <code>SELECT user_agent_sample, referrer_sample FROM seo_404_log WHERE path = '/qa-missing-ua';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Record the values. The table has columns for a user-agent and referrer sample, but no caller passes them, so both are expected to be NULL; the admin table does not show them either. Note it as an observation (the referrer is what shows where a broken link lives).</p>
+      <p class="ref">Ref: <code>src/cms/core/seo/resolve.ts</code> (<code>log404</code> <code>meta</code> argument) · <code>src/app/[locale]/[slug]/page.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-meta">
+    <h2>SEO screen: per-path meta overrides</h2>
+    <p class="intro">The form under <strong>Per-path meta overrides</strong> has <strong>Path</strong>, <strong>Language</strong>, <strong>Title</strong>, <strong>Robots</strong>, <strong>Description</strong>, <strong>Canonical URL</strong>, <strong>OG image URL</strong> and <strong>Save override</strong>. The Path is written as the Greek site spells it (<code>/qa-seo</code>); the Language decides which version is affected. An override beats everything else, including the page's SEO panel and Product Manager.</p>
+
+    <article class="tc" id="MED-067" data-priority="P1">
+      <h3>Override the title and description of one language</h3>
+      <ol class="steps">
+        <li>Path <code>/qa-seo</code>, Language <code>en</code>, Title <code>Override title EN</code>, Description <code>Override description EN</code>. Click <strong>Save override</strong>.</li>
+        <li>Run <code>H /en/qa-seo</code> and <code>H /qa-seo</code>.</li>
+        <li>Run <code>SELECT path, locale, title, description, og_title FROM seo_meta WHERE path = '/qa-seo';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The form clears and a row appears: Path <code>/qa-seo</code>, Locale <code>en</code>, Title <code>Override title EN</code>, Robots <code>—</code>. <code>/en/qa-seo</code>: <code>&lt;title&gt;Override title EN&lt;/title&gt;</code>, description, <code>og:title</code> and <code>og:description</code> from the override (unless the EN page has its own Social title). <code>/qa-seo</code> is unchanged. SQL: one row, locale <code>en</code>. Audit: <em>Saved an SEO override</em>.</p>
+      <p class="ref">Ref: <code>src/cms/admin/SeoManager.tsx</code> (<code>saveMeta</code>) · <code>src/cms/core/routes/seo.ts</code> (<code>metaUpsertRoute</code>) · <code>src/lib/seo/metadata.ts</code> (<code>getMetaOverride</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-068" data-priority="P2">
+      <h3>Robots, canonical and image overrides</h3>
+      <ol class="steps">
+        <li>Save an override for Path <code>/qa-seo</code>, Language <code>el</code>: Robots <code>noindex</code>, Canonical URL <code>/qa-canonical</code>, OG image URL <code>/api/cms/media/file/&lt;photo-portrait uuid&gt;</code>.</li>
+        <li>Run <code>H /qa-seo | grep -E 'robots|canonical|og:image|og:url'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>&lt;meta name="robots" content="noindex"&gt;</code>, canonical and <code>og:url</code> <code>http://localhost:3002/qa-canonical</code>, <code>og:image</code> <code>http://localhost:3002/api/cms/media/file/&lt;uuid&gt;</code>. These beat the SEO panel values set earlier. The hreflang alternates are unchanged.</p>
+      <p class="ref">Ref: <code>src/lib/seo/metadata.ts</code> (precedence: override first)</p>
+    </article>
+
+    <article class="tc" id="MED-069" data-priority="P2">
+      <h3>Saving again updates the same row</h3>
+      <ol class="steps">
+        <li>Save Path <code>/qa-seo</code>, Language <code>el</code> again with only Title <code>Override title EL</code> (other fields empty).</li>
+        <li>Run the SQL of MED-067.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Still one EL row (no duplicate); title set; robots, canonical and og_image are now NULL, because the form sends every field it shows and an empty field clears it. The page's own robots and canonical apply again.</p>
+      <p class="ref">Ref: <code>seo_meta</code> unique <code>(path, locale)</code> · <code>src/cms/core/seo/service.ts</code> (<code>patchMeta</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-070" data-priority="P3">
+      <h3>Unsafe canonical and image URLs are refused</h3>
+      <ol class="steps">
+        <li>Try Canonical URL <code>//evil.example/x</code>, then <code>javascript:alert(1)</code>, then OG image URL <code>ftp://example.com/a.jpg</code> (Path <code>/qa-seo</code>, <code>el</code>).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The canonical attempts show <code>Canonical URL must be an absolute http(s) URL or a path starting with "/".</code>; the image attempt <code>Social image URL must be an absolute http(s) URL or a path starting with "/".</code> (the message says “Social image URL” although the field is labelled OG image URL). Nothing is saved.</p>
+      <p class="ref">Ref: <code>src/cms/core/routes/seo.ts</code> (<code>metaBody</code>, <code>publishableUrl</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-071" data-priority="P2">
+      <h3>Saving the form keeps the social title and description written by Product Manager</h3>
+      <ol class="steps">
+        <li>Write social fields onto the EN row the way Product Manager does (the form has no inputs for them):
+<pre><code>curl -s -b "cms_session=$S" -H 'Content-Type: application/json' -X POST "$BASE/api/cms/seo/meta" \
+  -d '{"path":"/qa-seo","locale":"en","ogTitle":"PM social title","ogDescription":"PM social text"}'</code></pre></li>
+        <li>In the admin save Path <code>/qa-seo</code>, Language <code>en</code>, Title <code>Override title EN 2</code>.</li>
+        <li>Run <code>SELECT title, og_title, og_description FROM seo_meta WHERE path = '/qa-seo' AND locale = 'en';</code> and <code>H /en/qa-seo | grep og:</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1 answers <code>{"ok":true,…}</code>. After step 2: title <code>Override title EN 2</code>, og_title <code>PM social title</code>, og_description <code>PM social text</code> (kept, not nulled). The page shows <code>og:title</code> <code>PM social title</code> and <code>og:description</code> <code>PM social text</code>.</p>
+      <p class="ref">Ref: <code>src/cms/core/routes/seo.ts</code> (<code>metaUpsertRoute</code> → <code>patchMeta</code>) · docs/dev-guides/06-media-seo-structured-data.md §10 (“upsertMeta is whole-row”)</p>
+    </article>
+
+    <article class="tc" id="MED-072" data-priority="P2">
+      <h3>Delete an override</h3>
+      <ol class="steps">
+        <li>Click <strong>Delete</strong> on the EN <code>/qa-seo</code> row, read the dialog, confirm. Run <code>H /en/qa-seo</code>. Delete the EL row too.</li>
+        <li>Open the <strong>Language</strong> select.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Dialog: <code>Delete the meta override for /qa-seo?</code> / <code>That path goes back to the title and description the page generates for itself. This cannot be undone.</code> with <strong>Delete override</strong>. The EN page shows its own title again on the next request. Audit: <em>Deleted an SEO override</em>. Step 2: the select offers only <code>el</code> and <code>en</code> (fixed in the form, whatever languages the site has; note it if the site has more).</p>
+      <p class="ref">Ref: <code>src/cms/admin/SeoManager.tsx</code> (<code>removeMeta</code>, Language options)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-fields">
+    <h2>SEO fields manager</h2>
+    <p class="intro">Open <strong>Settings</strong> → <strong>Fields</strong> → <strong>SEO &amp; AEO</strong> (<code>/admin/settings?tab=Fields</code>). Each field is a collapsible row; changes apply to the SEO panel of every content type after <strong>Save SEO fields</strong> (<code>SEO fields saved.</code>). Custom fields on a collection's own sub-tab are covered by CON-002.</p>
+
+    <article class="tc" id="MED-073" data-priority="P2">
+      <h3>Relabel, re-describe, move and reorder a built-in field</h3>
+      <ol class="steps">
+        <li>Expand <strong>SEO title</strong>. Set <strong>Label — EL</strong> <code>Τίτλος αναζήτησης</code>, <strong>Label — EN</strong> <code>Search title</code>, <strong>Help text</strong> <code>QA help</code>. Note that <strong>Key</strong> and <strong>Type</strong> are disabled.</li>
+        <li>Expand <strong>Twitter card</strong>, set <strong>Tab</strong> to <code>General</code>. Move <strong>Meta description</strong> up with its up arrow.</li>
+        <li><strong>Save SEO fields</strong>, open QA SEO Page, look at the SEO panel on the EL and EN tabs.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> On EL the field reads <strong>Τίτλος αναζήτησης</strong> with <code>QA help</code> under it; on EN <strong>Search title</strong>. Meta description is now above it. <strong>Twitter card</strong> is on the General tab. The value saved in MED-036 is still there and still renders.</p>
+      <p class="ref">Ref: <code>src/cms/admin/SeoFieldsManager.tsx</code> · <code>src/cms/core/seo/field-overrides.ts</code> (<code>resolveSeoFields</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-074" data-priority="P2">
+      <h3>Hide a field everywhere, or on one content type</h3>
+      <ol class="steps">
+        <li>Expand <strong>Focus keywords</strong>, switch off <strong>Shown in the editor</strong>, save. Open QA SEO Page.</li>
+        <li>Switch it back on. Under <strong>Per-collection exceptions</strong> tick <strong>Social image</strong> for <strong>Pages</strong>, save, and open QA SEO Page again.</li>
+        <li>Run <code>H /qa-seo | grep og:image</code>. Undo the exception and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: no Focus keywords on the General tab. Step 2: Focus keywords is back with its old values; Social image is gone on Pages only (other content types keep it). Step 3: a Social image saved earlier still renders: hiding a field keeps its value.</p>
+      <p class="ref">Ref: <code>src/cms/core/seo/field-overrides.ts</code> (<code>disabled</code>, <code>perCollection</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-075" data-priority="P2">
+      <h3>Add a custom SEO field</h3>
+      <ol class="steps">
+        <li>Click <strong>Add SEO field</strong>. Leave Key empty and look at the amber list and the save button.</li>
+        <li>Try Key <code>1bad</code>, then <code>seoTitle</code>. Then set Key <code>qa_extra</code>, Type text, Tab <code>Advanced</code>, Label — EL/EN <code>QA extra</code>. Save.</li>
+        <li>On QA SEO Page fill <strong>QA extra</strong> with <code>hello</code>, <strong>Save EL</strong>. Run <code>SELECT JSON_EXTRACT(data, '$.seo.qa_extra') FROM documents WHERE type = 'page' AND slug = 'qa-seo' AND locale = 'el';</code> and <code>curl -s -A Googlebot "$BASE/qa-seo" | grep -c hello</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>An extra field is missing a key.</code> and <strong>Save SEO fields</strong> is disabled. Step 2: <code>"1bad" — key must start with a letter and use only letters, digits or _.</code>, then <code>"seoTitle" — that key belongs to a built-in SEO field.</code> The row shows a gold <code>custom</code> badge and saves. Step 3: SQL <code>"hello"</code>; the public page does not show it (<code>0</code>): a custom SEO field is stored, and a developer has to read it in the template.</p>
+      <p class="ref">Ref: <code>src/cms/admin/SeoFieldsManager.tsx</code> (<code>problems</code>) · docs/dev-guides/06-media-seo-structured-data.md §8 “Recipe: add an SEO field”</p>
+    </article>
+
+    <article class="tc" id="MED-076" data-priority="P3">
+      <h3>“Required to publish” exists only for stored-as-data fields</h3>
+      <ol class="steps">
+        <li>Expand <strong>SEO title</strong> and read <strong>Required to publish</strong>. Expand <strong>Social title</strong>, turn <strong>Required to publish</strong> on, save.</li>
+        <li>On QA SEO Page empty Social title and click <strong>Save EL</strong> (status published).</li>
+        <li>Turn the requirement off and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> For SEO title the toggle is disabled with <code>Not available: this field writes to a document column, which the write API validates on its own — a rule set here would hold in the form and nowhere else.</code> Step 2: the save is refused and Social title is marked as required. After step 3 the page saves.</p>
+      <p class="ref">Ref: <code>src/cms/admin/SeoFieldsManager.tsx</code> (<code>canRequire</code>) · <code>src/cms/core/seo/field-overrides.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-077" data-priority="P3">
+      <h3>Remove a custom SEO field and restore the defaults</h3>
+      <ol class="steps">
+        <li>Click the bin on <code>qa_extra</code>, read the dialog, confirm with <strong>Remove</strong>. Save.</li>
+        <li>Undo the label, help text, tab and order changes of MED-073 (clear the labels and help text, Tab <code>Social</code>, empty <strong>Position</strong>). Save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Dialog <code>Remove this field?</code> / <code>Values already saved on documents are dropped. This cannot be undone.</code> After saving, QA extra is gone from the editor. After step 2 the SEO panel looks as it did before MED-073.</p>
+      <p class="ref">Ref: <code>src/cms/admin/SeoFieldsManager.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-sitemap">
+    <h2>sitemap.xml and robots.txt extras</h2>
+    <p class="intro">The sitemap listing every published page past 200 is CON-096; robots.txt on a test and a production origin is SET-076 and SET-077.</p>
+
+    <article class="tc" id="MED-078" data-priority="P1">
+      <h3>Sitemap structure and one entry per language</h3>
+      <ol class="steps">
+        <li>Open <code>/sitemap.xml</code> in the browser and run <code>curl -s "$BASE/sitemap.xml" | grep -A12 '&lt;loc&gt;http://localhost:3002/qa-seo&lt;/loc&gt;'</code>.</li>
+        <li>Search the file for <code>&lt;loc&gt;http://localhost:3002&lt;/loc&gt;</code>, <code>/contact</code>, <code>/legal/cookies</code> and <code>/home</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Valid XML with a <code>urlset</code> root. <code>qa-seo</code> has two entries, <code>http://localhost:3002/qa-seo</code> and <code>http://localhost:3002/en/qa-seo</code>, each with <code>lastmod</code> (a date at 12:00 UTC), <code>changefreq</code> <code>monthly</code>, <code>priority</code> <code>0.6</code>, and three <code>xhtml:link rel="alternate"</code> lines: <code>el</code>, <code>en</code> and <code>x-default</code> (= the <code>/en/</code> address).</li>
+        <li>The home page is listed as <code>http://localhost:3002</code> and <code>http://localhost:3002/en</code> with <code>weekly</code> and priority <code>1</code>; <code>/contact</code> and <code>/legal/cookies</code> are listed without <code>lastmod</code>; there is no <code>/home</code> and no <code>/contact</code> page duplicate.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/sitemap.ts</code> (<code>STATIC_ROUTES</code>, <code>PAGE_SLUGS_NOT_LISTED</code>, <code>getRouteLastModified</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-079" data-priority="P2">
+      <h3>Shop and booking addresses appear only with their module</h3>
+      <ol class="steps">
+        <li>With <strong>Commerce</strong> and <strong>Booking</strong> off in <strong>Settings</strong> → <strong>Modules</strong>, run <code>curl -s "$BASE/sitemap.xml" | grep -cE '/(shop|booking)'</code>.</li>
+        <li>Turn both on (with at least one published product and experience), save, and repeat.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>0</code>. Step 2: <code>/shop</code>, <code>/booking</code>, each published product at <code>/shop/&lt;slug&gt;</code> and each experience at <code>/booking/&lt;slug&gt;</code>, each once per public language. Restore the module switches the other checklists expect.</p>
+      <p class="ref">Ref: <code>src/app/sitemap.ts</code> (<code>SITEMAP_FAMILIES</code>, <code>liveFamilies</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-080" data-priority="P2">
+      <h3>Extra sitemap URLs</h3>
+      <ol class="steps">
+        <li>Open <strong>Settings</strong> → <strong>SEO</strong>. In <strong>Sitemap — extra URLs</strong> enter three lines: <code>https://example.com/qa-extra</code>, <code>not-a-url</code>, <code>http://localhost:3002/qa-seo</code>. Click <strong>Save settings</strong>.</li>
+        <li>Run <code>curl -s "$BASE/sitemap.xml" | grep -E 'qa-extra|not-a-url' ; curl -s "$BASE/sitemap.xml" | grep -c '&lt;loc&gt;http://localhost:3002/qa-seo&lt;/loc&gt;'</code>.</li>
+        <li>Empty the box and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>https://example.com/qa-extra</code> is listed once (priority 0.5); <code>not-a-url</code> is skipped; the <code>qa-seo</code> address is still listed exactly once (<code>1</code>).</p>
+      <p class="ref">Ref: <code>src/app/sitemap.ts</code> (<code>seo.sitemapExtraUrls</code>) · <code>src/cms/core/settings/schema.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-081" data-priority="P3">
+      <h3>Extra Disallow lines in robots.txt (production build)</h3>
+      <ol class="steps">
+        <li>In <strong>Settings</strong> → <strong>SEO</strong> → <strong>robots.txt — extra Disallow</strong> enter <code>/qa-private/</code> and save.</li>
+        <li>Open <code>/robots.txt</code> on the test origin.</li>
+        <li>Build and start with the production origin as in SET-077 and run <code>curl -s http://localhost:3000/robots.txt</code>. Then rebuild normally and empty the setting.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 2: still only <code>Disallow: /</code> (SET-076); extras never open a test site. Step 3: <code>Disallow: /qa-private/</code> appears under <code>User-Agent: *</code> and under each AI crawler, beside <code>/api/</code> and <code>/admin/</code>.</p>
+      <p class="ref">Ref: <code>src/app/robots.ts</code> (<code>robotsRules</code>, <code>seo.robotsExtraDisallow</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-schema">
+    <h2>Structured data (JSON-LD)</h2>
+    <p class="intro">Open <strong>Settings</strong> → <strong>Structured data</strong> (<code>/admin/settings?tab=Structured%20data</code>). The <strong>Business type</strong> card applies to every page; below it is one card per kind of content this site has (<strong>Pages</strong> on the base; <strong>Products</strong>, <strong>Day trips</strong>, <strong>Stays</strong> with their modules on; <strong>Articles</strong>, <strong>Answers (FAQ)</strong>, <strong>Case studies</strong> on generated sites with those collections). <strong>Save</strong> shows <code>Saved. Live on the next page load.</code> and saves the whole policy. Each document can override the type with <strong>Schema type</strong> on the SEO panel's Advanced tab. Use <code>LD</code> and the validators from the intro.</p>
+
+    <article class="tc" id="MED-082" data-priority="P1">
+      <h3>Every page carries the Organization and WebSite graph</h3>
+      <ol class="steps">
+        <li>Run <code>LD /</code>, <code>LD /contact</code> and <code>LD /en/qa-seo</code>.</li>
+        <li>Validate <code>/</code> with the Rich Results Test and the Schema.org validator.</li>
+      </ol>
+      <ul class="exp">
+        <li>The first block on every page is <code>{"@context":"https://schema.org","@graph":[…]}</code> with an <code>Organization</code> (<code>@id</code> <code>http://localhost:3002/#organization</code>, <code>name</code>, <code>url</code>, <code>logo</code> absolute if a logo is set, <code>contactPoint</code> when an email or phone is set, <code>sameAs</code> with the social profiles) and a <code>WebSite</code> (<code>@id</code> <code>http://localhost:3002/#website</code>, <code>publisher</code> pointing at the organization, <code>inLanguage</code> <code>el</code> or <code>en</code> per page).</li>
+        <li>Both validators report no errors.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/[locale]/layout.tsx</code> (<code>globalGraph</code>) · <code>src/lib/seo/schemas.ts</code> (<code>organizationSchema</code>, <code>websiteSchema</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-083" data-priority="P2">
+      <h3>A local business type needs an address</h3>
+      <ol class="steps">
+        <li>In Branding empty <strong>Street</strong> and <strong>City</strong> and save. In Structured data set <strong>The business is a</strong> to <code>Restaurant</code>, <strong>Price range</strong> <code>€€</code>, <strong>Save</strong>. Run <code>LD /</code>.</li>
+        <li>In Branding set Street <code>Ermou 1</code>, City <code>Athens</code>, Postcode <code>10563</code>, Country <code>GR</code>, Phone <code>+30 210 123 4567</code>, save. Run <code>LD /</code> and validate.</li>
+        <li>Set the type to <code>OnlineStore</code>, save, run <code>LD /</code>. Then set it back to <code>Organization</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: the card shows <code>Google needs an address for a local business. Until one is added in Settings → Branding, the site is described as a plain Organization.</code>; the node stays <code>"@type":"Organization"</code> with no <code>priceRange</code>.</li>
+        <li>Step 2: <code>"@type":"Restaurant"</code> with a <code>PostalAddress</code> (<code>streetAddress</code>, <code>postalCode</code>, <code>addressLocality</code>, <code>addressCountry</code>), <code>telephone</code> <code>+302101234567</code>, <code>priceRange</code> <code>€€</code> and <code>image</code> = the logo URL. No validator errors.</li>
+        <li>Step 3: <code>"@type":"OnlineStore"</code> with no <code>priceRange</code> or <code>telephone</code>; the Price range field is hidden.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/structured-data/nodes.ts</code> (<code>businessNode</code>) · <code>src/cms/core/structured-data/policy.ts</code> (<code>LOCAL_BUSINESS_TYPES</code>) · <code>src/cms/admin/StructuredDataSettings.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MED-084" data-priority="P3">
+      <h3>The default business type follows the modules</h3>
+      <ol class="steps">
+        <li>Run <code>DELETE FROM site_settings WHERE `key` = 'seo.schema';</code> (test database), then click <strong>Save settings</strong> on the General tab so the cached settings are refreshed.</li>
+        <li>With <strong>Commerce</strong> on, open the Structured data tab. Then with Commerce off and <strong>Booking</strong> on. Then with both off.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The pre-selected type is <code>OnlineStore</code> with Commerce on; <code>TravelAgency</code> with bookings on (or <code>LodgingBusiness</code> when the booking kinds setting is stays only); <code>Organization</code> with neither. Every category card shows its default type (Pages: <code>WebPage</code>) and every toggle ticked.</p>
+      <p class="ref">Ref: <code>src/cms/core/structured-data/policy.ts</code> (<code>defaultBusinessType</code>, <code>readCategory</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-085" data-priority="P1">
+      <h3>A page: WebPage and BreadcrumbList</h3>
+      <ol class="steps">
+        <li>Clear the SEO title and FAQs of QA SEO Page (EL) and save. Run <code>LD /qa-seo</code> and <code>LD /en/qa-seo</code>.</li>
+        <li>Validate <code>/qa-seo</code> with the Rich Results Test.</li>
+      </ol>
+      <ul class="exp">
+        <li>A second block holds a <code>WebPage</code> (<code>@id</code> <code>http://localhost:3002/qa-seo#webpage</code>, <code>name</code> <code>QA SEO Page</code>, <code>url</code>, <code>isPartOf</code> <code>#website</code>, <code>publisher</code> <code>#organization</code>, <code>inLanguage</code> <code>el</code>) and a <code>BreadcrumbList</code> with position 1 <code>Αρχική</code> → <code>http://localhost:3002/</code> and position 2 <code>QA SEO Page</code> → <code>http://localhost:3002/qa-seo</code>.</li>
+        <li>EN: <code>Home</code> → <code>http://localhost:3002/en</code>, then <code>QA SEO Page EN</code> → <code>http://localhost:3002/en/qa-seo</code>, <code>inLanguage</code> <code>en</code>.</li>
+        <li>Rich Results Test: <strong>Breadcrumbs</strong> detected as valid; no errors.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/[locale]/[slug]/page.tsx</code> (<code>documentStructuredData</code>, category <code>pages</code>) · <code>src/cms/core/structured-data/nodes.ts</code> (<code>webpage</code>) · <code>src/lib/seo/schemas.ts</code> (<code>breadcrumbSchema</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-086" data-priority="P2">
+      <h3>Schema type per category and per document</h3>
+      <ol class="steps">
+        <li>In the <strong>Pages</strong> card set <strong>Schema type</strong> to <code>AboutPage</code> and save. Run <code>LD /qa-seo</code>.</li>
+        <li>On QA SEO Page (EL) open <strong>Advanced</strong> → <strong>Schema type</strong>, choose <code>ContactPage</code>, <strong>Save EL</strong>. Run <code>LD /qa-seo</code> and <code>LD /en/qa-seo</code>.</li>
+        <li>Set the page to <code>None</code> and save. Run <code>LD /qa-seo</code>.</li>
+        <li>Set the page back to <code>Site default (Settings → Structured data)</code> and the Pages card back to <code>WebPage</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The card's hint changes with the type (e.g. <code>The page about the business.</code>). Step 1: <code>"@type":"AboutPage"</code>. Step 2: EL <code>ContactPage</code>, EN still <code>AboutPage</code> (the choice is per language). Step 3: only the site-wide block remains on <code>/qa-seo</code> (no WebPage, no BreadcrumbList); the Pages card hides its toggles when <code>None</code> is chosen there.</p>
+      <p class="ref">Ref: <code>src/cms/core/seo/field-overrides.ts</code> (<code>schemaTypeDef</code>) · <code>src/cms/core/structured-data/policy.ts</code> (<code>resolveSchemaChoice</code>, <code>TYPE_HINTS</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-087" data-priority="P2">
+      <h3>FAQs from the SEO panel become a FAQPage</h3>
+      <ol class="steps">
+        <li>On QA SEO Page (EL) open <strong>AEO</strong> → <strong>FAQs</strong>, click <strong>Add question</strong> twice. Fill two questions with answers; add a third with only a question. <strong>Save EL</strong>.</li>
+        <li>Run <code>LD /qa-seo</code> and validate with the Schema.org validator.</li>
+        <li>In the Pages card untick <strong>Add the FAQs from the SEO panel</strong>, save, repeat step 2. Tick it again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 2: after the WebPage and BreadcrumbList a <code>FAQPage</code> node whose <code>mainEntity</code> has exactly two <code>Question</code> items, each with an <code>acceptedAnswer</code> of type <code>Answer</code>; the half-filled pair is left out (or the save refuses it as required). No validator errors. Step 3: no FAQPage node.</p>
+      <p class="ref">Ref: <code>src/cms/core/structured-data/nodes.ts</code> (<code>buildDocumentNodes</code>, <code>appendFaq</code>) · <code>src/cms/core/seo/document.ts</code> (half-filled pairs dropped)</p>
+    </article>
+
+    <article class="tc" id="MED-088" data-priority="P2">
+      <h3>Breadcrumbs switch</h3>
+      <ol class="steps">
+        <li>In the Pages card untick <strong>Breadcrumbs</strong>, save. Run <code>LD /qa-seo</code>. Tick it again and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> No <code>BreadcrumbList</code> node while unticked; the WebPage (and FAQPage) remain. The visible page is unchanged either way.</p>
+      <p class="ref">Ref: <code>src/cms/core/structured-data/policy.ts</code> (<code>breadcrumbs</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-089" data-priority="P2">
+      <h3>Structured data override replaces the generated graph</h3>
+      <ol class="steps">
+        <li>On QA SEO Page (EL) → <strong>Advanced</strong> → <strong>Structured data override</strong> paste <code>{"@context":"https://schema.org","@type":"Event","name":"QA &lt;/script&gt;&lt;b&gt;event","startDate":"2026-12-01"}</code>. <strong>Save EL</strong>.</li>
+        <li>Run <code>LD /qa-seo</code> and <code>curl -s -A Googlebot "$BASE/qa-seo" | grep -c '&lt;b&gt;event'</code>.</li>
+        <li>Paste <code>not json</code> instead, save, run <code>LD /qa-seo</code>. Then clear the field and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 2: the page's own block is exactly the pasted Event (no WebPage, BreadcrumbList or FAQPage); the site-wide block is still first. The <code>&lt;</code> characters are written as <code>\u003c</code>, so the second command prints <code>0</code> and the page layout is intact. Step 3: invalid JSON is ignored and the generated WebPage graph returns (record whether the editor warned about it).</p>
+      <p class="ref">Ref: <code>src/cms/core/structured-data/nodes.ts</code> (<code>structuredDataJson</code>) · <code>src/cms/core/seo/document.ts</code> (<code>parseSchemaOverride</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-090" data-priority="P2">
+      <h3>Articles: BlogPosting with author, dates and image (generated sites)</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> A site generated with a blog (see the note in checklist 03, “Generated editorial collections”); on the base mark N/A. A published article <code>qa-article</code> with a summary, an image and a published author.</p>
+      <ol class="steps">
+        <li>Run <code>LD /blog/qa-article</code> and validate with the Rich Results Test.</li>
+        <li>In the <strong>Articles</strong> card untick <strong>Author</strong>, <strong>Publish and update dates</strong> and <strong>Images</strong>, save, repeat. Tick them again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: a <code>BlogPosting</code> (<code>@id</code> <code>…/blog/qa-article#article</code>, <code>headline</code> at most 110 characters, <code>description</code>, <code>mainEntityOfPage</code>, <code>publisher</code>, <code>image</code> as an absolute URL list, <code>datePublished</code> and <code>dateModified</code> as ISO date-times, <code>author</code> as an <code>@id</code> reference with a <code>Person</code> node beside it), then a BreadcrumbList (Home → blog → category, if any → article). Rich Results Test: <strong>Articles</strong> valid. Step 2: <code>author</code>, both dates and <code>image</code> are gone and the Person node is not emitted.</p>
+      <p class="ref">Ref: <code>.claude/skills/new-site/templates/content/detail-page.tsx.tpl</code> · <code>src/cms/core/structured-data/nodes.ts</code> (<code>article</code>, <code>HEADLINE_MAX</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-091" data-priority="P2">
+      <h3>Speakable points only at elements the template marks</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> As MED-090 (generated site with a blog); on the base mark N/A.</p>
+      <ol class="steps">
+        <li>Run <code>LD /blog/qa-article | grep -o '"speakable":{[^}]*}'</code>.</li>
+        <li>In the browser open the article, developer tools → Console, run <code>document.querySelectorAll('[data-speakable]').length</code> and <code>[...document.querySelectorAll('[data-speakable]')].map(e =&gt; e.dataset.speakable + ': ' + e.tagName)</code>.</li>
+        <li>Open <code>/qa-seo</code> and <code>/</code> and run the same count.</li>
+        <li>Untick <strong>Speakable (text for voice assistants)</strong> in the Articles card, save, repeat step 1. Tick it again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>"speakable":{"@type":"SpeakableSpecification","cssSelector":["[data-speakable=\"headline\"]","[data-speakable=\"summary\"]"]}</code>. Step 2: <code>2</code>: <code>headline: H1</code> and <code>summary: P</code> (an article without a summary gives 1). Step 3: <code>0</code>, and neither page's JSON-LD contains <code>speakable</code>. Step 4: no <code>speakable</code> key. Validate step 1 with the Schema.org validator: no errors.</p>
+      <p class="ref">Ref: <code>src/cms/core/structured-data/nodes.ts</code> (<code>SPEAKABLE_SELECTORS</code>) · <code>.claude/skills/new-site/templates/content/detail-page.tsx.tpl</code> (<code>data-speakable</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-092" data-priority="P3">
+      <h3>Answers: FAQPage, and speakable only as Article</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> A generated site with the FAQ collection and a published answer <code>qa-answer</code>; on the base mark N/A.</p>
+      <ol class="steps">
+        <li>Open the <strong>Answers (FAQ)</strong> card and note which toggles show. Run <code>LD /faq/qa-answer</code>.</li>
+        <li>Set the card's type to <code>Article</code>, save, look at the toggles again and repeat <code>LD</code>. Set it back to <code>FAQPage</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: only <strong>Breadcrumbs</strong> and <strong>Include the FAQs from the SEO panel in the same FAQPage</strong> are offered; the JSON-LD has a <code>FAQPage</code> (<code>@id</code> <code>…#faq</code>) and no <code>speakable</code>. Step 2: <strong>Publish and update dates</strong> and <strong>Speakable (text for voice assistants)</strong> appear; the node is an <code>Article</code> with a SpeakableSpecification.</p>
+      <p class="ref">Ref: <code>src/cms/core/structured-data/policy.ts</code> (<code>answers</code> category, <code>partsFor</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-093" data-priority="P2">
+      <h3>Product JSON-LD and its parts</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Commerce module on; a published product <code>qa-product</code> with a price, a Brand value, stock status in stock and at least one approved review (checklist 08). Otherwise mark N/A.</p>
+      <ol class="steps">
+        <li>Run <code>LD /shop/qa-product</code> and <code>H /shop/qa-product | grep -E 'og:type|product:'</code>. Validate with the Rich Results Test.</li>
+        <li>In the <strong>Products</strong> card untick <strong>Brand</strong>, <strong>Reviews and rating</strong> and <strong>Price and availability</strong> (note its hint), save, repeat <code>LD</code>. Tick them again.</li>
+        <li>Give the product two variations with different prices and repeat <code>LD</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: a <code>Product</code> (<code>@id</code> <code>…/shop/qa-product#product</code>, <code>name</code>, <code>image</code>, <code>brand</code> <code>{"@type":"Brand",…}</code>, <code>aggregateRating</code>, <code>review</code>, <code>offers</code> of type <code>Offer</code> with <code>price</code> as a string with two decimals, <code>priceCurrency</code>, <code>availability</code> <code>https://schema.org/InStock</code>, <code>itemCondition</code> <code>https://schema.org/NewCondition</code>) and a BreadcrumbList. Head: <code>product:price:amount</code>, <code>product:price:currency</code>, <code>product:availability</code>; record whether <code>og:type</code> appears twice (<code>website</code> and <code>product</code>). Rich Results Test: product snippets / merchant listings detected, no errors (warnings about shipping or returns are acceptable).</li>
+        <li>Step 2: hint <code>Without it, Google cannot show the price or stock.</code>; <code>brand</code>, <code>aggregateRating</code>, <code>review</code> and <code>offers</code> are gone; <code>image</code> stays.</li>
+        <li>Step 3: <code>offers</code> is an <code>AggregateOffer</code> with <code>offerCount</code> 2, <code>lowPrice</code> and <code>highPrice</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/lib/seo/commerce-schema.ts</code> (<code>productSchema</code>, <code>offerFragment</code>) · <code>src/app/[locale]/shop/[slug]/page.tsx</code> · <code>src/cms/core/structured-data/nodes.ts</code> (<code>product</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-094" data-priority="P2">
+      <h3>Day trip JSON-LD</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Booking module on; a published experience <code>qa-trip</code> with <strong>Booking type</strong> Transport, a <strong>Base price</strong> of 80 and two gallery images. Otherwise mark N/A.</p>
+      <ol class="steps">
+        <li>Run <code>LD /booking/qa-trip</code> and validate with the Schema.org validator.</li>
+        <li>In the <strong>Day trips</strong> card untick <strong>Price and availability</strong>, save, repeat. Tick it again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: a <code>TouristTrip</code> (<code>@id</code> <code>…/booking/qa-trip#trip</code>, <code>name</code>, <code>provider</code> <code>#organization</code>, <code>image</code> with both absolute URLs, <code>offers</code> <code>{"@type":"Offer","price":80,"priceCurrency":…}</code>) and a BreadcrumbList starting with the booking listing. No validator errors. Step 2: no <code>offers</code>.</p>
+      <p class="ref">Ref: <code>src/app/[locale]/booking/[slug]/page.tsx</code> (<code>structuredOfferPrice</code>) · <code>src/cms/core/structured-data/nodes.ts</code> (<code>trip</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-095" data-priority="P2">
+      <h3>Stay JSON-LD and the nightly price</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Booking module on with stays enabled; a published experience <code>qa-stay</code> with <strong>Booking type</strong> Stay, <strong>Rate per night</strong> 120 and a seasonal rate of 95. Otherwise mark N/A.</p>
+      <ol class="steps">
+        <li>Open the <strong>Stays</strong> card and note which toggles show for the default type. Run <code>LD /booking/qa-stay</code>.</li>
+        <li>Set the Stays type to <code>Product</code>, save, look at the toggles and repeat <code>LD</code>. Validate with the Schema.org validator.</li>
+        <li>Set it back to <code>Accommodation</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: the card offers <strong>Images</strong> only; the node is an <code>Accommodation</code> (<code>…#accommodation</code>) with <code>image</code> and no <code>offers</code>, although the page advertises a nightly price. Step 2: <strong>Price and availability</strong> appears; the node is a <code>Product</code> with <code>offers</code> <code>{"@type":"Offer","price":95,…}</code> (the lowest nightly rate). Record the step 1 result on the open-items list: a stay shows its nightly price in structured data only when typed as Product.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/data.ts</code> (<code>lowestPrice</code>, <code>structuredOfferPrice</code>) · <code>src/cms/core/structured-data/policy.ts</code> (<code>PARTS_FOR_FAMILY.accommodation</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-096" data-priority="P3">
+      <h3>The policy is saved whole, including hidden cards</h3>
+      <ol class="steps">
+        <li>With <strong>Commerce</strong> on, set the Products type to <code>None</code> and save. Turn Commerce off, change the Pages card, save. Turn Commerce on again and open the tab.</li>
+        <li>Run <code>SELECT value FROM site_settings WHERE `key` = 'seo.schema';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The Products card still shows <code>None</code>: saving while its card was hidden did not reset it. The stored JSON has <code>business</code> and a <code>categories</code> entry for every category. Put Products back to <code>Product</code>.</p>
+      <p class="ref">Ref: <code>src/cms/admin/StructuredDataSettings.tsx</code> · <code>src/cms/core/structured-data/policy.ts</code> (<code>parseSchemaPolicy</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-pm">
+    <h2>Product Manager (Praion.ai) bridge</h2>
+    <p class="intro">Product Manager pushes SEO values, compiled head payloads and slug changes into the CMS with signed requests. Connecting keys, signature checks, replay and revocation are AUTH-057 to AUTH-062; this section checks what the pushes do to the site. In the base CMS only products (type <code>product</code>, Commerce on) and booking experiences (type <code>wp_post</code>, Booking on) are exposed as documents; payloads can also be pushed for any path, such as <code>/qa-seo</code>.</p>
+
+    <article class="tc" id="MED-097" data-priority="P2">
+      <h3>Switch the bridge on and prepare a signing helper</h3>
+      <ol class="steps">
+        <li>In <strong>Settings</strong> → <strong>Modules</strong> tick <strong>Praion.ai connection</strong>, <strong>Save settings</strong>.</li>
+        <li>Make and connect a key as in AUTH-057, named <code>QA PM full</code>, with all four permissions ticked (<strong>Read content</strong>, <strong>Write SEO fields</strong>, <strong>Write compiled head payloads</strong>, <strong>Write image alt text</strong>). Keep <code>KEY_ID</code>, <code>SECRET</code>, <code>BASE</code> and <code>HOSTPORT</code> set as in AUTH-058.</li>
+        <li>Paste this helper (it signs exactly as AUTH-058, including the body hash):
+<pre><code>pm() { # pm METHOD PATH [BODY_FILE]
+  local M=$1 P=$2 F=${3:-/dev/null} TS N H SIG
+  TS=$(date +%s); N=$(openssl rand -hex 16); H=$(sha256sum &lt; "$F" | cut -d' ' -f1)
+  SIG=$(printf 'PM-HMAC-SHA256\n%s\n%s\n%s\n%s\n%s\n%s' "$M" "$HOSTPORT" "$P" "$TS" "$N" "$H" \
+    | openssl dgst -sha256 -hmac "$SECRET" | sed 's/^.*= //')
+  curl -s -X "$M" "$BASE$P" -H 'Content-Type: application/json' -H "X-PM-Key-Id: $KEY_ID" \
+    -H "X-PM-Timestamp: $TS" -H "X-PM-Nonce: $N" -H "X-PM-Signature: $SIG" ${3:+--data-binary @"$F"}; echo
+}
+pm GET /api/cms/pm/v1/ping | jq .capabilities</code></pre></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The ping answers with a <code>capabilities</code> object that includes <code>"compiled_payloads": true</code> and <code>"alternates": false</code>, and <code>woocommerce</code> equal to whether Commerce is on. With the module off the same call answers <code>404</code> <code>{"ok":false,"error":"no_route"}</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/pm/routes.ts</code> (<code>pmPingRoute</code>, <code>bridgeRoute</code>) · <code>src/cms/core/tokens/signature.ts</code> (<code>canonicalString</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-098" data-priority="P1">
+      <h3>A head payload for a Greek page renders</h3>
+      <ol class="steps">
+        <li>Create the body and push it:
+<pre><code>cat &gt; pm-el.json &lt;&lt;'EOF'
+{"path":"/qa-seo","head_meta":{"title":"PM title EL","description":"PM description EL","og_title":"PM OG EL"},
+ "jsonld":{"@context":"https://schema.org","@type":"Service","name":"PM service EL"},"seo_override":false}
+EOF
+pm PATCH /api/cms/pm/v1/payload pm-el.json</code></pre></li>
+        <li>Run <code>H /qa-seo | grep -E '&lt;title&gt;|og:title'</code> and <code>LD /qa-seo</code>.</li>
+        <li>Run <code>SELECT path, locale, seo_override, document_id, payload_hash FROM pm_head_payloads;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Response <code>{"written":1,"errors":{},"skipped":[]}</code>. Without the override flag the page keeps its own title and og:title (the payload only fills gaps). The JSON-LD now has three blocks: the site-wide graph, the page's own graph, and PM's <code>Service</code> node. SQL: one row <code>/qa-seo</code>, <code>el</code>, seo_override 0, document_id NULL.</p>
+      <p class="ref">Ref: <code>src/cms/modules/pm/payload.ts</code> (<code>storePayload</code>) · <code>src/cms/modules/pm/PmStructuredData.tsx</code> · <code>src/lib/seo/metadata.ts</code> (<code>pmWeak</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-099" data-priority="P2">
+      <h3>With the override flag, PM's values win</h3>
+      <ol class="steps">
+        <li>Change <code>"seo_override":false</code> to <code>true</code> in <code>pm-el.json</code> and push it again.</li>
+        <li>Run <code>H /qa-seo | grep -E '&lt;title&gt;|description|og:title'</code> and <code>LD /qa-seo</code>.</li>
+        <li>Save a per-path override for <code>/qa-seo</code> <code>el</code> with Title <code>Override wins</code>, repeat step 2, then delete the override.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 2: <code>&lt;title&gt;PM title EL&lt;/title&gt;</code>, description <code>PM description EL</code>, <code>og:title</code> <code>PM OG EL</code>. JSON-LD: the site-wide block and PM's block only (the page's WebPage graph is replaced). Step 3: the title is <code>Override wins</code>: a per-path override still beats PM.</p>
+      <p class="ref">Ref: <code>src/lib/seo/metadata.ts</code> (<code>pmStrong</code>) · <code>src/cms/modules/pm/PmStructuredData.tsx</code> (<code>keepFallback</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-100" data-priority="P2">
+      <h3>A head payload for an English page renders on the English page only</h3>
+      <ol class="steps">
+        <li>Push a payload for English, addressed by the public English path:
+<pre><code>cat &gt; pm-en.json &lt;&lt;'EOF'
+{"path":"/en/qa-seo","head_meta":{"title":"PM title EN"},
+ "jsonld":{"@context":"https://schema.org","@type":"Service","name":"PM service EN"},"seo_override":true}
+EOF
+pm PATCH '/api/cms/pm/v1/payload?locale=en' pm-en.json</code></pre></li>
+        <li>Run <code>H /en/qa-seo | grep '&lt;title&gt;'</code>, <code>LD /en/qa-seo</code>, <code>H /qa-seo | grep '&lt;title&gt;'</code>.</li>
+        <li>Run the SQL of MED-098.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>{"written":1,…}</code>. <code>/en/qa-seo</code>: <code>&lt;title&gt;PM title EN&lt;/title&gt;</code> and a <code>PM service EN</code> block. <code>/qa-seo</code> still shows <code>PM title EL</code>. SQL: two rows, both with path <code>/qa-seo</code>, locales <code>el</code> and <code>en</code>; no row with <code>/en/qa-seo</code> (payloads are keyed by the unprefixed path plus language).</p>
+      <p class="ref">Ref: <code>src/cms/modules/pm/routes.ts</code> (<code>pmPayloadRoute</code>, <code>localeKeyedPath</code>) · <code>src/cms/core/seo/locale-path.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-101" data-priority="P3">
+      <h3>Repeated and unsafe payloads</h3>
+      <ol class="steps">
+        <li>Push <code>pm-en.json</code> again unchanged.</li>
+        <li>Push a payload whose jsonld name is <code>x&lt;/script&gt;&lt;script&gt;alert(1)</code>, and one whose jsonld is <code>{"name":"no type"}</code>.</li>
+        <li>Push <code>{"path":"qa-seo","head_meta":{"title":"x"}}</code> (no leading slash).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>{"written":0,"errors":{},"skipped":["payload"]}</code> and no new audit entry. Step 2: HTTP 200 with <code>"written":0</code> and <code>errors.payload</code> <code>Refusing a payload containing "&lt;/script".</code>, then <code>Every structured-data node must carry an "@type".</code>; the stored payload is unchanged. Step 3: <code>404</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/pm/payload.ts</code> (<code>assertNoScriptBreakout</code>, <code>validateJsonLd</code>, <code>payloadHash</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-102" data-priority="P1">
+      <h3>A slug change from Product Manager writes exactly one redirect</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Commerce on and a published product with slug <code>qa-pm-product</code> in EL and EN (checklist 08). With Booking instead, use an experience and type <code>wp_post</code>, paths <code>/booking/…</code>.</p>
+      <ol class="steps">
+        <li>Run <code>SELECT id, locale FROM documents WHERE type = 'product' AND slug = 'qa-pm-product';</code> and set <code>ID=&lt;EL id&gt;</code>.</li>
+        <li>Run <code>echo '{"values":{"slug":"qa-pm-renamed"}}' &gt; pm-slug.json; pm PATCH /api/cms/pm/v1/pages/product/$ID pm-slug.json</code>.</li>
+        <li>Run <code>R /shop/qa-pm-product</code>, <code>R /shop/qa-pm-renamed</code>, and <code>SELECT source, target, status_code, kind, reason, notes FROM seo_redirects WHERE source LIKE '%qa-pm-%' OR target LIKE '%qa-pm-%';</code></li>
+        <li>Open the product in the admin and its <strong>Version history</strong>; open <strong>Audit log</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Response <code>{"written":1,"errors":{},"skipped":[]}</code>.</li>
+        <li>Old address <code>301 http://localhost:3002/shop/qa-pm-renamed</code>; new address <code>200</code>.</li>
+        <li>SQL: exactly one row, <code>/shop/qa-pm-product</code> → <code>/shop/qa-pm-renamed</code>, 301, <code>literal</code>, reason <code>slug_change</code>, notes <code>Auto: the page’s address changed — old links are sent to the new one</code>. No row with notes <code>PM bridge: slug change</code>.</li>
+        <li>One new version row; the audit entry has the actor <code>api-token:QA PM full</code>.</li>
+        <li>Run <code>SELECT locale, slug FROM documents WHERE type = 'product' AND slug LIKE 'qa-pm-%';</code> and record it. The bridge renames only the row it addressed, so EN is expected to keep <code>qa-pm-product</code>, unlike a rename in the admin form, which keeps every language on the same slug. If so, the EL page's <code>en</code> alternate (<code>/en/shop/qa-pm-renamed</code>) lands on the not-found page: note it as an observation.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/pm/write.ts</code> (<code>applyPageValues</code>, <code>slugChange</code>) · <code>src/cms/core/seo/slug-change-redirect.ts</code> · docs/dev-guides/06-media-seo-structured-data.md §10 (“PM slug changes rely on updateDocument”)</p>
+    </article>
+
+    <article class="tc" id="MED-103" data-priority="P3">
+      <h3>A second rename keeps one hop; bad slugs and collisions are refused</h3>
+      <ol class="steps">
+        <li>Push <code>{"values":{"slug":"qa-pm-final"}}</code> for the same id. Repeat the SQL of MED-102 and run <code>R /shop/qa-pm-product</code>.</li>
+        <li>Push <code>{"values":{"slug":"Bad Slug"}}</code>, then a slug already used by another EL product.</li>
+        <li>Set <code>ID</code> to the EN row id and push <code>{"values":{"slug":"qa-pm-en"}}</code> with <code>'/api/cms/pm/v1/pages/product/'$ID'?locale=en'</code>. Run <code>R /en/shop/qa-pm-product</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: two rows, both pointing straight at <code>/shop/qa-pm-final</code> (the earlier one was moved forward); <code>/shop/qa-pm-product</code> answers <code>301</code> directly to <code>/shop/qa-pm-final</code>, one hop. Step 2: <code>"written":0</code> with <code>errors.slug</code> <code>A slug may contain only lowercase letters, numbers and dashes.</code>, then <code>Another product already uses the slug "…" in this language.</code>; nothing changes. Step 3: <code>301 http://localhost:3002/en/shop/qa-pm-en</code> (one new row, source <code>/en/shop/qa-pm-product</code>); the Greek addresses and rows are untouched.</p>
+      <p class="ref">Ref: <code>src/cms/modules/pm/write.ts</code> (<code>slugCollision</code>) · <code>src/cms/core/seo/slug-change-redirect.ts</code> (single hop)</p>
+    </article>
+
+    <article class="tc" id="MED-104" data-priority="P3">
+      <h3>Switching the bridge off keeps what was pushed</h3>
+      <ol class="steps">
+        <li>Untick <strong>Praion.ai connection</strong> in Modules and save. Run <code>pm GET /api/cms/pm/v1/ping</code> and <code>H /qa-seo | grep '&lt;title&gt;'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The ping answers <code>404</code> <code>{"ok":false,"error":"no_route"}</code>; the Connect to Praion.ai tab disappears from Settings; <code>/qa-seo</code> still shows <code>PM title EL</code> (the module's off-note says SEO already pushed stays live).</p>
+      <p class="ref">Ref: <code>src/cms/core/settings/schema.ts</code> (<code>pm</code> off-note) · <code>src/cms/modules/pm/gate.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-105" data-priority="P3">
+      <h3>Clean up</h3>
+      <ol class="steps">
+        <li>Turn the bridge on, push empty payloads for both languages (<code>{"path":"/qa-seo","head_meta":null,"jsonld":null,"seo_override":false}</code>, with and without <code>?locale=en</code>), revoke <code>QA PM full</code>, and turn the bridge off again.</li>
+        <li>Delete the QA redirects (<code>/qa-old</code>, <code>/qa-temp</code>, <code>/qa-t307</code>, <code>/qa-docs/*</code>, the regex, <code>/qa-ext</code>, <code>/en/qa-old</code>, <code>/qa-missing</code>, <code>/qa-x…</code>), the QA 404 entries and any overrides left.</li>
+        <li>Restore Branding and Structured data to the values you noted, delete QA SEO Page and the QA media files.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>/qa-seo</code> answers the not-found redirect and is logged once more in the 404 monitor (delete that entry too). No QA rows remain in <code>seo_redirects</code>, <code>seo_meta</code> or <code>pm_head_payloads</code> other than the empty payload rows, and the site renders the original brand.</p>
+      <p class="ref">Ref: <code>src/cms/modules/pm/payload.ts</code> · <code>src/cms/admin/SeoManager.tsx</code></p>
+    </article>
+  </section>
+
+</main>
+<footer class="page">Checklist 06 of 12. Results are saved in this browser only; use Export before clearing browser data. Afterwards restore Branding, Structured data, the module switches and the language settings, and delete the QA page, media files, redirects, overrides, 404 entries and API key (MED-105).</footer>
+</body>
+</html>

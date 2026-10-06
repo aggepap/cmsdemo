@@ -1,0 +1,1455 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commerce checklist</title>
+<link rel="stylesheet" href="qa.css">
+<script src="qa.js" defer></script>
+</head>
+<body>
+<nav class="crumbs"><a href="index.html">CMS manual QA</a></nav>
+<header class="page">
+  <h1>08 · Commerce: shop, checkout, orders, payments &amp; customers</h1>
+  <p class="scope">The shop end to end: categories (nested), tags, size charts and products (simple, with variations, external, digital and gift card) in the admin; the shop, category, tag and product pages in both languages, filters and search; the browser cart; checkout with addresses, both shipping engines, cash on delivery, coupons, gift wrap and gift cards; Stripe, PayPal and Viva in sandbox (success, decline, cancel, webhooks, replays); the checkout's refusals; the confirmation screen and the order emails; the Orders screen (list, detail, status lifecycle, conflicts, refunds, the refund-required notice, stock); shipments, courier credentials and BoxNow vouchers against the BoxNow stage API; the stale-order, gift card and abandoned-cart jobs; customer accounts, the Customers screen, reviews, the wishlist and the marketplace feeds. Covered elsewhere and referenced by ID: the Commerce and Customer accounts switches and their 404s (SET-034 to SET-037, SET-040, SET-042), the admin bar on shop pages and a signed-in customer (ADM-024, ADM-026, ADM-060), Customer accounts on while Commerce is off (ADM-012), the Gift cards entry (ADM-037), the commerce tables and money invariants (DB-037 to DB-050, DB-090, DB-094, DB-095), the customer cookie refused by the admin API (AUTH-015), the permission matrix (AUTH-055), shop addresses in the sitemap (MED-079), product JSON-LD (MED-093), Product Manager slug redirects (MED-102) and the unsubscribe page itself (MKT-048). You need: a test environment reachable from the internet (for PayPal and Viva webhooks), sandbox accounts at Stripe, PayPal and Viva, BoxNow stage credentials, a mailbox you can read as the customer and one as the shop, database client access, a terminal with <code>curl</code>, and two browsers (or a normal and a private window).</p>
+</header>
+<main>
+
+  <section class="suite" id="suite-prep">
+    <h2>Before you start</h2>
+    <p class="intro">Checklists 01 (migrations, seeds, superadmin <code>qa-admin@example.com</code>) and 07 (MKT-001: outgoing mail configured) must be done. Sign in as <code>qa-admin@example.com</code> unless a case says otherwise. URLs use <code>http://localhost:3002</code>; on the hosted test environment use its address. Greek is the default language and has no prefix: <code>/shop</code> is Greek, <code>/en/shop</code> English. Most steps use the English pages so the quoted text can be compared directly; Greek wording is given where a case is about language.</p>
+    <div class="callout">
+      <p><strong>Never use live keys.</strong> Every payment and courier variable below must hold a sandbox or test value: Stripe keys starting <code>sk_test_</code> / <code>pk_test_</code>, <code>PAYPAL_ENV=sandbox</code>, <code>VIVA_ENV=demo</code>, and <code>BOXNOW_API_URL</code> empty or pointing at <code>https://api-stage.boxnow.gr/api/v1</code>. Use each provider's documented sandbox test cards and accounts; this page names them generically (“the provider's successful test card”).</p>
+      <p><strong>Terminal.</strong> In the project folder run <code>BASE=http://localhost:3002</code>, <code>CRON='&lt;value of CMS_CRON_SECRET&gt;'</code>, and copy the admin <code>cms_session</code> cookie into <code>S</code> as in checklist 05 (“Using curl with a session”); add <code>-b "cms_session=$S"</code> to admin calls. Public endpoints are rate limited per address: give each curl its own <code>-H 'X-Real-IP: 10.80.0.N'</code> (a new N per case).</p>
+      <p><strong>Order at a glance.</strong> Many cases end with this query; replace the reference:</p>
+<pre><code>SELECT o.id, o.reference, o.status, o.subtotal, o.total,
+       JSON_EXTRACT(o.metadata,'$.costs') AS costs, JSON_EXTRACT(o.metadata,'$.coupon') AS coupon,
+       JSON_EXTRACT(o.metadata,'$.codAmount') AS cod, JSON_EXTRACT(o.metadata,'$.stockTaken') AS stock_taken,
+       p.id AS pay_id, p.provider, p.status AS pay_status, p.amount, p.provider_ref
+FROM orders o LEFT JOIN payments p ON p.order_id = o.id
+WHERE o.reference = 'ORD-2026-XXXXXXXXXX';</code></pre>
+      <p><strong>Stock at a glance.</strong> <code>SELECT locale, JSON_EXTRACT(data,'$.stock') AS stock, JSON_EXTRACT(data,'$.variations[*].stock') AS var_stock FROM documents WHERE type = 'product' AND slug = '&lt;slug&gt;';</code> Stock is shared: every language row must show the same numbers.</p>
+      <p><strong>Captcha.</strong> <code>.env.example</code> ships Google's reCAPTCHA test keys, which switch the captcha check on. The gift card balance check, customer registration and “forgotten password” all require a captcha token (COM-045, COM-095 and COM-098 test this first). If those cases fail with <code>Captcha check failed. Please try again.</code>, blank <code>RECAPTCHA_SITE_KEY=</code> and <code>RECAPTCHA_SECRET_KEY=</code> in <code>.env.local</code>, restart, and run the dependent cases; restore the keys at the end.</p>
+    </div>
+
+    <article class="tc" id="COM-001" data-priority="P1">
+      <h3>Switch the shop on and set the basics</h3>
+      <ol class="steps">
+        <li>Open <code>/admin/settings?tab=Modules</code>, tick <strong>Commerce</strong>, <strong>Customer accounts</strong> and <strong>Newsletter</strong>, click <strong>Save settings</strong>.</li>
+        <li>Open <code>/admin/settings?tab=Ecommerce</code> (sub-tab <strong>General</strong>). Set <strong>Default currency</strong> <code>EUR</code>, <strong>Payment method</strong> <code>Manual / bank transfer</code>, <strong>Gift-wrap fee</strong> <code>2.50</code>, <strong>Price filter</strong> <code>Slider with two handles</code>, <strong>Cancel unpaid card orders after (hours)</strong> <code>48</code>. Click <strong>Save settings</strong>.</li>
+        <li>On the <strong>Notifications</strong> tab set <strong>Inquiry notification emails</strong> to the shop mailbox and save.</li>
+        <li>In <code>.env.local</code> set <code>CMS_CRON_SECRET</code> and <code>CMS_GIFTCARD_PEPPER</code> to two different values from <code>openssl rand -base64 48</code>; restart.</li>
+      </ol>
+      <ul class="exp">
+        <li><code>Settings saved.</code> each time. The sidebar gains an ECOMMERCE group: Categories, Size charts, Tags, Products, Orders, Customers, Gift cards, Reviews, Abandoned carts.</li>
+        <li>The Ecommerce tab has the sub-tabs <strong>General</strong>, <strong>Shipping</strong>, <strong>Coupons</strong>, <strong>Wishlist</strong>, <strong>Gift cards</strong>; the <strong>Payment method</strong> list offers <code>Manual / bank transfer</code>, <code>Card (Stripe)</code>, <code>PayPal</code>, <code>Viva.com (card)</code>.</li>
+        <li><code>SELECT `key`, value FROM site_settings WHERE `key` LIKE 'ecommerce.%';</code> shows <code>ecommerce.paymentProvider</code> = <code>manual</code> and <code>ecommerce.giftWrapFee</code> = <code>2.50</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/settings/schema.ts</code> (<code>PAYMENT_PROVIDER_OPTIONS</code>, Ecommerce group) · <code>src/app/admin/(shell)/settings/page.tsx</code> · docs/dev-guides/08-commerce.md §7</p>
+    </article>
+
+    <article class="tc" id="COM-002" data-priority="P2">
+      <h3>Legacy shipping: flat rate, free threshold and a cash-on-delivery fee</h3>
+      <ol class="steps">
+        <li>Open <code>/admin/settings?tab=Ecommerce&amp;sub=Shipping</code>. Under <strong>Method</strong> choose <strong>Shipping method</strong> <code>Flat rate</code>, <strong>Standard charge (EUR)</strong> <code>4.00</code>, <strong>Free shipping over (EUR)</strong> <code>50.00</code>.</li>
+        <li>Under <strong>Payment surcharges</strong> click <strong>Add surcharge</strong>, choose <strong>Payment method</strong> <code>manual</code>, <strong>Fee (EUR)</strong> <code>2.00</code>.</li>
+        <li>Leave <strong>Offer store pickup at checkout</strong> unticked. Click <strong>Save shipping settings</strong>.</li>
+        <li>Run <code>SELECT value FROM site_settings WHERE `key` = 'ecommerce.shipping';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The save confirms without error; the JSON holds <code>"method":"flat"</code>, <code>"baseCharge":4</code>, <code>"freeThreshold":50</code> and a <code>paymentSurcharges</code> entry for <code>manual</code> with charge <code>2</code>. Below the form the <strong>Shipping methods</strong> section reads <code>Add zone</code> with no zones, and a <strong>Couriers</strong> section follows.</p>
+      <p class="ref">Ref: <code>src/cms/admin/ShippingSettings.tsx</code> · <code>src/cms/modules/commerce/shipping.ts</code> · docs/dev-guides/08-commerce.md §4.9</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-taxonomy">
+    <h2>Catalogue admin: categories, tags, size charts</h2>
+    <p class="intro">Every item is created in Greek first (the EL tab), then translated on the EN tab with <strong>Copy from EL</strong> and <strong>Create EN</strong>, as in checklist 03.</p>
+
+    <article class="tc" id="COM-003" data-priority="P2">
+      <h3>Create a parent and a child category in both languages</h3>
+      <ol class="steps">
+        <li>Open <strong>Categories</strong> → <strong>+ New</strong>. <strong>Category name</strong> <code>QA Ρούχα</code>, slug <code>qa-apparel</code>, <strong>Status — EL</strong> <code>published</code>, click <strong>Create Category</strong>. On <strong>EN</strong>: <strong>Copy from EL</strong>, name <code>QA Apparel</code>, status <code>published</code>, <strong>Create EN</strong>.</li>
+        <li>Create <code>QA Μπλουζάκια</code> / <code>QA T-shirts</code>, slug <code>qa-tshirts</code>, with <strong>Parent category</strong> <code>QA Ρούχα</code>, published in both languages.</li>
+        <li>Run <code>SELECT id, locale, status, slug FROM documents WHERE type = 'category' AND slug LIKE 'qa-%';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Four rows (two slugs × <code>el</code>/<code>en</code>), all <code>published</code>. The Categories list shows both entries; the child's editor shows its parent in <strong>Parent category</strong>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/category.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-004" data-priority="P3">
+      <h3>Nested categories on the storefront</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> COM-003 and COM-008 done (QA T-shirt is in <code>qa-tshirts</code> only).</p>
+      <ol class="steps">
+        <li>Open <code>/en/shop/category/qa-apparel</code>, then <code>/en/shop/category/qa-tshirts</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected (known gap):</span> Both categories appear as flat pills after <strong>All products</strong>, with no indentation. The parent page does not list the child's products (<code>No products match.</code> if nothing is in the parent directly). The breadcrumb on the child page is <strong>Shop</strong> › <strong>QA T-shirts</strong> with no parent step. Record this: the parent relation is stored but the storefront does not use it.</p>
+      <p class="ref">Ref: <code>src/app/[locale]/shop/category/[slug]/page.tsx</code> (crumbs) · <code>src/components/shop/CategoryNav.tsx</code> · <code>src/cms/modules/commerce/read.ts</code> (<code>readProductsByCategory</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-005" data-priority="P2">
+      <h3>Create a tag and a size chart</h3>
+      <ol class="steps">
+        <li>Open <strong>Tags</strong> → <strong>+ New</strong>: <strong>Tag name</strong> <code>QA Καλοκαίρι</code>, slug <code>qa-summer</code>, published; EN <code>QA Summer</code>, published.</li>
+        <li>Open <strong>Size charts</strong> → <strong>+ New</strong>: <strong>Chart title</strong> <code>QA Μεγέθη</code>, slug <code>qa-tops-chart</code>, <strong>Columns</strong> one <strong>Measurement</strong> <code>Στήθος</code>; <strong>Rows</strong> <code>S</code> with value <code>92</code> and <code>M</code> with value <code>98</code>; <strong>Note</strong> <code>Μετρήστε κάτω από τις μασχάλες.</code>; published. EN: title <code>QA Sizes</code>, measurement <code>Chest</code>, note <code>Measure under the arms.</code>, published.</li>
+        <li>Open the category <code>QA T-shirts</code> and set its <strong>Size chart</strong> to <code>QA Μεγέθη</code>; save EL.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> All saves succeed. <code>SELECT locale, status FROM documents WHERE type IN ('tag','sizechart') AND slug IN ('qa-summer','qa-tops-chart');</code> returns four published rows.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/tag.ts</code> · <code>src/cms/modules/commerce/sizechart.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-006" data-priority="P3">
+      <h3>A draft category's page</h3>
+      <ol class="steps">
+        <li>Create a category <code>QA Draft Cat</code>, slug <code>qa-draft-cat</code>, and leave it <code>draft</code>.</li>
+        <li>Open <code>/shop/category/qa-draft-cat</code> in a private window (not signed in).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The site's not-found page, as for any unpublished content. Record a Fail if the page renders with the heading <code>QA Draft Cat</code> (the category read picks the term row without checking its status).</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/read.ts</code> (<code>readProductsByCategory</code>, <code>pickTermRow</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-products">
+    <h2>Catalogue admin: products</h2>
+    <p class="intro">Prices are entered in euros with VAT included; there is no tax field anywhere. Fields marked shared (price, stock, SKU, variations, limits) are the same in every language.</p>
+
+    <article class="tc" id="COM-007" data-priority="P1">
+      <h3>Create a simple product with tracked stock</h3>
+      <ol class="steps">
+        <li>Open <strong>Products</strong> → <strong>+ New</strong>. <strong>Product name</strong> <code>QA Κούπα</code>, slug <code>qa-mug</code>, <strong>Short tagline</strong> <code>Κεραμική κούπα</code>, a <strong>Gallery</strong> image with alt text, <strong>Categories</strong> <code>QA Ρούχα</code>, <strong>Tags</strong> <code>QA Καλοκαίρι</code>.</li>
+        <li><strong>Price</strong> <code>12</code>, <strong>SKU</strong> <code>QA-MUG</code>, <strong>Availability</strong> <code>in-stock</code>, <strong>Stock</strong> <code>5</code>, <strong>Weight</strong> <code>0.4</code>. Status <code>published</code>, <strong>Create Product</strong>.</li>
+        <li>EN: <strong>Copy from EL</strong>, name <code>QA Mug</code>, tagline <code>Ceramic mug</code>, published, <strong>Create EN</strong>.</li>
+        <li>Run the stock query from “Before you start” for <code>qa-mug</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Two rows (<code>el</code>, <code>en</code>), both with stock <code>5</code>. <code>/en/shop/qa-mug</code> shows <code>QA Mug</code>, <code>€12.00</code>, <code>In stock</code> and <strong>Add to cart</strong> (the SKU line appears only for a chosen variation). <code>/shop/qa-mug</code> shows <code>QA Κούπα</code>, <code>12,00 €</code>, <code>Διαθέσιμο</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/collection.ts</code> · <code>src/components/shop/ProductShowcase.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-008" data-priority="P1">
+      <h3>Create a product with attributes and variations</h3>
+      <ol class="steps">
+        <li>New product <code>QA Μπλουζάκι</code> / EN <code>QA T-shirt</code>, slug <code>qa-tee</code>, <strong>Price</strong> <code>20</code>, <strong>Categories</strong> <code>QA Μπλουζάκια</code>, no stock.</li>
+        <li>Under <strong>Attributes</strong> add <strong>Attribute name</strong> <code>Χρώμα</code> (<strong>Shown as</strong> colour swatch) with <strong>Values</strong> <code>Κόκκινο</code> and <code>Μπλε</code>, and <code>Μέγεθος</code> with <code>S</code> and <code>M</code>.</li>
+        <li>Under <strong>Variations</strong> click <strong>Generate variations</strong>. Fill: Red/S price empty, stock <code>3</code>, SKU <code>QA-TEE-RS</code>; Red/M price <code>22</code>, stock <code>0</code>; Blue/S untick <strong>On</strong>; Blue/M stock <code>2</code>. Publish EL and create EN (attribute names <code>Colour</code>/<code>Size</code>, values <code>Red</code>/<code>Blue</code>).</li>
+      </ol>
+      <ul class="exp">
+        <li>Before generating, the counter reads <code>4 to add</code>; after, <code>4 variations, in sync with attributes</code> and a table with the columns Χρώμα, Μέγεθος, On, SKU, Price, Stock, Weight, Image. Empty price and weight show the placeholder <code>base</code>.</li>
+        <li>The stock query for <code>qa-tee</code> shows product stock NULL and variation stocks <code>[3, 0, 2]</code> (Red/S, Red/M, Blue/M; Blue/S has none) on both rows.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/fields/VariationsEditor.tsx</code> · <code>src/cms/modules/commerce/collection.ts</code> (<code>attributes</code>, <code>variations</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-009" data-priority="P3">
+      <h3>Variations drift out of step with the attributes</h3>
+      <ol class="steps">
+        <li>On <code>qa-tee</code> add a third size value <code>L</code> (do not save yet) and read the counter.</li>
+        <li>Remove <code>L</code> again, then remove the value <code>M</code> and read the counter and table.</li>
+        <li>Leave without saving (discard the changes).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>2 to add</code>. Step 2: <code>2 to remove</code>, and the M rows show the value label in red. Nothing is saved.</p>
+      <p class="ref">Ref: <code>src/cms/admin/fields/VariationsEditor.tsx</code> (<code>missing</code>, <code>orphaned</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-010" data-priority="P2">
+      <h3>Sale price and the Sale badge</h3>
+      <ol class="steps">
+        <li>On <code>qa-mug</code> set <strong>Original price ("was")</strong> <code>15</code>, save EL. Open <code>/en/shop</code> and <code>/en/shop/qa-mug</code>.</li>
+        <li>Set the original price to <code>10</code> (below the price), save, reload both pages.</li>
+        <li>Clear the original price and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: the card and the product page show <code>€12.00</code> with <code>€15.00</code> struck through and a <code>Sale</code> badge. Step 2: no struck-through price and no badge. Step 3: back to the plain price. The EN row shows the same change without editing it (shared field).</p>
+      <p class="ref">Ref: <code>src/components/shop/ProductShowcase.tsx</code> (<code>showCompare</code>) · <code>src/components/shop/ProductBadges.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-011" data-priority="P2">
+      <h3>Untracked stock, availability and other product types</h3>
+      <ol class="steps">
+        <li>Create <code>qa-candle</code> (<code>QA Candle</code>), price <code>8</code>, <strong>Stock</strong> empty, availability <code>in-stock</code>, published in both languages.</li>
+        <li>Create <code>qa-soldout</code> (<code>QA Sold out</code>), price <code>9</code>, stock empty, availability <code>out-of-stock</code>, published.</li>
+        <li>Create <code>qa-ext</code> (<code>QA External</code>), price <code>30</code>, <strong>Product type</strong> <code>External / affiliate</code>, <strong>External buy link</strong> <code>https://example.com/buy</code>, <strong>Buy button text</strong> <code>Buy at partner</code>, published.</li>
+        <li>Create <code>qa-ebook</code> (<code>QA E-book</code>), price <code>5</code>, type <code>Digital download / virtual</code>, published.</li>
+        <li>Open each on <code>/en/shop/&lt;slug&gt;</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li><code>qa-candle</code>: <code>In stock</code>, <strong>Add to cart</strong> enabled.</li>
+        <li><code>qa-soldout</code>: <code>Out of stock</code>, <strong>Add to cart</strong> disabled.</li>
+        <li><code>qa-ext</code>: a <strong>Buy at partner</strong> link to <code>https://example.com/buy</code> instead of Add to cart.</li>
+        <li><code>qa-ebook</code>: <code>Digital product — no shipping. Delivered after purchase.</code> Note that no file is ever delivered: the download fields are stored but unused (docs/dev-guides/08-commerce.md §3.1).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/collection.ts</code> (<code>PRODUCT_TYPE_LABELS</code>) · <code>src/components/shop/ProductShowcase.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-012" data-priority="P3">
+      <h3>Pre-order, made-to-order and a tracked product at zero</h3>
+      <ol class="steps">
+        <li>Set <code>qa-candle</code> availability to <code>preorder</code>, save, open <code>/en/shop/qa-candle</code>; then <code>made-to-order</code>; then back to <code>in-stock</code>.</li>
+        <li>Set <code>qa-mug</code> stock to <code>0</code> (availability stays <code>in-stock</code>), save, open <code>/en/shop/qa-mug</code>. Set the stock back to <code>5</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1 shows <code>Pre-order</code>, then <code>Made to order</code>, with Add to cart enabled. Step 2: record what shows. The code shows <code>In stock</code> with Add to cart enabled (availability is not derived from the stock number) and checkout later refuses with <code>Not enough stock for "QA Mug" (0 left).</code>; a shopper would expect <code>Out of stock</code>. Raise it as a UX issue.</p>
+      <p class="ref">Ref: <code>src/app/[locale]/shop/[slug]/page.tsx</code> (<code>availability</code>) · <code>src/components/shop/ProductShowcase.tsx</code> (<code>soldOut</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-013" data-priority="P2">
+      <h3>Visibility: shop only, search only, hidden</h3>
+      <ol class="steps">
+        <li>Set <code>qa-candle</code> <strong>Visibility</strong> to <code>Search only</code>, save. Open <code>/en/shop</code> and <code>/en/shop?q=candle</code>.</li>
+        <li>Set it to <code>Shop only</code>; repeat. Then <code>Hidden (direct link only)</code>; repeat and open <code>/en/shop/qa-candle</code>.</li>
+        <li>Set it back to <code>Shop and search</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Search only: absent from the listing, present in the search results. Shop only: the reverse. Hidden: absent from both, but the product page still opens and can be bought.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/read.ts</code> (<code>filterByVisibility</code>) · docs/dev-guides/08-commerce.md §4.1</p>
+    </article>
+
+    <article class="tc" id="COM-014" data-priority="P3">
+      <h3>Purchase limits on the buy box and in the cart</h3>
+      <ol class="steps">
+        <li>On <code>qa-candle</code> set <strong>Minimum quantity</strong> <code>2</code>, <strong>Maximum quantity</strong> <code>6</code>, <strong>Sold in multiples of</strong> <code>2</code>; save.</li>
+        <li>Open <code>/en/shop/qa-candle</code>, use <strong>Increase</strong> and <strong>Decrease</strong>, add to the cart, then use the cart drawer's buttons.</li>
+        <li>Clear the three limits and save; empty the cart.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The quantity starts at 2, moves 2 → 4 → 6, <strong>Increase</strong> is disabled at 6 and <strong>Decrease</strong> at 2, and <code>in steps of 2</code> is shown. The drawer keeps the same limits.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/quantity.ts</code> · <code>src/components/shop/cart/CartDrawer.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-storefront">
+    <h2>Storefront: listing, filters, category and tag pages, product page, search</h2>
+
+    <article class="tc" id="COM-015" data-priority="P1">
+      <h3>The shop listing in both languages</h3>
+      <ol class="steps">
+        <li>Open <code>/shop</code> and <code>/en/shop</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Greek: heading <code>Κατάστημα</code>; English: eyebrow <code>Store</code>, heading <code>Shop</code>, <code>Browse our products.</code> Every published, visible QA product appears once as a card with its language's name and price; the category pills start with <strong>All products</strong>; the toolbar has <code>Search products…</code> and <strong>Sort</strong>. No draft product appears.</p>
+      <p class="ref">Ref: <code>src/app/[locale]/shop/page.tsx</code> · <code>messages/en.json</code> (<code>shop</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-016" data-priority="P2">
+      <h3>Sorting and pages</h3>
+      <ol class="steps">
+        <li>On <code>/en/shop</code> choose each <strong>Sort</strong> option: <code>Newest</code>, <code>Manual</code>, <code>Price: low to high</code>, <code>Price: high to low</code>, <code>Name</code>. Watch the address bar.</li>
+        <li>Open <code>/en/shop?page=999</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The order changes as named and the address gains <code>sort=price-asc</code>, <code>sort=price-desc</code>, <code>sort=name</code> or <code>sort=manual</code> (<code>Newest</code> removes the parameter). A variation product sorts by its price range. Page 999 shows no error (an empty page or the last page), never a server error.</p>
+      <p class="ref">Ref: <code>src/app/[locale]/shop/shop-params.ts</code> · <code>src/components/shop/ShopToolbar.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-017" data-priority="P2">
+      <h3>Filters: price, attribute, tag, clear</h3>
+      <ol class="steps">
+        <li>On <code>/en/shop</code> open <strong>Filters</strong>. Set <strong>Min</strong> <code>10</code>, <strong>Max</strong> <code>21</code>, click <strong>Apply</strong>.</li>
+        <li>Tick the colour swatch <code>Red</code>, then the <strong>Tags</strong> entry <code>QA Summer</code>.</li>
+        <li>Click <strong>Clear all</strong>.</li>
+        <li>In Settings → Ecommerce → General set <strong>Price filter</strong> to <code>From / to boxes</code>, save, reload the shop.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>price_min=10&amp;price_max=21</code> in the address; QA Mug (12) and QA T-shirt (20–22, overlapping) stay, QA Candle (8) goes. Step 2: <code>attr_…=…</code> and <code>tag=qa-summer</code> are added and only matching products remain; with nothing matching, <code>No products match.</code> Facet counts reflect the whole filtered set. Step 3: all parameters removed. Step 4: no slider, only the two boxes. Set the slider back afterwards.</p>
+      <p class="ref">Ref: <code>src/components/shop/ShopFilters.tsx</code> · <code>src/cms/modules/commerce/filters.ts</code> · <code>src/cms/modules/commerce/read.ts</code> (<code>buildFacetCounts</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-018" data-priority="P2">
+      <h3>Category and tag pages use their own language's term</h3>
+      <ol class="steps">
+        <li>Open <code>/shop/category/qa-tshirts</code> and <code>/en/shop/category/qa-tshirts</code>.</li>
+        <li>Open <code>/shop/tag/qa-summer</code> and <code>/en/shop/tag/qa-summer</code>.</li>
+        <li>Open <code>/en/shop/category/qa-nothing</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>The category heading is <code>QA Μπλουζάκια</code> on the Greek page and <code>QA T-shirts</code> on the English one, never the other language's name; the English page lists <code>QA T-shirt</code> (English names).</li>
+        <li>The tag pages show eyebrow <code>Ετικέτα</code> / <code>Tag</code> with <code>QA Καλοκαίρι</code> / <code>QA Summer</code> and list <code>qa-mug</code> in that language.</li>
+        <li>An unknown slug shows the not-found page.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/read.ts</code> (<code>pickTermRow</code>) · <code>src/app/[locale]/shop/category/[slug]/page.tsx</code> · <code>src/app/[locale]/shop/tag/[slug]/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-019" data-priority="P1">
+      <h3>Choosing a variation on the product page</h3>
+      <ol class="steps">
+        <li>Open <code>/en/shop/qa-tee</code>. Read the price and availability before choosing.</li>
+        <li>Choose <code>Red</code> + <code>S</code>, then <code>Red</code> + <code>M</code>, then <code>Blue</code> + <code>M</code>, then try <code>Blue</code> + <code>S</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Before choosing: <code>€20.00</code> (or the range), <code>Select options</code>, <strong>Add to cart</strong> disabled.</li>
+        <li>Red/S: <code>€20.00</code>, <code>In stock</code>, <code>SKU: QA-TEE-RS</code>, Add to cart enabled.</li>
+        <li>Red/M: <code>€22.00</code>, <code>Out of stock</code> (stock 0), Add to cart disabled.</li>
+        <li>Blue/M: <code>In stock</code>, enabled.</li>
+        <li>Blue/S: the <code>S</code> button is disabled while Blue is chosen (the variation is switched off); forcing the pair shows <code>This combination is unavailable</code>.</li>
+        <li>Greek page: <code>Επιλέξτε επιλογές</code>, <code>Εξαντλημένο</code>, <code>Αυτός ο συνδυασμός δεν είναι διαθέσιμος</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/shop/ProductShowcase.tsx</code> · <code>messages/en.json</code> (<code>shop</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-020" data-priority="P2">
+      <h3>Size guide from the category</h3>
+      <ol class="steps">
+        <li>Open <code>/en/shop/qa-tee</code> and click <strong>Size guide</strong> beside <strong>Options</strong>. Repeat on <code>/shop/qa-tee</code>.</li>
+        <li>Open <code>/en/shop/qa-mug</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The link jumps to a <code>Size guide</code> section with the title <code>QA Sizes</code>, columns <code>Size</code> and <code>Chest</code>, rows S 92 and M 98, and the note. Greek shows <code>Οδηγός μεγεθών</code>, <code>QA Μεγέθη</code>, <code>Στήθος</code>. The chart comes from the category because the product has none of its own. <code>qa-mug</code> has no size guide.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/sizechart-read.ts</code> (<code>getSizeChartForProduct</code>) · <code>src/components/shop/SizeChart.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-021" data-priority="P2">
+      <h3>Search in the listing and the header suggestions</h3>
+      <ol class="steps">
+        <li>Type <code>mug</code> into <code>Search products…</code> on <code>/en/shop</code> and watch the suggestions; press Enter.</li>
+        <li>Search <code>zzqq</code>.</li>
+        <li>Run <code>curl -s "$BASE/api/cms/commerce/search?q=mug&amp;locale=en" -H 'X-Real-IP: 10.80.0.1'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Suggestions list QA Mug while typing; Enter leads to <code>/en/shop?q=mug</code> with QA Mug. <code>zzqq</code> gives <code>No products match.</code> The API answers <code>{"ok":true,…}</code> with the QA Mug entry in English.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/search.ts</code> · <code>src/components/shop/ShopToolbar.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-022" data-priority="P3">
+      <h3>An unpublished product's address redirects</h3>
+      <ol class="steps">
+        <li>Set <code>qa-candle</code> to <code>draft</code> in both languages and save.</li>
+        <li>Run <code>curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$BASE/en/shop/qa-candle"</code>.</li>
+        <li>Publish it again and repeat.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> While draft: <code>302</code> to its first live category page (or to <code>/en/shop</code> if it has none). Published again: <code>200</code> and the redirect row is gone (<code>SELECT COUNT(*) FROM seo_redirects WHERE source LIKE '%qa-candle%';</code> is 0).</p>
+      <p class="ref">Ref: <code>src/cms/core/seo/unpublish-redirect.ts</code> · <code>src/cms/modules/commerce/collection.ts</code> (<code>unpublishRedirect</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-cart">
+    <h2>Cart</h2>
+    <p class="intro">The cart lives only in the browser (Local Storage key <code>site-cart</code>). Prices shown there are for display; checkout recomputes everything.</p>
+
+    <article class="tc" id="COM-023" data-priority="P1">
+      <h3>Add to cart opens the drawer</h3>
+      <ol class="steps">
+        <li>In a private window open <code>/en/shop/qa-mug</code> and click <strong>Add to cart</strong>.</li>
+        <li>Open <code>/en/shop/qa-tee</code>, choose Red/S and click <strong>Add to cart</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> A drawer titled <code>Cart</code> opens with <code>QA Mug × 1 €12.00</code>, then also <code>QA T-shirt</code> with <code>Colour: Red, Size: S</code> at <code>€20.00</code>; <code>Subtotal</code> <code>€32.00</code>; a <strong>Checkout</strong> button. The header cart button shows the item count.</p>
+      <p class="ref">Ref: <code>src/components/shop/cart/CartProvider.tsx</code> · <code>src/components/shop/cart/CartDrawer.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-024" data-priority="P2">
+      <h3>Change quantity, merge lines, remove, empty</h3>
+      <ol class="steps">
+        <li>In the drawer click <strong>Increase quantity</strong> on QA Mug twice, then <strong>Decrease quantity</strong> once.</li>
+        <li>Add QA T-shirt Red/S again from its page, then add Blue/M.</li>
+        <li>Click <strong>Remove</strong> on every line.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The mug line goes to 3 then 2 and the subtotal follows. Adding Red/S again raises that line to 2 rather than adding a line; Blue/M becomes its own line. Removing all shows <code>Your cart is empty.</code> and <strong>Continue shopping</strong>.</p>
+      <p class="ref">Ref: <code>src/components/shop/cart/CartProvider.tsx</code> (line key)</p>
+    </article>
+
+    <article class="tc" id="COM-025" data-priority="P2">
+      <h3>The cart survives a reload and is shared between tabs</h3>
+      <ol class="steps">
+        <li>Add QA Mug and reload the page; close and reopen the tab.</li>
+        <li>Open a second tab of the site in the same window and open the cart.</li>
+        <li>In developer tools look at Local Storage.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The cart still holds QA Mug after reload and in the new tab. Local Storage has <code>site-cart</code> holding a JSON array with <code>slug":"qa-mug"</code>. A different browser has its own, empty cart (nothing is stored on the server before checkout).</p>
+      <p class="ref">Ref: <code>src/components/shop/cart/CartProvider.tsx</code> · <code>src/lib/storage-keys.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-026" data-priority="P2">
+      <h3>The cart allows more than the stock; checkout refuses it</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> <code>qa-mug</code> stock 5.</p>
+      <ol class="steps">
+        <li>Add QA Mug and raise the quantity to 6 in the drawer.</li>
+        <li>Click <strong>Checkout</strong>, fill every required field (country <code>GR</code>), tick the terms, click <strong>Place order</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The drawer allows 6 (it does not know the stock). Checkout shows in red <code>Not enough stock for "QA Mug" (5 left).</code> No order is created (<code>SELECT COUNT(*) FROM orders WHERE created_at &gt; NOW() - INTERVAL 5 MINUTE;</code> unchanged) and the stock is still 5.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/orders.ts</code> (<code>ensureStock</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-checkout">
+    <h2>Checkout: addresses, shipping and totals</h2>
+    <p class="intro">Payment method is <code>Manual / bank transfer</code> in this suite, so every shipped order is treated as cash on delivery and carries the 2.00 fee from COM-002. Use the customer mailbox as the email.</p>
+
+    <article class="tc" id="COM-027" data-priority="P1">
+      <h3>The checkout form</h3>
+      <ol class="steps">
+        <li>Empty the cart and open <code>/en/checkout</code>.</li>
+        <li>Add QA Mug and open <code>/en/checkout</code> again. Click <strong>Place order</strong> without ticking anything.</li>
+      </ol>
+      <ul class="exp">
+        <li>Empty: <code>Your cart is empty.</code> and <strong>Back to shop</strong>.</li>
+        <li>With an item: <strong>Contact details</strong> (<code>Full name *</code>, <code>Email *</code>, <code>Phone</code>), <strong>Shipping</strong> (<code>Address *</code>, <code>City *</code>, <code>Postal code *</code>, <code>Country *</code>, <code>Order notes</code>), <strong>Gift card</strong>, <strong>Account</strong> with <code>Create an account so I can see my orders</code>, <strong>Gift options</strong> with <code>Gift wrap (+€2.50)</code>, and the <strong>Order summary</strong> with <code>Discount code</code>, <strong>Apply</strong>, <code>I accept the terms.</code> (linking to <code>/legal/terms</code>) and <code>Send me updates and offers.</code></li>
+        <li><strong>Place order</strong> is disabled until the terms box is ticked.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/[locale]/checkout/CheckoutClient.tsx</code> · <code>messages/en.json</code> (<code>checkout</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-028" data-priority="P1">
+      <h3>The shipping estimate is what the order charges</h3>
+      <ol class="steps">
+        <li>With QA Mug × 1 in the cart, look at the summary before typing a country.</li>
+        <li>Type country <code>GR</code> and wait a moment.</li>
+        <li>Fill name <code>QA Shopper</code>, the customer email, phone <code>2100000000</code>, address <code>Odos 1</code>, city <code>Athina</code>, postal code <code>10558</code>. Tick the terms, click <strong>Place order</strong>. Note the reference.</li>
+        <li>Run the order query.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: <code>Shipping —</code> and <code>Enter your country to calculate shipping.</code></li>
+        <li>Step 2: <code>Shipping €4.00</code>, <code>Surcharge €2.00</code>, <code>Total €18.00</code>, <code>Prices include VAT.</code> There is no VAT line.</li>
+        <li>Step 3: <code>Thank you! Your order has been placed.</code>, <code>Order reference: ORD-2026-…</code> (10 characters after the year), <strong>Track your order</strong> and <strong>Back to shop</strong>. The cart is now empty.</li>
+        <li>SQL: <code>status</code> pending, <code>subtotal</code> 1200, <code>total</code> 1800, costs <code>{"shipping":400,"surcharge":200,"discount":0,"giftWrap":0}</code>, one <code>manual</code> payment <code>pending</code> for 1800.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/shipping.ts</code> (<code>quoteShipping</code>, <code>computeShipping</code>) · <code>src/cms/modules/commerce/totals.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-029" data-priority="P2">
+      <h3>Free shipping over the threshold does not waive the fee</h3>
+      <ol class="steps">
+        <li>Put QA Mug × 5 (60.00) in the cart, open checkout, country <code>GR</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>Shipping €0.00</code>, <code>Surcharge €2.00</code>, <code>Total €62.00</code>. The threshold discounts shipping only, never the payment fee. Empty the cart without ordering.</p>
+      <p class="ref">Ref: docs/dev-guides/08-commerce.md §4.4</p>
+    </article>
+
+    <article class="tc" id="COM-030" data-priority="P3">
+      <h3>Legacy shipping by country</h3>
+      <ol class="steps">
+        <li>In Shipping settings choose <code>By country / zone</code>, keep <strong>Standard charge</strong> <code>4.00</code>, add a zone <code>Cyprus</code> with <strong>Charge (EUR)</strong> <code>9.00</code> and <strong>Countries</strong> <code>CY</code>. Save.</li>
+        <li>With QA Mug in the cart open checkout and type country <code>CY</code>, then <code>DE</code>.</li>
+        <li>Put the method back to <code>Flat rate</code> and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> CY: <code>Shipping €9.00</code>. DE: <code>Shipping €4.00</code> (the standard charge). The surcharge stays <code>€2.00</code> in both.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/shipping.ts</code> (<code>computeShipping</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-031" data-priority="P2">
+      <h3>Collect in store</h3>
+      <ol class="steps">
+        <li>In Shipping settings tick <strong>Offer store pickup at checkout</strong>, <strong>Pickup charge (EUR)</strong> <code>0</code>, <strong>Add location</strong>: <strong>Store name</strong> <code>QA Store</code>, <strong>Address</strong> <code>Ermou 10, Athina</code>, <strong>Opening hours</strong> <code>Mon–Fri 09:00–17:00</code>. Save.</li>
+        <li>Open checkout with QA Mug, choose <code>Collect in store</code>, fill contact details, place the order.</li>
+        <li>Open the order in the admin and read the confirmation emails.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The section is titled <strong>Delivery method</strong> with <code>Ship to my address</code> and <code>Collect in store</code>; picking the latter hides the address fields and shows QA Store with its address and hours; the summary line reads <code>Store pickup €0.00</code> with the <code>€2.00</code> surcharge. The order panel shows an amber <strong>Store pickup</strong> — QA Store, Ermou 10, Athina band; the emails say <code>Collect in store: QA Store — Ermou 10, Athina</code>. <code>codAmount</code> is not set (collected orders are not courier COD). Untick store pickup afterwards.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/shipping.ts</code> (pickup) · <code>src/cms/modules/commerce/orders.ts</code> (<code>codAmountFor</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-032" data-priority="P2">
+      <h3>A digital-only order needs no address</h3>
+      <ol class="steps">
+        <li>Put only QA E-book in the cart and open <code>/en/checkout</code>. Place the order with name and email only.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The section title is <code>Order notes</code> with <code>Digital order — no delivery address needed.</code>; the summary has no Shipping line and no surcharge; total <code>€5.00</code>. SQL: costs shipping 0, surcharge 0, <code>JSON_EXTRACT(metadata,'$.shipping.virtual')</code> true, no <code>codAmount</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/orders.ts</code> (<code>allVirtual</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-033" data-priority="P2">
+      <h3>Define shipping zones and methods</h3>
+      <ol class="steps">
+        <li>In Settings → Ecommerce → Shipping, under <strong>Shipping methods</strong> click <strong>Add zone</strong>: <strong>Zone name</strong> <code>QA Greece</code>, <strong>Countries</strong> <code>GR</code>, <strong>Save zone</strong>.</li>
+        <li>In the zone click <strong>Add method</strong> three times and save each with <strong>Save method</strong>:
+          <code>QA ACS</code>, <strong>Courier</strong> <code>ACS</code>, <strong>Type</strong> <code>Delivery to an address</code>, <strong>Cost (EUR)</strong> <code>3.50</code>, <strong>Free over (EUR)</strong> <code>40</code>, <strong>Delivery days (from)</strong> <code>1</code>, <strong>(to)</strong> <code>2</code>, <strong>Cash on delivery allowed</strong> ticked;
+          <code>QA Speedex no COD</code>, <code>Speedex</code>, address, <code>5.00</code>, <strong>Cash on delivery allowed</strong> unticked;
+          <code>QA BoxNow</code>, <code>BoxNow (locker)</code>, <code>Parcel locker</code>, <code>2.00</code>, COD allowed.</li>
+        <li>Try a fourth method <code>QA bad locker</code> with courier <code>ACS</code> and type <code>Parcel locker</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The zone table lists the three methods with Method, Courier, Cost, Delivery (<code>1–2</code> days for ACS), Active ticked, and up/down arrows. The fourth is refused with a message that a locker method needs BoxNow and nothing is saved. <code>SELECT name, courier, kind, cost, free_threshold, cod_allowed FROM shipping_methods;</code> shows costs 350, 500, 200 and free_threshold 4000 for ACS.</p>
+      <p class="ref">Ref: <code>src/cms/admin/ShippingMethodsManager.tsx</code> · <code>src/cms/modules/commerce/shipping-methods.ts</code> (<code>checkShippingMethod</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-034" data-priority="P2">
+      <h3>Shipping methods offered at checkout</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> COM-033. Payment method Manual.</p>
+      <ol class="steps">
+        <li>With QA Mug in the cart open <code>/en/checkout</code>, open developer tools → Network, type country <code>GR</code>.</li>
+        <li>If a <strong>Delivery</strong> list appears, pick <code>QA ACS</code> and read the summary.</li>
+      </ol>
+      <ul class="exp">
+        <li>A <strong>Delivery</strong> fieldset lists <code>QA ACS</code> (<code>Arrives in 1–2 working days</code>, <code>€3.50</code>) and <code>QA BoxNow</code>; <code>QA Speedex no COD</code> is absent because the shop takes cash on delivery.</li>
+        <li>After picking QA ACS the summary's Shipping line shows <code>€3.50</code> and the total follows.</li>
+      </ul>
+      <p class="exp"><span class="exp-label">Note:</span> By reading the code this is expected to fail. The picker posts only <code>{"country":"GR","subtotalCents":1200}</code> to <code>/api/cms/commerce/shipping-quote</code>, which requires <code>locale</code> and <code>items</code>, so the request answers <code>400</code> <code>invalid_input</code> (visible in Network) and no Delivery list appears. Even with a list, the summary total uses the legacy estimate, not the picked method's cost. Record what you see and continue with COM-035.</p>
+      <p class="ref">Ref: <code>src/components/checkout/ShippingMethodPicker.tsx</code> · <code>src/cms/modules/commerce/shipping.ts</code> (<code>quoteBody</code>) · <code>src/app/[locale]/checkout/CheckoutClient.tsx</code> (<code>shippingMajor</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-035" data-priority="P2">
+      <h3>The method list and cash on delivery, through the API</h3>
+      <ol class="steps">
+        <li>Run:
+<pre><code>curl -s -X POST "$BASE/api/cms/commerce/shipping-quote" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.80.0.2' \
+  -d '{"locale":"en","country":"GR","subtotalCents":1200,"items":[{"slug":"qa-mug","quantity":1}]}'</code></pre></li>
+        <li>Repeat with <code>"subtotalCents":4500</code>, then with <code>"country":"Greece"</code>, then with <code>"country":"DE"</code>.</li>
+        <li>Switch <strong>Payment method</strong> to <code>Card (Stripe)</code> (any value works for this read) and repeat step 1; switch back to Manual.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: <code>shipping</code> 400 and <code>surcharge</code> 200 (legacy estimate) plus <code>methods</code> with QA ACS cost 350 and QA BoxNow cost 200, each surcharge 200; QA Speedex no COD is missing.</li>
+        <li>4500: QA ACS cost 0 (free over 40). <code>Greece</code> gives the same list as <code>GR</code>. <code>DE</code>: <code>methods</code> is <code>[]</code>.</li>
+        <li>With Stripe: QA Speedex no COD appears and the surcharges are 0.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/shipping-service.ts</code> (<code>resolveShippingChoices</code>) · <code>src/cms/modules/commerce/shipping-methods.ts</code> (<code>normalizeCountry</code>) · docs/dev-guides/08-commerce.md §4.9</p>
+    </article>
+
+    <article class="tc" id="COM-036" data-priority="P2">
+      <h3>An order placed with a shipping method records it and the COD amount</h3>
+      <ol class="steps">
+        <li>Find the id: <code>SELECT id FROM shipping_methods WHERE name = 'QA ACS';</code> Then run (replace <code>&lt;id&gt;</code> and the email):
+<pre><code>curl -s -X POST "$BASE/api/cms/commerce/checkout" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.80.0.3' \
+  -d '{"customer":{"name":"QA Method","email":"&lt;customer&gt;","phone":"2100000000","address1":"Odos 1","city":"Athina","postal":"10558","country":"GR"},
+       "locale":"en","acceptTerms":true,"shippingMethodId":&lt;id&gt;,"items":[{"slug":"qa-mug","quantity":1}]}'</code></pre></li>
+        <li>Run the order query and <code>SELECT JSON_EXTRACT(metadata,'$.shipping.shippingMethod') FROM orders WHERE reference = '&lt;ref&gt;';</code></li>
+        <li>Repeat step 1 with the id of <code>QA Speedex no COD</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1 answers <code>{"ok":true,"data":{"reference":"ORD-…","redirectUrl":null,"clientSecret":null}}</code>. SQL: costs shipping 350, surcharge 200, total 1750, <code>cod</code> 1750, and the snapshot <code>{"id":…,"name":"QA ACS","courier":"acs","kind":"address","cost":350}</code>. Step 3 answers <code>400</code> with <code>That delivery option is no longer available.</code></p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/orders.ts</code> (<code>chosenMethod</code>, <code>codAmountFor</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-coupons">
+    <h2>Coupons</h2>
+
+    <article class="tc" id="COM-037" data-priority="P2">
+      <h3>Create the test coupons</h3>
+      <ol class="steps">
+        <li>Open <code>/admin/settings?tab=Ecommerce&amp;sub=Coupons</code>. With <strong>Add coupon</strong> create:
+          <code>QA10</code> <strong>Type</strong> <code>% off</code>, <strong>Amount</strong> <code>10</code>;
+          <code>QA5OFF</code> <code>EUR off</code>, <code>5</code>, <strong>Minimum order (EUR)</strong> <code>30</code>;
+          <code>QABIG</code> <code>EUR off</code>, <code>500</code>;
+          <code>QAOLD</code> <code>% off</code>, <code>10</code>, <strong>Expires</strong> the date two days ago;
+          <code>QAONCE</code> <code>% off</code>, <code>10</code>, <strong>Max uses</strong> <code>1</code>;
+          <code>QAPERC</code> <code>% off</code>, <code>10</code>, <strong>Per customer</strong> <code>1</code>;
+          <code>QAOFF</code> <code>% off</code>, <code>10</code>, <strong>Active</strong> unticked.</li>
+        <li>Click <strong>Save coupons</strong>, reload the tab.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> All seven survive the reload with their values; empty limits show <code>∞</code>, empty minimum <code>None</code>. <code>SELECT value FROM site_settings WHERE `key` = 'ecommerce.coupons';</code> holds seven entries.</p>
+      <p class="ref">Ref: <code>src/cms/admin/CouponsManager.tsx</code> · <code>src/cms/modules/commerce/coupons.ts</code> (<code>normaliseCoupon</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-038" data-priority="P1">
+      <h3>A percentage coupon on an order</h3>
+      <ol class="steps">
+        <li>Put QA Mug × 2 (24.00) in the cart, open checkout, country <code>GR</code>. Type <code>qa10</code> (lower case) and click <strong>Apply</strong>.</li>
+        <li>Place the order (manual) and run the order query.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The code shows as <code>QA10</code> with <strong>Remove</strong>; the summary shows <code>Discount −€2.40</code>, <code>Shipping €4.00</code>, <code>Surcharge €2.00</code>, <code>Total €27.60</code>. SQL: subtotal 2400, total 2760, costs discount 240, coupon <code>"QA10"</code>. The emails show a <code>Discount</code> line of <code>-€2.40</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/coupons.ts</code> (<code>validateCoupon</code>, <code>computeDiscount</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-039" data-priority="P2">
+      <h3>Fixed amount, minimum order and the cap at the subtotal</h3>
+      <ol class="steps">
+        <li>With QA Mug × 2 (24.00) apply <code>QA5OFF</code>.</li>
+        <li>Raise to × 3 (36.00) and apply it again.</li>
+        <li>Remove it and apply <code>QABIG</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>Your order doesn't meet this code's minimum.</code> Step 2: <code>Discount −€5.00</code>. Step 3: <code>Discount −€36.00</code>, capped at the items subtotal; shipping and the surcharge are still charged (<code>Total €6.00</code>). Do not place the order.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/coupons.ts</code> (<code>computeDiscount</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-040" data-priority="P2">
+      <h3>Expired, inactive and unknown codes</h3>
+      <ol class="steps">
+        <li>At checkout apply <code>QAOLD</code>, then <code>QAOFF</code>, then <code>NOPE</code>.</li>
+        <li>In the Coupons tab set <code>QAOLD</code>'s <strong>Expires</strong> to today, save, apply it again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: each shows <code>Invalid or expired code.</code> Step 2: it applies (a code works through its expiry day; there is one day of grace).</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/coupons.ts</code> (<code>validateCoupon</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-041" data-priority="P2">
+      <h3>Usage limits, and cancelled orders give the use back</h3>
+      <ol class="steps">
+        <li>Place a manual order with <code>QAONCE</code>. Start a new checkout (any email) and apply <code>QAONCE</code>.</li>
+        <li>Place an order with <code>QAPERC</code> using the customer email. Start another checkout with the same email and apply it; then change the email to <code>qa.other@example.com</code> and apply it again.</li>
+        <li>In the admin cancel the <code>QAONCE</code> order (as in COM-071) and apply <code>QAONCE</code> again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>This code has reached its usage limit.</code> Step 2: with the same email <code>You've already used this code.</code>; with the other email it applies. Step 3: it applies again. If a limit is bypassed at the preview, placing the order is still refused with <code>This coupon has reached its usage limit.</code> / <code>You have already used this coupon.</code></p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/coupons.ts</code> (<code>countCouponRedemptions</code>) · <code>src/cms/modules/commerce/orders.ts</code> (<code>couponUsageErrorLocked</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-giftwrap">
+    <h2>Gift wrap</h2>
+
+    <article class="tc" id="COM-042" data-priority="P2">
+      <h3>Gift wrap appears in the totals, the order and both emails</h3>
+      <ol class="steps">
+        <li>Put QA Mug in the cart, open checkout, country <code>GR</code>, tick <code>Gift wrap (+€2.50)</code>, type <code>Χρόνια πολλά</code> in <code>Gift message</code>.</li>
+        <li>Place the order, open it in the admin, and open both emails.</li>
+      </ol>
+      <ul class="exp">
+        <li>Summary: <code>Gift wrap €2.50</code> and <code>Total €20.50</code> (12.00 + 4.00 + 2.00 + 2.50).</li>
+        <li>SQL: costs giftWrap 250, total 2050, <code>JSON_EXTRACT(metadata,'$.gift')</code> <code>{"wrap":true,"message":"Χρόνια πολλά"}</code>.</li>
+        <li>Admin panel: <strong>Gift wrap (EUR)</strong> 2.5 with <code>This order is marked as a gift.</code>, and a <code>Gift wrap</code> line between Payment surcharge and Discount; Subtotal + lines = Total.</li>
+        <li>Customer and admin emails: rows <code>Subtotal</code>, <code>Shipping</code>, <code>Surcharge</code>, <code>Gift wrap</code> €2.50, <code>Total</code> €20.50; the lines add up. The gift message is not printed in the email (record whether that is acceptable).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/totals.ts</code> (<code>orderSummaryLines</code>) · <code>src/cms/admin/OrdersTable.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-giftcards">
+    <h2>Gift cards</h2>
+
+    <article class="tc" id="COM-043" data-priority="P2">
+      <h3>Gift card settings and their checks</h3>
+      <ol class="steps">
+        <li>Open <code>/admin/settings?tab=Ecommerce&amp;sub=Gift%20cards</code>. Tick <strong>Sell gift cards</strong>, <strong>Preset amounts (EUR)</strong> <code>25, 50</code>, tick <strong>Allow a custom amount</strong>, <strong>Smallest custom amount</strong> <code>10</code>, <strong>Largest</strong> <code>5</code>, <strong>Expires after (months)</strong> <code>24</code>. Click <strong>Save</strong>.</li>
+        <li>Fix the largest to <code>200</code> and save. Then try <strong>Expires after</strong> <code>121</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>The largest custom amount cannot be below the smallest.</code>; after the fix <code>Saved.</code>; 121 months gives <code>Expiry has to be a whole number of months from 0 (never) to 120.</code> Set it back to 24 and save.</p>
+      <p class="ref">Ref: <code>src/cms/admin/GiftCardSettings.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-044" data-priority="P2">
+      <h3>Buy a gift card and receive it</h3>
+      <ol class="steps">
+        <li>Create product <code>qa-gift</code> (<code>QA Gift card</code>), price <code>0</code>, type <code>Gift card</code>, published in both languages. Open <code>/en/shop/qa-gift</code>.</li>
+        <li>Choose <code>€25.00</code>, <strong>Recipient name</strong> <code>QA Friend</code>, <strong>Recipient email</strong> the customer mailbox, a message, leave <strong>Send on</strong> empty, click <strong>Add to cart</strong>. Place the order (no address is asked).</li>
+        <li>Mark the order <strong>paid</strong> in the admin. Run <code>SELECT status, balance, send_at, sent_at, code_last4 FROM gift_cards ORDER BY id DESC LIMIT 1;</code></li>
+        <li>Run <code>curl -s -X POST -H "x-cron-secret: $CRON" "$BASE/api/cms/cron/giftcard-deliver"</code> and repeat the query.</li>
+      </ol>
+      <ul class="exp">
+        <li>The cart line reads <code>For QA Friend</code>; the order line's variant is <code>→ QA Friend</code>; total <code>€25.00</code>, no shipping.</li>
+        <li>After paid: one card, status <code>scheduled</code>, balance 2500, send_at about now, sent_at NULL.</li>
+        <li>After the job: <code>{"ok":true,"data":{"status":"ran","result":{"sent":1}}}</code>; the card is <code>active</code> with sent_at set; the mailbox receives <code>You have a gift card!</code> with the code as <code>XXXX-XXXX-XXXX-XXXX</code>, the value and the message. Keep the code for COM-045.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/shop/GiftCardBuyBox.tsx</code> · <code>src/cms/modules/commerce/giftcards/service.ts</code> (<code>issueGiftCardsForOrder</code>, <code>deliverDueGiftCards</code>) · <code>src/cms/modules/commerce/giftcards/emails.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-045" data-priority="P2">
+      <h3>Partial payment with a gift card</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> A 25.00 card from COM-044 or COM-046. Run this first with the reCAPTCHA keys set (see “Before you start”).</p>
+      <ol class="steps">
+        <li>Put QA Mug × 3 (36.00) in the cart, open checkout, country <code>GR</code>. Type the code in <strong>Gift card</strong> and click <strong>Apply</strong>.</li>
+        <li>If refused with the captcha message, blank the keys, restart and repeat step 1.</li>
+        <li>Place the order. Run the order query and <code>SELECT type, amount, balance_after FROM gift_card_transactions WHERE gift_card_id = &lt;id&gt; ORDER BY id;</code></li>
+      </ol>
+      <ul class="exp">
+        <li>With the keys set the code should apply; record a Fail if it shows <code>Captcha check failed. Please try again.</code> (the field sends no captcha token).</li>
+        <li>Applied: <code>1 gift card(s) — covering €25.00.</code> The summary total stays <code>€42.00</code> (gift cards are a way of paying, not a discount).</li>
+        <li>SQL: total 4200; payments: <code>giftcard</code> <code>captured</code> 2500 with provider_ref <code>giftcard:&lt;id&gt;</code>, and <code>manual</code> <code>pending</code> 1700; <code>cod</code> 1700. Ledger: <code>issue</code> 2500, <code>redeem</code> −2500 balance_after 0.</li>
+        <li>The admin panel's <strong>Delivery</strong> section shows <code>Gift cards used €25.00</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/checkout/GiftCardField.tsx</code> · <code>src/cms/modules/commerce/giftcards/routes.ts</code> (<code>giftCardCheckRoute</code>) · <code>src/cms/modules/commerce/giftcards/service.ts</code> (<code>redeemGiftCards</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-046" data-priority="P2">
+      <h3>Issue a card by hand; a card that covers the whole order</h3>
+      <ol class="steps">
+        <li>Open <strong>Gift cards</strong> (<code>/admin/gift-cards</code>). <strong>Amount</strong> <code>100</code>, <strong>Send to (optional)</strong> the customer mailbox, click <strong>Issue a card</strong>. Copy the code.</li>
+        <li>Reload the screen.</li>
+        <li>Put QA Mug in the cart and pay with this card at checkout (18.00 due). Run the order query.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> A green note <code>Card created: XXXX-…. Copy it now — it is stored encrypted and cannot be shown again. It has been emailed to …</code>. After reload the row shows <code>••••</code> plus the last four, Value €100.00, status <code>Active</code>. The order is <code>paid</code> immediately (no gateway step), with a single <code>giftcard</code> payment of 1800; stock of <code>qa-mug</code> drops by 1; the card's balance is 8200.</p>
+      <p class="ref">Ref: <code>src/cms/admin/GiftCardsTable.tsx</code> · <code>src/cms/modules/commerce/giftcards/settle.ts</code> (<code>settleFullyCoveredOrder</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-047" data-priority="P2">
+      <h3>Cancelling an order returns the card balance</h3>
+      <ol class="steps">
+        <li>Cancel the COM-045 order in the admin (confirm <strong>Cancel order</strong>).</li>
+        <li>On the Gift cards screen click <strong>History</strong> on that card.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The balance is back to €25.00; History lists issue, redeem and a <code>reversal</code> of +25.00. Cancelling again is impossible (cancelled is final), so no second reversal.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/giftcards/service.ts</code> (<code>reverseGiftCardRedemptions</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-048" data-priority="P3">
+      <h3>Void, restore, a wrong code and a future send date</h3>
+      <ol class="steps">
+        <li>Click <strong>Void</strong> on the COM-046 card and try it at checkout. Click <strong>Restore</strong> and try again.</li>
+        <li>At checkout enter <code>AAAA-BBBB-CCCC-DDDD</code>.</li>
+        <li>Buy a gift card with <strong>Send on</strong> a week ahead; mark it paid; run <code>giftcard-deliver</code>.</li>
+        <li>Run <code>curl -s -X POST -H "x-cron-secret: $CRON" "$BASE/api/cms/cron/giftcard-expire"</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Void: <code>That code cannot be used.</code> (the same answer as for an unknown code); after Restore it works. Step 3: the card stays <code>Scheduled</code> with <code>due &lt;date&gt;</code> in the Sent column and no email. Step 4: <code>{"ok":true,"data":{"status":"ran","result":{"expired":0}}}</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/giftcards/routes.ts</code> · <code>src/cms/modules/commerce/giftcards/service.ts</code> (<code>expireGiftCards</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-cod">
+    <h2>Cash on delivery (manual provider)</h2>
+
+    <article class="tc" id="COM-049" data-priority="P1">
+      <h3>A manual order takes the stock at once and waits for payment</h3>
+      <ol class="steps">
+        <li>Note <code>qa-tee</code> stock. Order QA T-shirt Red/S × 2 (manual), country <code>GR</code>.</li>
+        <li>Run the order query and the stock query.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Order <code>pending</code>, <code>stock_taken</code> true, <code>cod</code> equal to the total (4600: 40.00 + 4.00 + 2.00), one <code>manual</code> payment <code>pending</code>. Red/S stock went 3 → 1 on both language rows. <code>order_items.variation_id</code> holds the Red/S variation id and <code>variant_label</code> <code>Colour: Red, Size: S</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/orders.ts</code> (<code>decrementStockForOrder</code> for offline providers) · <code>src/cms/modules/commerce/stock.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-050" data-priority="P2">
+      <h3>Marking a manual order paid captures its payment</h3>
+      <ol class="steps">
+        <li>Open the COM-049 order and click the <strong>paid</strong> pill.</li>
+        <li>Run the order query and check the customer mailbox.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Status <code>paid</code>; the manual payment row is <code>captured</code>; stock unchanged (taken at checkout). No email is sent for <code>paid</code>. The Payments list shows <code>Manual / bank transfer</code> with no <strong>Refund</strong> button.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/payments.ts</code> (<code>syncPaymentsForOrderStatus</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-payments">
+    <h2>Online payments in sandbox</h2>
+    <p class="intro">One provider is active site-wide (Settings → Ecommerce → General → <strong>Payment method</strong>). After changing it, empty the cart. Webhook URLs: <code>&lt;site&gt;/api/cms/payments/webhooks/stripe</code>, <code>…/paypal</code>, <code>…/viva</code>. PayPal and Viva must reach the test environment over the internet; Stripe can use its CLI forwarder locally.</p>
+
+    <article class="tc" id="COM-051" data-priority="P2">
+      <h3>Configure Stripe in test mode</h3>
+      <ol class="steps">
+        <li>In <code>.env.local</code> set <code>STRIPE_SECRET_KEY</code> (<code>sk_test_…</code>), <code>NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY</code> (<code>pk_test_…</code>). Register the webhook URL for <code>payment_intent.succeeded</code>, <code>payment_intent.payment_failed</code> and <code>charge.refunded</code> in the Stripe test dashboard (or run the Stripe CLI <code>listen --forward-to</code> to the URL) and put its signing secret in <code>STRIPE_WEBHOOK_SECRET</code>. Restart (rebuild for a production build: the publishable key is compiled in).</li>
+        <li>Set <strong>Payment method</strong> to <code>Card (Stripe)</code>, save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The setting saves. <code>curl -s -o /dev/null -w '%{http_code}\n' -X POST "$BASE/api/cms/payments/webhooks/stripe" -d '{}'</code> answers <code>400</code> (no valid signature), proving the route is live.</p>
+      <p class="ref">Ref: <code>src/cms/core/payments/stripe.ts</code> · <code>src/cms/core/payments/webhooks.ts</code> · docs/dev-guides/08-commerce.md §7.3</p>
+    </article>
+
+    <article class="tc" id="COM-052" data-priority="P1">
+      <h3>Stripe: successful card payment</h3>
+      <ol class="steps">
+        <li>Note <code>qa-mug</code> stock. Order QA Mug × 1 at <code>/en/checkout</code>, country <code>GR</code>, click <strong>Place order</strong>.</li>
+        <li>In the <strong>Card details</strong> panel pay with the provider's successful test card; click <strong>Pay now</strong>.</li>
+        <li>Wait for the webhook, then run the order query and the stock query.</li>
+      </ol>
+      <ul class="exp">
+        <li>After Place order the page shows <code>Order reference: ORD-…</code> and the card form; the order already exists as <code>pending</code> with a <code>stripe</code> payment <code>pending</code> (provider_ref <code>pi_…</code>) and stock unchanged. The order emails have already been sent.</li>
+        <li>After paying: <code>Thank you! Your order has been placed.</code> and the cart is empty.</li>
+        <li>After the webhook: order <code>paid</code>, payment <code>captured</code> for 1600 (12.00 + 4.00, no surcharge for Stripe), stock down by 1, <code>stock_taken</code> true, no <code>cod</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/shop/StripeCardPanel.tsx</code> · <code>src/cms/core/payments/webhooks.ts</code> (<code>settleCapturedOrder</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-053" data-priority="P2">
+      <h3>Stripe: declined card, then a retry</h3>
+      <ol class="steps">
+        <li>Place an order and pay with the provider's generic-decline test card.</li>
+        <li>In the same panel pay again with the successful test card.</li>
+        <li>Run the order query after each step.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: the panel shows the provider's decline message in red and stays open; after the webhook the payment is <code>failed</code>, the order <code>pending</code>, stock untouched. Step 2: success screen; the same payment row (same <code>pi_…</code>) becomes <code>captured</code> and the order <code>paid</code>. There is still exactly one stripe row.</p>
+      <p class="ref">Ref: <code>src/cms/core/payments/events.ts</code> (<code>payment_intent.payment_failed</code>) · <code>src/cms/modules/commerce/payments.ts</code> (<code>capturePaymentByRef</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-054" data-priority="P2">
+      <h3>Stripe: 3-D Secure and an abandoned payment</h3>
+      <ol class="steps">
+        <li>Place an order and pay with the provider's authentication-required test card; complete the challenge.</li>
+        <li>Place another order and close the tab at the card form. Note its reference.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: after the challenge the order ends <code>paid</code> as in COM-052. If Stripe redirects instead of staying in the page, the return address is <code>/order?ref=…</code> without the <code>/en</code> prefix (record it). Step 2: the order stays <code>pending</code> with a <code>pending</code> stripe payment and stock untouched; COM-089 cancels it.</p>
+      <p class="ref">Ref: <code>src/app/[locale]/checkout/CheckoutClient.tsx</code> (<code>returnUrl</code>) · docs/dev-guides/08-commerce.md §10</p>
+    </article>
+
+    <article class="tc" id="COM-055" data-priority="P2">
+      <h3>Configure PayPal sandbox</h3>
+      <ol class="steps">
+        <li>Set <code>PAYPAL_CLIENT_ID</code>, <code>PAYPAL_CLIENT_SECRET</code> from a sandbox app, <code>PAYPAL_ENV=sandbox</code>. Register the webhook URL for <code>CHECKOUT.ORDER.APPROVED</code>, <code>PAYMENT.CAPTURE.COMPLETED</code>, <code>.DENIED</code>, <code>.DECLINED</code>, <code>.REFUNDED</code> and put its id in <code>PAYPAL_WEBHOOK_ID</code>. Restart.</li>
+        <li>Set <strong>Payment method</strong> to <code>PayPal</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Saved. A POST with an empty body to the PayPal webhook answers <code>400</code>.</p>
+      <p class="ref">Ref: <code>src/cms/core/payments/paypal.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-056" data-priority="P1">
+      <h3>PayPal: approve and return</h3>
+      <ol class="steps">
+        <li>Order QA Mug at <code>/en/checkout</code> and click <strong>Place order</strong>. On PayPal's sandbox page sign in with the sandbox buyer account and approve.</li>
+        <li>Look at the page you return to and at the cart.</li>
+        <li>Wait for the webhook and run the order query; check <code>JSON_EXTRACT(p.metadata,'$.captureId')</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>The browser leaves for PayPal immediately; the order is <code>pending</code> with a <code>paypal</code> payment whose provider_ref is the PayPal order id.</li>
+        <li>You return to <code>/en/order?ref=ORD-…</code>.</li>
+        <li>After the webhook: order <code>paid</code>, payment <code>captured</code> with a <code>captureId</code>; stock taken.</li>
+      </ul>
+      <p class="exp"><span class="exp-label">Known gap:</span> The return page is the plain <strong>Track your order</strong> form: it ignores <code>ref</code>, shows no thank-you, and the cart still holds QA Mug (only the in-page flows empty it). Record this with the result; empty the cart by hand.</p>
+      <p class="ref">Ref: <code>src/cms/core/payments/paypal.ts</code> · <code>src/app/[locale]/order/OrderLookupClient.tsx</code> · <code>src/cms/core/payments/webhooks.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-057" data-priority="P2">
+      <h3>PayPal: cancel and come back</h3>
+      <ol class="steps">
+        <li>Place an order and on PayPal click the link to cancel and return to the shop.</li>
+        <li>Run the order query.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> You land on <code>/en/order?ref=…</code>. The order stays <code>pending</code> with a <code>pending</code> payment and no stock taken. It is later cancelled by the stale-order job (COM-089). Placing a new order from the same cart creates a new reference.</p>
+      <p class="ref">Ref: <code>src/cms/core/payments/paypal.ts</code> (<code>cancel_url</code> = return URL)</p>
+    </article>
+
+    <article class="tc" id="COM-058" data-priority="P2">
+      <h3>Configure Viva demo</h3>
+      <ol class="steps">
+        <li>Set <code>VIVA_CLIENT_ID</code>, <code>VIVA_CLIENT_SECRET</code>, <code>VIVA_MERCHANT_ID</code>, <code>VIVA_API_KEY</code>, <code>VIVA_ENV=demo</code> and <code>VIVA_WEBHOOK_VERIFICATION_KEY</code>; restart.</li>
+        <li>Run <code>curl -s "$BASE/api/cms/payments/webhooks/viva"</code>. Then in the Viva demo portal register the webhook URL for Transaction Payment Created, Reversal Created and Failed, and set the payment source's success and failure redirect to <code>&lt;site&gt;/en/order</code>.</li>
+        <li>Set <strong>Payment method</strong> to <code>Viva.com (card)</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 2 answers <code>{"Key":"&lt;your verification key&gt;"}</code> and Viva accepts the URL. With the key unset the GET answers 404.</p>
+      <p class="ref">Ref: <code>src/cms/core/payments/viva.ts</code> · <code>src/cms/core/payments/webhooks.ts</code> (Viva GET) · docs/dev-guides/08-commerce.md §7.3</p>
+    </article>
+
+    <article class="tc" id="COM-059" data-priority="P2">
+      <h3>Viva: success and failure</h3>
+      <ol class="steps">
+        <li>Order QA Mug and pay on Viva's Smart Checkout with its demo success test card. Wait for the webhook; run the order query and <code>SELECT JSON_EXTRACT(metadata,'$.transactionId') FROM payments WHERE provider = 'viva' ORDER BY id DESC LIMIT 1;</code></li>
+        <li>Place another order and use the demo card for a declined payment (or cancel on the Viva page).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: provider_ref is the 16-digit order code; after the webhook the order is <code>paid</code>, the payment <code>captured</code>, and <code>transactionId</code> holds the transaction id (different from the order code). Step 2: payment <code>failed</code> (or still <code>pending</code> after a cancel), order <code>pending</code>, stock untouched. The return page has the same gap as COM-056.</p>
+      <p class="ref">Ref: <code>src/cms/core/payments/viva.ts</code> (<code>confirmTransaction</code>) · <code>src/cms/core/payments/events.ts</code> (<code>vivaEventKind</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-060" data-priority="P2">
+      <h3>Replays and reloads: one order, one payment, one stock move</h3>
+      <ol class="steps">
+        <li>On the return page of a paid PayPal or Viva order press reload twice.</li>
+        <li>In the Stripe test dashboard resend the <code>payment_intent.succeeded</code> event of the COM-052 order (or with the CLI, resend that event id). In PayPal's sandbox webhook simulator, resend the capture event of COM-056.</li>
+        <li>Run: <code>SELECT o.reference, COUNT(p.id) FROM orders o JOIN payments p ON p.order_id = o.id WHERE o.reference IN ('&lt;ref1&gt;','&lt;ref2&gt;') GROUP BY o.reference;</code> and the stock query.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Each order still has exactly one gateway payment, status <code>captured</code>; no new order was created by reloading; stock did not drop a second time. The resent webhooks answer 200 in the provider's log.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/payments.ts</code> (<code>capturePaymentByRef</code>) · <code>uniq_payments_provider_ref</code> (DB-039)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-rejections">
+    <h2>What checkout refuses</h2>
+    <p class="intro">Set <strong>Payment method</strong> back to <code>Manual / bank transfer</code>. Each refusal must leave no order behind: compare <code>SELECT MAX(id) FROM orders;</code> before and after.</p>
+
+    <article class="tc" id="COM-061" data-priority="P2">
+      <h3>A product unpublished while in the cart</h3>
+      <ol class="steps">
+        <li>Add QA Candle to the cart. In the admin set <code>qa-candle</code> to <code>draft</code> in both languages.</li>
+        <li>Place the order at <code>/en/checkout</code>. Publish the product again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>Product "qa-candle" is no longer available.</code> in red; no order.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/orderable.ts</code> (<code>orderableRow</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-062" data-priority="P2">
+      <h3>A variation switched off, and an out-of-stock untracked product</h3>
+      <ol class="steps">
+        <li>Add QA T-shirt Blue/M to the cart. In the admin untick <strong>On</strong> for Blue/M and save. Place the order.</li>
+        <li>Tick it on again. Add QA Candle, then set its availability to <code>out-of-stock</code> and place the order. Set it back to <code>in-stock</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>The option you chose for "QA T-shirt" is no longer available.</code> Step 2: <code>"QA Candle" is out of stock.</code> No order either time.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/orderable.ts</code> (<code>lineUnavailableReason</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-063" data-priority="P3">
+      <h3>External product, unknown variation and a missing address, through the API</h3>
+      <ol class="steps">
+        <li>For each body run <code>curl -s -X POST "$BASE/api/cms/commerce/checkout" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.80.0.4' -d '&lt;body&gt;' -w ' %{http_code}\n'</code> (a new address after every few calls), each with <code>"customer":{"name":"QA","email":"qa.api@example.com","address1":"Odos 1","city":"Athina","postal":"10558","country":"GR"},"locale":"en","acceptTerms":true</code> plus:
+          <ul>
+            <li><code>"items":[{"slug":"qa-ext","quantity":1}]</code></li>
+            <li><code>"items":[{"slug":"qa-tee","variationId":"nope","quantity":1}]</code></li>
+            <li><code>"items":[{"slug":"qa-nothing","quantity":1}]</code></li>
+            <li>the qa-mug item with <code>"acceptTerms":false</code></li>
+            <li>the qa-mug item with the customer's <code>address1</code> removed</li>
+            <li><code>"items":[]</code></li>
+          </ul></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> In order: <code>400</code> <code>"QA External" cannot be bought here.</code> (the product's name); <code>400</code> <code>The option you chose for "QA T-shirt" is no longer available.</code>; <code>400</code> <code>Product "qa-nothing" is no longer available.</code>; <code>400</code> <code>Please accept the terms to place your order.</code>; <code>400</code> <code>A delivery address is required.</code>; <code>400</code> <code>invalid_input</code>. No order is created.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/orders.ts</code> (<code>createOrder</code>, <code>checkoutBody</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-064" data-priority="P3">
+      <h3>Client prices are ignored; a variation product without a variation</h3>
+      <ol class="steps">
+        <li>In Local Storage edit <code>site-cart</code> and change QA Mug's <code>unitPrice</code> to <code>0.01</code>; reload and place the order.</li>
+        <li>Via the API order <code>{"slug":"qa-tee","quantity":1}</code> with no <code>variationId</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: the summary may show €0.01, but the order is stored at 1200 per mug (the server prices it). Step 2: accepted at the base price 2000 with no variation (a known surprise, docs/dev-guides/08-commerce.md §10); record it. Cancel both orders.</p>
+      <p class="ref">Ref: docs/dev-guides/08-commerce.md §4.3, §10</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-confirm">
+    <h2>Confirmation emails and order lookup</h2>
+
+    <article class="tc" id="COM-065" data-priority="P1">
+      <h3>The customer confirmation email</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> The COM-042 order (gift wrap), placed in English.</p>
+      <ol class="steps">
+        <li>Open the email in the customer mailbox.</li>
+      </ol>
+      <ul class="exp">
+        <li>Subject <code>Your order ORD-2026-…</code>; first line <code>Thank you for your order! We have received it and will be in touch shortly.</code>; <code>Order reference: ORD-…</code>; <code>Ship to: Odos 1, Athina, 10558, GR</code>.</li>
+        <li>A table <code>Item</code> / <code>Qty</code> / <code>Amount</code> with <code>QA Mug</code> 1 €12.00, then <code>Subtotal</code> €12.00, <code>Shipping</code> €4.00, <code>Surcharge</code> €2.00, <code>Gift wrap</code> €2.50 and bold <code>Total</code> €20.50. The lines sum to the total and to <code>orders.total</code>.</li>
+        <li>It says “received”, not “paid” (the same email goes out for gateway orders before payment).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/orders.ts</code> (<code>sendOrderEmails</code>, <code>EMAIL_LABELS</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-066" data-priority="P2">
+      <h3>The shop's notification email and the Greek version</h3>
+      <ol class="steps">
+        <li>Open the shop's copy of the COM-042 order.</li>
+        <li>Place a manual order on <code>/checkout</code> (Greek) and open both emails.</li>
+        <li>Clear <strong>Inquiry notification emails</strong>, place another order, check <code>CONTACT_RECIPIENT_EMAIL</code>'s mailbox; restore the setting.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: subject <code>New order ORD-…</code>, first line <code>QA Shopper · &lt;customer email&gt;</code>, the same table; Reply-To is the customer. Step 2: subjects <code>Η παραγγελία σας ORD-…</code> and <code>Νέα παραγγελία ORD-…</code>, rows <code>Προϊόν</code>, <code>Ποσ.</code>, <code>Ποσό</code>, <code>Υποσύνολο</code>, <code>Μεταφορικά</code>, <code>Επιβάρυνση</code>, <code>Σύνολο</code>; prices as <code>12,00 €</code>. Step 3: the notification goes to the default recipient.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/orders.ts</code> (<code>parseRecipients</code>) · <code>src/cms/core/email/graph.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-067" data-priority="P2">
+      <h3>Guest order lookup</h3>
+      <ol class="steps">
+        <li>Open <code>/en/order</code>. Enter a reference and its email; click <strong>Look up order</strong>.</li>
+        <li>Try the same reference with another email, and the email in capitals.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>Status</code> with the translated status (<code>Pending</code>, <code>Paid</code>, <code>Shipped</code> for fulfilled…), the lines, <code>Total</code> and <code>Ship to</code>. Wrong email: <code>No order found for that reference and email.</code> Record whether the capitalised email is accepted.</p>
+      <p class="ref">Ref: <code>src/app/[locale]/order/OrderLookupClient.tsx</code> · <code>src/cms/modules/commerce/orders.ts</code> (<code>lookupOrder</code>, <code>publicOrder</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-orders">
+    <h2>Orders screen</h2>
+
+    <article class="tc" id="COM-068" data-priority="P1">
+      <h3>List, figures, filter and search</h3>
+      <ol class="steps">
+        <li>Open <strong>Orders</strong> (<code>/admin/orders</code>).</li>
+        <li>Choose <strong>Status</strong> <code>pending</code>, then <code>All</code>. Type part of a reference in <strong>Search</strong> and click <strong>Find</strong>; then a customer email; then <code>QA Shopper</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Boxes <code>ORDERS</code> (count of every order) and <code>REVENUE</code> (all orders not cancelled or refunded, pending included), and one chip per status such as <code>pending: 7</code>, each with an info tip (for example pending: <code>Placed but not paid yet: …</code>).</li>
+        <li>Table columns Reference, Date, Customer, Total, Status and a <strong>View</strong> button, newest first.</li>
+        <li>The status filter narrows the table; the search finds by reference, email or name. With more than 25 orders <strong>Prev</strong>/<strong>Next</strong> and <code>N total · page 1/M</code> appear.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/OrdersTable.tsx</code> · <code>src/cms/modules/commerce/orders.ts</code> (<code>listOrders</code>, <code>orderStats</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-069" data-priority="P2">
+      <h3>The order panel</h3>
+      <ol class="steps">
+        <li>Click <strong>View</strong> on the COM-045 order (gift card + manual), then on a PayPal order.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> A side panel headed with the reference: customer fields (<strong>Email *</strong>, <strong>Customer name</strong>, <strong>Phone</strong>, <strong>Address</strong>, <strong>City</strong>, <strong>Postal code</strong>, <strong>Country</strong>), <strong>Items</strong> with name, variant, SKU, price and quantity, the cost fields, a summary Subtotal / Shipping / Payment surcharge / (Gift wrap) / Discount / Total that adds up, <strong>Notes</strong>, <strong>Delivery</strong> (for COM-045 <code>Gift cards used €25.00</code>), <strong>Payments</strong> (<code>Gift card</code> €25.00 captured; <code>Manual / bank transfer</code> €17.00 pending; for PayPal <code>PayPal</code> captured with <strong>Refund</strong>), <strong>Shipments</strong>, <strong>Status</strong> pills, <strong>Cancel</strong> and <strong>Save order</strong>.</p>
+      <p class="ref">Ref: <code>src/cms/admin/OrdersTable.tsx</code> · <code>src/cms/admin/OrderFulfilment.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-070" data-priority="P1">
+      <h3>Status pills follow the lifecycle</h3>
+      <ol class="steps">
+        <li>Open a <code>pending</code> order. Hover each status pill.</li>
+        <li>Click <strong>paid</strong>. Hover the pills again.</li>
+        <li>Click <strong>fulfilled</strong>. Hover again.</li>
+      </ol>
+      <ul class="exp">
+        <li>Pending: <strong>paid</strong> and <strong>cancelled</strong> are enabled; <strong>fulfilled</strong> and <strong>refunded</strong> are greyed out with the tooltip <code>A pending order cannot be moved to fulfilled.</code> / <code>… to refunded.</code> The current pill has a dark ring.</li>
+        <li>Paid: <strong>fulfilled</strong>, <strong>refunded</strong>, <strong>cancelled</strong> enabled; <strong>pending</strong> disabled (<code>A paid order cannot be moved to pending.</code>).</li>
+        <li>Fulfilled: only <strong>refunded</strong> enabled.</li>
+        <li>The Status info tip reads <code>… Only the next steps are offered: pending → paid or cancelled, paid → fulfilled, refunded or cancelled, fulfilled → refunded. Cancelled and refunded are final.</code></li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/order-status.ts</code> · <code>src/cms/admin/OrdersTable.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-071" data-priority="P2">
+      <h3>Status emails and the confirmations for cancel and refund</h3>
+      <ol class="steps">
+        <li>On the fulfilled order from COM-070 check the customer mailbox.</li>
+        <li>On another paid manual order click <strong>cancelled</strong>, read the dialog, choose the cancel option in the dialog, then confirm with <strong>Cancel order</strong>.</li>
+        <li>On a paid manual order click <strong>refunded</strong> and confirm with <strong>Mark refunded</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Fulfilled: email <code>Order update ORD-…</code> saying <code>Your order has been shipped.</code></li>
+        <li>Cancel dialog: <code>Cancel this order?</code> explaining stock goes back and that <code>Any payment already taken is not refunded by this — use Refund under Payments, or refund it with your provider.</code> Backing out changes nothing. After confirming: <code>Your order has been cancelled.</code></li>
+        <li>Refunded dialog: <code>Mark this order refunded?</code>; after confirming: <code>Your order has been refunded.</code> No money moves at any provider.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/OrdersTable.tsx</code> (<code>ORDER_STATUS_CONFIRM</code>) · <code>src/cms/modules/commerce/orders.ts</code> (<code>sendOrderStatusEmail</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-072" data-priority="P2">
+      <h3>Cancelled and refunded are final; the API agrees</h3>
+      <ol class="steps">
+        <li>Open a cancelled order and hover the pills.</li>
+        <li>Run <code>curl -s -X PATCH "$BASE/api/cms/orders/&lt;id&gt;" -b "cms_session=$S" -H 'Content-Type: application/json' -d '{"status":"paid"}' -w ' %{http_code}\n'</code> for that order.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Every pill except the current one is disabled (<code>A cancelled order cannot be moved to paid.</code> and so on). curl: <code>409</code> with <code>An order that is cancelled cannot be moved to paid.</code></p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/orders.ts</code> (<code>orderUpdateRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-073" data-priority="P2">
+      <h3>Stock goes back on cancel, once</h3>
+      <ol class="steps">
+        <li>Note <code>qa-mug</code> stock. Place a manual order for QA Mug × 2 (stock −2).</li>
+        <li>Cancel it in the admin. Run the stock query and the order query.</li>
+        <li>Cancel a <code>pending</code> Stripe order whose card was never paid (COM-054 step 2) and check the stock again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 2: stock back to the starting number on both language rows; <code>stock_taken</code> false. Step 3: stock unchanged (nothing was taken, so nothing is returned).</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/stock.ts</code> (<code>restockOrder</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-074" data-priority="P2">
+      <h3>A status changed meanwhile: 409, not an overwrite</h3>
+      <ol class="steps">
+        <li>Open a <code>pending</code> manual order's panel and leave it open.</li>
+        <li>In the terminal cancel it: <code>curl -s -X PATCH "$BASE/api/cms/orders/&lt;id&gt;" -b "cms_session=$S" -H 'Content-Type: application/json' -d '{"status":"cancelled"}'</code>.</li>
+        <li>In the still-open panel click <strong>paid</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> A red message in the panel: <code>An order that is cancelled cannot be moved to paid.</code> The order stays cancelled. (If two moves race exactly, the message is <code>This order changed while you were looking at it. Reload it and try again.</code>)</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/orders.ts</code> (<code>orderUpdateRoute</code>, <code>onlyFrom</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-075" data-priority="P2">
+      <h3>Editing an order someone else changed: 409</h3>
+      <ol class="steps">
+        <li>Open an order's panel and change <strong>Customer name</strong>.</li>
+        <li>In SQL run <code>UPDATE orders SET version = version + 1 WHERE id = &lt;id&gt;;</code></li>
+        <li>Click <strong>Save order</strong>. Close the panel with <strong>Cancel</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 3: red text <code>This order was changed by someone else while you had it open. Reload to see their version — saving now would replace their work, including any line items they added.</code> and nothing is saved. Closing asks <code>Discard your changes?</code> with <strong>Discard changes</strong>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/orders.ts</code> (<code>saveOrder</code>, <code>expectedVersion</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-076" data-priority="P2">
+      <h3>Edit an order's lines and costs</h3>
+      <ol class="steps">
+        <li>Open a pending manual order. Change the mug quantity from 1 to 2, set <strong>Shipping (EUR)</strong> to <code>0</code>, click <strong>Save order</strong>.</li>
+        <li>Run the order query and the stock query.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The panel total updates before saving and the save succeeds; <code>orders.total</code> and <code>subtotal</code> match the new lines; <code>cod</code> follows the new total. Stock does not change (editing never moves stock), payments do not change, and no email is sent.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/orders.ts</code> (<code>saveOrder</code>, <code>rebaseCodAmount</code>) · docs/dev-guides/08-commerce.md §10</p>
+    </article>
+
+    <article class="tc" id="COM-077" data-priority="P2">
+      <h3>Create an order by hand; export CSV</h3>
+      <ol class="steps">
+        <li>Click <strong>+ New order</strong>, click <strong>Create order</strong> with no email; then type email <code>qa.phone@example.com</code> and click again with no items.</li>
+        <li>Add QA Mug with <code>Add product… (search)</code>, click <strong>Create order</strong>.</li>
+        <li>Click <strong>Export CSV</strong> with the status filter on <code>pending</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>Email is required.</code>, then <code>Add at least one item.</code>, then the new order appears as <code>pending</code> (no payment row, stock unchanged). The download <code>orders.csv</code> has only pending orders with columns reference, date, status, customer, currency, subtotal, discount, shipping, surcharge, total, coupon and items. A customer name typed as <code>=1+1</code> appears as text, not a formula.</p>
+      <p class="ref">Ref: <code>src/cms/admin/OrdersTable.tsx</code> · <code>src/cms/modules/commerce/orders.ts</code> (CSV export, <code>csvCell</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-078" data-priority="P3">
+      <h3>A read-only role sees orders but cannot change them</h3>
+      <ol class="steps">
+        <li>Create a role <code>QA orders view</code> with <strong>Access</strong> and <strong>View orders</strong> only, and a user with it. Sign in as that user and open an order.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> No <strong>+ New order</strong>; <strong>Export CSV</strong> is there. The panel fields are read-only, there are no status pills, no Refund, no shipment form, a <strong>Close</strong> button instead of Cancel/Save, and <code>Your role can view orders but not change them.</code></p>
+      <p class="ref">Ref: <code>src/cms/admin/OrdersTable.tsx</code> (<code>canWrite</code>) · AUTH-055</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-refunds">
+    <h2>Refunds and the refund-required notice</h2>
+
+    <article class="tc" id="COM-079" data-priority="P2">
+      <h3>Stripe: partial, then full refund</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Payment method Stripe; a paid Stripe order of €16.00 for QA Mug × 1.</p>
+      <ol class="steps">
+        <li>Open the order, click <strong>Refund</strong> on the Stripe payment. Enter <code>5.00</code>, <strong>Reason (optional)</strong> <code>QA partial</code>, click <strong>Refund</strong>, read the dialog, confirm.</li>
+        <li>Note the stock and status. Click <strong>Refund</strong> again; accept the proposed <code>11.00</code> and confirm.</li>
+        <li>Run the order query and the stock query; check the Stripe test dashboard.</li>
+      </ol>
+      <ul class="exp">
+        <li>Dialog 1: <code>Refund €5.00?</code> … <code>This is a partial refund: the order keeps its status and nothing goes back into stock.</code> After it: <code>€5.00 already refunded · €11.00 left</code>, a new line <code>Stripe</code> −€5.00 <code>refunded</code>, status still paid, stock unchanged.</li>
+        <li>Dialog 2 ends <code>… so the order is marked refunded, its items go back into stock and the customer is emailed.</code> After it: status <code>refunded</code>, stock +1, <code>Your order has been refunded.</code> email once, no Refund button left.</li>
+        <li>SQL: capture row still <code>captured</code> with <code>refundedAmount</code> 1600; two negative <code>refunded</code> rows (−500, −1100). Stripe shows two refunds. The later <code>charge.refunded</code> webhook sends no second email.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/OrderFulfilment.tsx</code> (<code>OrderPayments</code>) · <code>src/cms/modules/commerce/payments.ts</code> (<code>refundOrderPayment</code>) · <code>src/cms/core/payments/refunds.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-080" data-priority="P3">
+      <h3>Refund amount checks</h3>
+      <ol class="steps">
+        <li>On a paid Stripe order open <strong>Refund</strong> and try <code>0</code>, then more than the payment, then <code>abc</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Each shows <code>Enter an amount between €0.01 and €16.00.</code> (the payment's amount) and nothing is sent.</p>
+      <p class="ref">Ref: <code>src/cms/admin/OrderFulfilment.tsx</code> (<code>submit</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-081" data-priority="P2">
+      <h3>PayPal and Viva refunds</h3>
+      <ol class="steps">
+        <li>On the COM-056 PayPal order refund <code>2.00</code>, then the rest.</li>
+        <li>On the COM-059 Viva order refund the full amount.</li>
+        <li>Run <code>SELECT provider, status, amount, JSON_EXTRACT(metadata,'$.refundOf') FROM payments WHERE order_id IN (&lt;paypal id&gt;, &lt;viva id&gt;) ORDER BY id;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both go through and show in the sandbox dashboards; PayPal refunds the capture (<code>captureId</code>), Viva reverses the stored <code>transactionId</code>. The orders end <code>refunded</code> with stock returned once. If Viva answers with a message instead, record it: a Viva payment whose webhook never stored <code>transactionId</code> is refused with <code>That payment has no provider reference to refund against.</code> (refund it in the Viva portal). Viva refunds are marked “not yet verified end to end” in the dev guide.</p>
+      <p class="ref">Ref: <code>src/cms/core/payments/refunds.ts</code> (<code>refundTargetRef</code>) · docs/dev-guides/08-commerce.md §4.7, §10</p>
+    </article>
+
+    <article class="tc" id="COM-082" data-priority="P2">
+      <h3>A payment that arrives after the order was cancelled</h3>
+      <ol class="steps">
+        <li>With Stripe, place an order and stop at the card form.</li>
+        <li>In the admin cancel that order (confirm <strong>Cancel order</strong>).</li>
+        <li>Back in the shop, pay with the successful test card. Wait for the webhook and reopen the order.</li>
+        <li>Refund the payment in full under Payments.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 3: the order stays <code>cancelled</code>, no stock is taken, and a red notice reads <code>The online payment for this order arrived after the order was closed, so it was not reopened and no stock was taken. The customer has been charged: refund the payment under Payments.</code> SQL: <code>JSON_EXTRACT(metadata,'$.refundRequired.reason')</code> is <code>captured_after_close</code>.</li>
+        <li>Step 4: the notice disappears; the order moves to <code>refunded</code> and the customer gets the refund email.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/payments/webhooks.ts</code> (<code>settleCapturedOrder</code>) · <code>src/cms/modules/commerce/order-admin.ts</code> (<code>refundStillOwed</code>) · <code>src/cms/admin/OrdersTable.tsx</code> (<code>REFUND_DUE_TEXT</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-083" data-priority="P2">
+      <h3>Two card orders for the last unit</h3>
+      <ol class="steps">
+        <li>Create <code>qa-last</code>, price <code>10</code>, stock <code>1</code>, published. With Stripe, in window A place an order for it and stop at the card form; in window B (another browser) do the same.</li>
+        <li>Pay in B, then pay in A. Open both orders.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> B is <code>paid</code> and stock is 0. A is <code>cancelled</code> with the red notice <code>The online payment arrived but there was not enough stock, so the order was cancelled. The customer has been charged: refund the payment under Payments.</code>; SQL shows <code>refundRequired.reason</code> <code>stock_short</code> and a <code>stockFailure</code> entry. Stock never goes below 0. Refund A to clear the notice.</p>
+      <p class="ref">Ref: <code>src/cms/core/payments/webhooks.ts</code> · <code>src/cms/modules/commerce/stock.ts</code> (<code>moveOrderStock</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-fulfil">
+    <h2>Fulfilment, couriers and vouchers</h2>
+    <p class="intro">BoxNow calls go to the stage API only (<code>BOXNOW_API_URL</code> empty or the stage URL). ACS, Speedex and ELTA are never called: their numbers are typed in.</p>
+
+    <article class="tc" id="COM-084" data-priority="P2">
+      <h3>The courier credentials screen</h3>
+      <ol class="steps">
+        <li>In Settings → Ecommerce → Shipping scroll to <strong>Couriers</strong>. Click <strong>Save</strong> on <strong>BoxNow client ID</strong> with the box empty.</li>
+        <li>Enter the BoxNow stage client ID and click <strong>Save</strong>; do the same for <strong>BoxNow client secret</strong>. Reload.</li>
+        <li>Run <code>SELECT `key`, hint FROM integration_secrets WHERE `key` LIKE 'courier.%';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Empty save: <code>Type a new BoxNow client ID to save, or use Clear.</code> After saving: <code>Saved.</code>; after reload each shows <code>Set · …</code> with only the last characters and a <strong>Clear</strong> button; the value itself is never shown. Two encrypted rows exist. <strong>Clear</strong> asks <code>Clear the BoxNow client ID?</code>.</p>
+      <p class="ref">Ref: <code>src/cms/admin/CourierCredentials.tsx</code> · <code>src/cms/modules/commerce/shipping-methods.ts</code> (<code>COURIER_SECRET_DEFS</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-085" data-priority="P2">
+      <h3>Add a tracking number for ACS, Speedex, ELTA or other</h3>
+      <ol class="steps">
+        <li>Open the COM-036 order (QA ACS). Under <strong>Shipments</strong> click <strong>Add tracking number</strong> with the box empty.</li>
+        <li>Choose <strong>Courier</strong> <code>ACS</code>, <strong>Tracking number</strong> <code>QA123456</code>, click <strong>Add tracking number</strong>. Add a second with <code>Other</code> / <code>X1</code>, then the same ACS number again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Empty: <code>Type the tracking number the courier gave you.</code> Then the list shows <code>ACS QA123456</code> with today's date and a <strong>Track parcel</strong> link to <code>https://www.acscourier.net/el/track-and-trace?trackingNumber=QA123456</code>; <code>Other X1</code> has no link. The duplicate ACS number is refused with an error and no second row. There is no <strong>Create BoxNow voucher</strong> button on this order. The order status did not change and no email was sent.</p>
+      <p class="ref">Ref: <code>src/cms/admin/OrderFulfilment.tsx</code> (<code>OrderShipments</code>) · <code>src/cms/modules/commerce/shipping-methods.ts</code> (<code>TRACKING_URLS</code>, <code>shipmentActions</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-086" data-priority="P2">
+      <h3>BoxNow: an unpaid cash-on-delivery order is booked as COD</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> COM-084 done; payment method Manual.</p>
+      <ol class="steps">
+        <li>Run <code>curl -s "$BASE/api/cms/commerce/lockers?postal=105" -H 'X-Real-IP: 10.80.0.5'</code> and pick a locker id and name.</li>
+        <li>Place an order through the API as in COM-036 with the <code>QA BoxNow</code> method id and <code>"lockerId":"&lt;id&gt;","lockerName":"&lt;name&gt;"</code>. Then try once without <code>lockerId</code>.</li>
+        <li>Open the order, click <strong>Create BoxNow voucher</strong>, confirm <strong>Create voucher</strong>.</li>
+        <li>Look up the voucher in the BoxNow stage partner portal.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: up to 50 lockers whose postcode starts with 105. Step 2: the order is created with <code>cod</code> equal to its total; without a locker: <code>400</code> <code>Please choose a locker for this delivery option.</code> Step 3: the panel's Delivery shows <code>Shipping method QA BoxNow · BoxNow (locker)</code> and <code>BoxNow locker &lt;name&gt; (&lt;id&gt;)</code>; after the voucher a <code>BoxNow (locker) &lt;voucher&gt;</code> row with <strong>Track parcel</strong> to <code>https://boxnow.gr/track/&lt;voucher&gt;</code>. Step 4: the parcel is payment mode COD with the amount to collect equal to the order total in euros.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/shipping-service.ts</code> (<code>createShipment</code>) · <code>src/cms/modules/commerce/couriers/boxnow.ts</code> (<code>createVoucher</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-087" data-priority="P3">
+      <h3>BoxNow: a paid order is prepaid; missing credentials are explained</h3>
+      <ol class="steps">
+        <li>Place another BoxNow locker order, mark it <strong>paid</strong>, create the voucher; check its payment mode in the partner portal.</li>
+        <li>Clear both BoxNow credentials and click <strong>Create BoxNow voucher</strong> on a third BoxNow order. Re-enter the credentials.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: booked as prepaid, nothing to collect. Step 2: red text <code>BoxNow is not connected. Add the client ID and secret in Settings → Ecommerce → Shipping → Couriers.</code> and no shipment row.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/shipping-service.ts</code> (<code>codAmount</code> only when not paid) · <code>BOXNOW_NOT_CONNECTED</code></p>
+    </article>
+
+    <article class="tc" id="COM-088" data-priority="P2">
+      <h3>The shipped email and tracking</h3>
+      <ol class="steps">
+        <li>Mark the COM-085 order <strong>paid</strong> and then <strong>fulfilled</strong>. Open the customer email.</li>
+        <li>Look up the order on <code>/en/order</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected (known gap):</span> The email <code>Order update ORD-…</code> says <code>Your order has been shipped.</code> and the reference, but carries no tracking number or link; the lookup page shows <code>Shipped</code> without tracking either. Adding a tracking number sends no email at all (the Shipments info tip says so). Record this as a missing tracking email.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/orders.ts</code> (<code>sendOrderStatusEmail</code>) · <code>src/cms/admin/OrderFulfilment.tsx</code> (Shipments info tip)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-jobs">
+    <h2>Scheduled jobs: stale orders and abandoned carts</h2>
+    <p class="intro">Jobs are called as in docs/dev-guides/10-settings-cron-operations.md §3.4: <code>curl -s -X POST -H "x-cron-secret: $CRON" "$BASE/api/cms/cron/&lt;job&gt;"</code>. The disabled-module 404 and wrong secret 401 are SET-042.</p>
+
+    <article class="tc" id="COM-089" data-priority="P2">
+      <h3>Unpaid card orders are cancelled after the waiting time</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> The abandoned Stripe order from COM-054 and the cancelled-at-PayPal order from COM-057 are still <code>pending</code>; a pending manual order exists.</p>
+      <ol class="steps">
+        <li>Age all three: <code>UPDATE orders SET created_at = NOW() - INTERVAL 72 HOUR WHERE reference IN ('&lt;stripe&gt;','&lt;paypal&gt;','&lt;manual&gt;');</code></li>
+        <li>Run the <code>commerce-stale-orders</code> job, then check the three orders and the customer mailbox.</li>
+        <li>Run the job again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 2: <code>{"ok":true,"data":{"status":"ran","result":{"checked":…,"cancelled":[&lt;stripe id&gt;,&lt;paypal id&gt;]}}}</code>. The two gateway orders are <code>cancelled</code> and each customer gets <code>Your order has been cancelled.</code>; the manual order stays <code>pending</code>. Step 3: <code>"cancelled":[]</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/stale-orders.ts</code> · docs/dev-guides/08-commerce.md §4.8</p>
+    </article>
+
+    <article class="tc" id="COM-090" data-priority="P3">
+      <h3>The waiting time setting and a part-gift-card order</h3>
+      <ol class="steps">
+        <li>Set <strong>Cancel unpaid card orders after (hours)</strong> to <code>0</code>, age a new unpaid Stripe order, run the job. Set it back to 48.</li>
+        <li>With Stripe, place an order partly paid by a gift card and abandon the card form; age it and run the job.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>"checked":0,"cancelled":[]</code>. Step 2: the order is not cancelled (the captured gift card payment counts as money attached) and the card's balance stays tied up until an admin cancels it; record this known limitation.</p>
+      <p class="ref">Ref: docs/dev-guides/08-commerce.md §10 (stale job and gift cards)</p>
+    </article>
+
+    <article class="tc" id="COM-091" data-priority="P2">
+      <h3>A cart is captured when the email is typed</h3>
+      <ol class="steps">
+        <li>Set <code>COMMERCE_ABANDONED_DELAY_MINUTES=1</code> in <code>.env.local</code> and restart.</li>
+        <li>In a private window add QA Mug and QA T-shirt Red/S, open <code>/en/checkout</code>, type the customer email and wait two seconds. Close the window without ordering.</li>
+        <li>Run <code>SELECT id, email, status, subtotal, reminder_sent_at FROM abandoned_carts ORDER BY id DESC LIMIT 1;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> One row for that email, status <code>pending</code>, subtotal 3200, <code>reminder_sent_at</code> NULL. It is listed on <strong>Abandoned carts</strong> (<code>/admin/abandoned</code>) under <strong>Pending</strong>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/abandoned.ts</code> (<code>captureCart</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-092" data-priority="P2">
+      <h3>The reminder email and the way back to the cart</h3>
+      <ol class="steps">
+        <li>Wait one minute, run the <code>commerce-abandoned-reminders</code> job, and open the email.</li>
+        <li>Click <strong>Return to your cart</strong> in a fresh private window.</li>
+        <li>Run the job again.</li>
+      </ol>
+      <ul class="exp">
+        <li>Job: <code>"result":{"sent":1,"skippedSuppressed":0,"cappedBy":0}</code>.</li>
+        <li>Email subject <code>You left something in your cart</code>, text <code>Your items are waiting. Pick up where you left off whenever you like.</code>, a list <code>QA Mug × 1</code>, <code>QA T-shirt — Colour: Red, Size: S × 1</code>, the button, <code>If you already completed your purchase, please ignore this message.</code> and a small link <code>Don’t want reminders like this? Unsubscribe</code>.</li>
+        <li>The link <code>/en/cart/recover?token=…</code> refills the cart and lands on <code>/en/checkout</code> with both lines. The admin row shows <code>opened</code> and status <code>reminded</code>.</li>
+        <li>Second run: <code>"sent":0</code> (one reminder per cart).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/abandoned.ts</code> (<code>EMAIL_COPY</code>, <code>recoverUrl</code>, <code>processReminders</code>) · <code>src/components/shop/cart/RecoverCartClient.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-093" data-priority="P2">
+      <h3>Unsubscribe from the reminder, and an order converts the cart</h3>
+      <ol class="steps">
+        <li>Click the email's <strong>Unsubscribe</strong> link and confirm (the page itself is MKT-048).</li>
+        <li>Capture a new cart with the same email; wait a minute and run the reminder job.</li>
+        <li>Capture a cart with <code>qa.other@example.com</code>, then place an order with that email; run the job.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 2: no new row is captured for the unsubscribed address (or, if one exists, the job reports <code>"skippedSuppressed":1</code>) and no email arrives. Step 3: the cart's status becomes <code>converted</code> right after the order and no reminder is sent. Order emails still reach the unsubscribed address.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/abandoned.ts</code> (<code>captureCart</code>, <code>markConvertedByEmail</code>) · MKT-048</p>
+    </article>
+
+    <article class="tc" id="COM-094" data-priority="P3">
+      <h3>The Abandoned carts screen</h3>
+      <ol class="steps">
+        <li>Open <code>/admin/abandoned</code>; switch between <strong>All</strong>, <strong>Pending</strong>, <strong>Reminded</strong>, <strong>Converted</strong>.</li>
+        <li>Capture a fresh cart, wait a minute, click <strong>Send all due reminders</strong>.</li>
+        <li>Delete a row with its delete action.</li>
+        <li>Remove <code>COMMERCE_ABANDONED_DELAY_MINUTES</code> from <code>.env.local</code> and restart.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Columns Email, Items, Value, Status, Captured, Reminded. Step 2: <code>Sent 1 reminder(s).</code> Step 3: <code>Delete this captured cart?</code> naming the email, button <strong>Delete cart</strong>; the row disappears and its recovery link no longer restores anything.</p>
+      <p class="ref">Ref: <code>src/cms/admin/AbandonedCartsTable.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-customers">
+    <h2>Customer accounts</h2>
+    <p class="intro">Customer accounts must be on (COM-001). Use a fresh private window for the customer. Passwords need at least 10 characters with a lowercase and an uppercase letter, a number and a symbol; this page uses <code>Qa-Shop-Pass-2026!</code>.</p>
+
+    <article class="tc" id="COM-095" data-priority="P1">
+      <h3>Register an account</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Run first with the reCAPTCHA keys set.</p>
+      <ol class="steps">
+        <li>Open <code>/en/account/register</code>. <strong>Full name</strong> <code>QA Customer</code>, <strong>Email</strong> the customer mailbox, <strong>Password</strong> <code>short</code>; click <strong>Create an account</strong>.</li>
+        <li>Use <code>Qa-Shop-Pass-2026!</code> and submit again.</li>
+      </ol>
+      <ul class="exp">
+        <li>With the keys set the form should work; record a Fail if it shows <code>Captcha check failed. Please try again.</code> (the account forms send no captcha token), then blank the keys and continue.</li>
+        <li>Weak password: <code>Password needs at least 10 characters, an uppercase letter, a number, a symbol.</code> (the missing rules).</li>
+        <li>Valid: <code>If that address can be used, you will get an email with the next step.</code>; an email <code>Confirm your email</code> arrives with a <strong>Confirm email</strong> button to <code>/en/account/verify?token=…</code>.</li>
+        <li><code>SELECT email, email_verified_at, status FROM customers WHERE email = '&lt;customer&gt;';</code> shows the address lower-cased, <code>email_verified_at</code> NULL, <code>active</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/account/AccountForms.tsx</code> · <code>src/cms/modules/customers/routes.ts</code> · <code>src/cms/modules/customers/emails.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-096" data-priority="P2">
+      <h3>Confirm the email; an old link</h3>
+      <ol class="steps">
+        <li>Click <strong>Confirm email</strong>.</li>
+        <li>Open the same link again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>Confirming…</code> then <code>Your email is confirmed.</code>; <code>email_verified_at</code> is set. Guest orders placed earlier with this email are now attached (<code>SELECT COUNT(*) FROM orders WHERE customer_id = &lt;id&gt;;</code> counts them). Step 2: <code>This link is no longer valid. Ask for a new one.</code></p>
+      <p class="ref">Ref: <code>src/components/account/VerifyClient.tsx</code> · <code>src/cms/modules/customers/service.ts</code> (<code>claimGuestOrders</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-097" data-priority="P2">
+      <h3>Sign in, the account page, sign out</h3>
+      <ol class="steps">
+        <li>Open <code>/en/account</code> while signed out.</li>
+        <li>Sign in with a wrong password, then the right one.</li>
+        <li>Click <strong>Sign out</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1 redirects to <code>/en/account/login</code> (<code>Sign in to see your orders and saved addresses.</code>); there is no link to register or to reset a password on this page (record as a UX gap). Wrong password: <code>Those details do not match an account.</code> Right: <code>My account</code>, <code>Signed in as &lt;email&gt;</code>, links <strong>My orders</strong>, <strong>My addresses</strong>, <strong>My details</strong>, <strong>Data and privacy</strong>; the header shows the account link. Sign out returns you signed out; <code>/en/account</code> redirects again.</p>
+      <p class="ref">Ref: <code>src/app/[locale]/account/page.tsx</code> · <code>src/app/[locale]/account/require-customer.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-098" data-priority="P2">
+      <h3>Forgotten password and reset</h3>
+      <ol class="steps">
+        <li>Open <code>/en/account/forgot</code>, enter the customer email, click <strong>Send me a link</strong>. Repeat with <code>nobody@example.com</code>.</li>
+        <li>Open the email's <strong>Set a new password</strong> link, enter a new strong password, click <strong>Set password</strong>. Sign in with it.</li>
+        <li>Open the reset link again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both addresses get the same answer <code>If an account exists for that address, we have sent a link.</code>; only the real one gets <code>Set a new password</code> (valid one hour). The reset lands on the sign-in page and the new password works; any other signed-in session of this customer is signed out. The reused link says <code>This link is no longer valid. Ask for a new one.</code> The same captcha note as COM-095 applies to <strong>Send me a link</strong>.</p>
+      <p class="ref">Ref: <code>src/components/account/AccountForms.tsx</code> · <code>src/cms/modules/customers/tokens.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-099" data-priority="P2">
+      <h3>My details and changing the password</h3>
+      <ol class="steps">
+        <li>On <strong>My details</strong> change <strong>Full name</strong> and <strong>Phone</strong>, tick <code>Send me offers and news</code>, click <strong>Save</strong>.</li>
+        <li>Under <strong>Change password</strong> enter a wrong <strong>Current password</strong>; then the right one and a new strong password.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>Saved.</code> and the values persist after reload. Wrong current password: an error. Right: <code>Password changed. Please sign in again.</code> (<code>Changing your password signs out every device, including this one.</code>) and an email <code>Your password was changed</code>.</p>
+      <p class="ref">Ref: <code>src/components/account/AccountPanels.tsx</code> · <code>src/cms/modules/customers/emails.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-100" data-priority="P2">
+      <h3>Addresses: add, make default, remove</h3>
+      <ol class="steps">
+        <li>On <strong>My addresses</strong> (<code>Used to prefill the checkout form.</code>) fill <strong>New address</strong>: <code>Address name (e.g. Home)</code> <code>Home</code>, name, <strong>Address</strong> <code>Odos 5</code>, <strong>Postcode</strong> <code>10558</code>, <strong>City</strong> <code>Athina</code>, <strong>Country</strong> <code>Greece</code>, phone; <strong>Save</strong>.</li>
+        <li>Change country to <code>GR</code> and save. Add a second address <code>Work</code> (country <code>GR</code>), leaving <strong>Address (line 2)</strong> empty.</li>
+        <li>Click <strong>Make default</strong> on Work; then <strong>Remove</strong> on Home.</li>
+        <li>Open <code>/en/checkout</code> with something in the cart.</li>
+      </ol>
+      <ul class="exp">
+        <li><code>Greece</code> is refused (the country must be a two-letter code, but the form does not say so; record the unclear message). <code>GR</code> saves: <code>Saved.</code> and the card appears.</li>
+        <li>A card marked <code>Default for delivery</code> has no Make default button; after the click Work carries it. Remove deletes Home without asking.</li>
+        <li>Checkout is prefilled from the default address, and the email is the account's.</li>
+        <li>Record whether an address can be edited in place: the page offers only Make default and Remove.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/account/AccountPanels.tsx</code> (<code>AddressesPanel</code>) · <code>src/cms/modules/customers/routes.ts</code> (<code>addressBody</code>) · <code>src/cms/modules/customers/checkout-service.ts</code> (<code>checkoutPrefill</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-101" data-priority="P2">
+      <h3>Order history, and an account created at checkout</h3>
+      <ol class="steps">
+        <li>Signed in, place a manual order. Open <strong>My orders</strong> and the order.</li>
+        <li>Sign out. In a private window place an order with a new email, ticking <code>Create an account so I can see my orders</code> and a strong <strong>Password</strong>.</li>
+        <li>Place another guest order with the same new email (no account box). Confirm the email from the verification message, sign in and open <strong>My orders</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: the order is listed with its reference, translated status and total; its page shows the lines and <code>Total</code>. The account section is not shown to a signed-in customer. Step 2: the order goes through and a verification email arrives. Step 3: after confirming, both orders appear (the second is claimed on verification). Another customer's reference at <code>/en/account/orders/&lt;ref&gt;</code> is not found.</p>
+      <p class="ref">Ref: <code>src/cms/modules/customers/checkout-service.ts</code> (<code>attachCheckoutAccount</code>) · <code>src/app/[locale]/account/orders/[reference]/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-102" data-priority="P3">
+      <h3>Registering an address that already has an account</h3>
+      <ol class="steps">
+        <li>Signed out, register again with the customer email.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The same neutral message as COM-095, no second account, and an email <code>You already have an account</code> with a link to the sign-in page.</p>
+      <p class="ref">Ref: <code>src/cms/modules/customers/emails.ts</code> (<code>existsSubject</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-103" data-priority="P2">
+      <h3>Download my data and delete the account</h3>
+      <ol class="steps">
+        <li>On <strong>Data and privacy</strong> click <strong>Download my data</strong>.</li>
+        <li>Click <strong>Delete account</strong>, enter a wrong password under <code>Confirm with your password</code>, then the right one.</li>
+        <li>Run <code>SELECT email, name, password_hash, status, deleted_at FROM customers WHERE id = &lt;id&gt;;</code> and <code>SELECT COUNT(*) FROM orders WHERE customer_id = &lt;id&gt;;</code> and <code>SELECT COUNT(*) FROM customer_addresses WHERE customer_id = &lt;id&gt;;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> A file <code>my-data.json</code> with the details, addresses and orders. Wrong password: an error and nothing deleted. Right: signed out; the row has email <code>deleted+&lt;id&gt;-…@invalid.local</code>, name and password_hash NULL, status <code>disabled</code>, <code>deleted_at</code> set; 0 orders linked and 0 addresses, while the orders themselves still exist. Signing in with the old details fails.</p>
+      <p class="ref">Ref: <code>src/cms/modules/customers/policy.ts</code> (<code>anonymisedCustomer</code>, <code>buildCustomerExport</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-104" data-priority="P2">
+      <h3>The Customers screen</h3>
+      <ol class="steps">
+        <li>Open <strong>Customers</strong> (<code>/admin/customers</code>). Type part of an email in <code>Search by name or email</code>, click <strong>Search</strong>.</li>
+        <li>Click <strong>Disable</strong> on the checkout-created customer; try to sign in as them; click <strong>Enable</strong>.</li>
+        <li>Look for a way to resend the verification email.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Columns Email, Name, Orders, Registered, Last sign-in, a status badge (<code>Active</code>, <code>Unconfirmed</code>, <code>Disabled</code>, <code>Deleted</code>) and the action. The deleted customer shows <code>Deleted</code> with no action. Disabled: sign-in fails and any open session ends; Enable restores it. No password is shown anywhere. There is no resend-verification button (the API supports it); record as a gap.</p>
+      <p class="ref">Ref: <code>src/cms/admin/CustomersTable.tsx</code> · <code>src/cms/modules/customers/admin-routes.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-reviews">
+    <h2>Reviews</h2>
+
+    <article class="tc" id="COM-105" data-priority="P2">
+      <h3>Submit a review</h3>
+      <ol class="steps">
+        <li>On <code>/en/shop/qa-mug</code> find <strong>Reviews</strong> (<code>No reviews yet. Be the first!</code>) and <strong>Write a review</strong>. Click <strong>Submit review</strong> without a rating.</li>
+        <li>Pick 4 stars, <strong>Name</strong> <code>QA Reviewer</code>, <strong>Email</strong>, <strong>Your review</strong> <code>Nice mug</code>, leave the order reference empty; submit.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>Please pick a star rating.</code>, then <code>Thank you! Your review was submitted and will appear after moderation.</code> The review is not on the page yet. <code>SELECT status, verified, rating FROM product_reviews ORDER BY id DESC LIMIT 1;</code> gives <code>pending</code>, 0, 4.</p>
+      <p class="ref">Ref: <code>src/components/shop/ReviewForm.tsx</code> · <code>src/cms/modules/commerce/reviews.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-106" data-priority="P2">
+      <h3>Moderate, display and delete</h3>
+      <ol class="steps">
+        <li>Open <strong>Reviews</strong> (<code>/admin/reviews</code>); the <strong>Pending</strong> tab lists it. Click <strong>Approve</strong>.</li>
+        <li>Reload <code>/en/shop/qa-mug</code> and <code>/shop/qa-mug</code>.</li>
+        <li>Click <strong>Reject</strong> on the <strong>Approved</strong> tab; reload the product. Then delete it (<code>Delete this review?</code>).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Approved: the review shows on both language pages with 4 stars and <code>1 review</code>; the tab counts move. Rejected: gone from the page. Delete removes the row after confirmation. No email is sent to the reviewer.</p>
+      <p class="ref">Ref: <code>src/cms/admin/ReviewsTable.tsx</code> · <code>src/components/shop/ProductReviews.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-107" data-priority="P3">
+      <h3>The Verified purchase badge</h3>
+      <ol class="steps">
+        <li>Submit a review on <code>qa-mug</code> with the reference and email of a paid order containing QA Mug. Submit another with a cancelled order's reference.</li>
+        <li>Approve both.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The first has <code>Verified</code> in the admin and <code>Verified purchase</code> on the page; the second has neither.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/reviews.ts</code> (<code>orderQualifiesForBadge</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-wishlist">
+    <h2>Wishlist</h2>
+
+    <article class="tc" id="COM-108" data-priority="P2">
+      <h3>Wishlist settings and a guest list</h3>
+      <ol class="steps">
+        <li>Open <code>/en/wishlist</code>. Then in Settings → Ecommerce → <strong>Wishlist</strong> tick <code>Let shoppers save products to a wishlist</code>, <code>Maximum products in one wishlist</code> <code>2</code>, click <strong>Save</strong>.</li>
+        <li>As a guest click <strong>Add to wishlist</strong> on QA Mug, QA Candle, then hover the button on QA T-shirt.</li>
+        <li>Open <code>/en/wishlist</code>, click <strong>Move to basket</strong> on one item.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: not-found while the wishlist is off. Step 2: the header shows <code>Wishlist (1)</code> then <code>(2)</code>; the third button is disabled with <code>A wishlist holds up to 2 products.</code> Step 3: <code>My wishlist</code> lists both with live prices; Move to basket adds it to the cart. Local Storage key <code>site-wishlist</code> holds the list.</p>
+      <p class="ref">Ref: <code>src/cms/admin/WishlistSettings.tsx</code> · <code>src/components/shop/wishlist/*</code> · <code>src/app/[locale]/wishlist/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-109" data-priority="P3">
+      <h3>A guest list is merged on sign-in</h3>
+      <ol class="steps">
+        <li>As a guest save QA Mug. Sign in as a customer whose list is empty; open <code>/en/wishlist</code>.</li>
+        <li>Run <code>SELECT product_id, variation_id FROM wishlist_items WHERE customer_id = &lt;id&gt;;</code> Open the site in another browser signed in as the same customer.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> QA Mug is on the signed-in list, stored in <code>wishlist_items</code> (variation_id <code>''</code>), and visible from the other browser. Set the maximum back to a larger number afterwards.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/wishlist.ts</code> · <code>src/components/shop/wishlist/WishlistProvider.tsx</code> (<code>merge</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-feeds">
+    <h2>Product feeds and the module switch</h2>
+
+    <article class="tc" id="COM-110" data-priority="P2">
+      <h3>Marketplace feeds</h3>
+      <ol class="steps">
+        <li>Run <code>curl -s -i "$BASE/feeds/skroutz.xml" | head -20</code>, then the same for <code>bestprice</code>, <code>shopflix</code>, <code>google-merchant.xml</code> and <code>nothing.xml</code>.</li>
+        <li>Search each for <code>qa-mug</code>, <code>qa-candle</code> (hidden or not) and a draft product.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Skroutz, BestPrice and Shopflix: XML with root <code>&lt;mywebstore&gt;</code>; Google: RSS. <code>Cache-Control: public, max-age=3600, s-maxage=3600</code>. Products appear with the Greek (default language) name, price 12.00 and SKU; drafts and products the catalogue hides are absent. <code>nothing.xml</code>: <code>404</code> <code>{"ok":false,"error":"not_found"}</code>.</p>
+      <p class="ref">Ref: <code>src/app/feeds/[feed]/route.ts</code> · <code>src/cms/modules/commerce/feeds.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-111" data-priority="P3">
+      <h3>Commerce off: what this checklist adds</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Run SET-034 to SET-037 and SET-042 for the admin, shop pages and cron. This case covers the extra addresses only.</p>
+      <ol class="steps">
+        <li>Untick <strong>Commerce</strong> and save. Open <code>/en/checkout</code>, <code>/en/order</code>, <code>/en/wishlist</code>, <code>/en/account</code> and <code>$BASE/feeds/skroutz.xml</code>.</li>
+        <li>Run the MKT-048 unsubscribe link again.</li>
+        <li>Tick <strong>Commerce</strong> again and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Checkout, order and wishlist show the not-found page; the feed answers 404. <code>/en/account</code> still works while Customer accounts is on (see ADM-012 for that combination). The unsubscribe link still works (deliberately not tied to the module). After switching back all QA data is intact.</p>
+      <p class="ref">Ref: <code>src/app/[locale]/checkout/page.tsx</code> · <code>src/app/[locale]/order/page.tsx</code> · <code>src/cms/modules/commerce/unsubscribe.ts</code> · docs/dev-guides/08-commerce.md §4.13</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-cleanup">
+    <h2>Clean up</h2>
+
+    <article class="tc" id="COM-112" data-priority="P3">
+      <h3>Remove the QA shop data and restore settings</h3>
+      <ol class="steps">
+        <li>Delete the QA products, categories, tags and size chart in the admin. Delete the QA shipping zone (its methods go with it), the seven coupons, and clear the BoxNow credentials if they should not stay.</li>
+        <li>Run:
+<pre><code>DELETE FROM orders WHERE email IN ('qa.api@example.com','qa.other@example.com','qa.phone@example.com') OR customer_name LIKE 'QA %';
+DELETE FROM abandoned_carts WHERE email LIKE 'qa.%@example.com';
+DELETE FROM product_reviews WHERE author_name = 'QA Reviewer';</code></pre>
+          and remove the QA gift cards and customer rows by id if other checklists expect none.</li>
+        <li>Set <strong>Payment method</strong> back, remove the payment and courier sandbox values from <code>.env.local</code> if the environment should not keep them, restore the reCAPTCHA keys, and set the module switches back.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>/en/shop</code> lists no QA products; <code>/admin/orders</code> shows no QA orders; Settings are as before the run.</p>
+      <p class="ref">Ref: this checklist</p>
+    </article>
+  </section>
+
+</main>
+<footer class="page">Checklist 08 of 12. Results are saved in this browser only; use Export before clearing browser data. Afterwards set the payment method and module switches back, remove sandbox keys that should not stay, restore the reCAPTCHA keys and delete the QA catalogue, orders, coupons, gift cards and customers (COM-112).</footer>
+</body>
+</html>

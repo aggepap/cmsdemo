@@ -1,0 +1,977 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Εγκατάσταση &amp; ρυθμίσεις</title>
+<link rel="stylesheet" href="../qa.css">
+<script src="../qa.js" defer></script>
+</head>
+<body>
+<nav class="crumbs"><a href="index.html">Χειροκίνητος έλεγχος CMS</a></nav>
+<header class="page">
+  <h1>01 · Προετοιμασία, εγκατάσταση &amp; ρυθμίσεις</h1>
+  <p class="scope">Εγκατάσταση του CMS από καθαρό checkout, ρύθμιση του αρχείου περιβάλλοντος, εκτέλεση των migrations και των seeds, πρώτη σύνδεση, διακόπτες των modules, γλώσσες, μετακινημένη διαδρομή του διαχειριστικού, ο αναμεταδότης κλειδωμάτων επεξεργασίας, ο μηχανισμός ενημέρωσης του CMS, οι κεφαλίδες ασφαλείας, το robots.txt και οι οδηγοί χρήσης που συνοδεύουν το CMS. Χρειάζεστε τερματικό στο μηχάνημα δοκιμών, μια κενή βάση δεδομένων MariaDB/MySQL που επιτρέπεται να διαγραφεί, πρόσβαση με πρόγραμμα-πελάτη βάσης δεδομένων και δύο browsers (ή ένα κανονικό και ένα ιδιωτικό παράθυρο).</p>
+</header>
+<main>
+
+  <section class="suite" id="suite-env">
+    <h2>Προαπαιτούμενα &amp; αρχείο περιβάλλοντος</h2>
+    <p class="intro">Εκτελέστε τα παρακάτω στον φάκελο του έργου, σε νέο checkout. Οι εντολές πληκτρολογούνται σε τερματικό· το αρχείο <code>.env.local</code> βρίσκεται στη ρίζα του έργου.</p>
+
+    <article class="tc" id="SET-001" data-priority="P2">
+      <h3>Έλεγχος εκδόσεων Node και npm</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>node -v</code> και <code>npm -v</code>.</li>
+        <li>Ανοίξτε το <code>.nvmrc</code> και το τμήμα <code>engines</code> του <code>package.json</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το <code>.nvmrc</code> γράφει <code>20.18.0</code>. Η Node είναι τουλάχιστον 20.9.0 και κάτω από 25· το npm είναι τουλάχιστον 10 και κάτω από 12. Αν είναι εγκατεστημένο το <code>nvm</code>, η εντολή <code>nvm use</code> αλλάζει στην 20.18.0.</p>
+      <p class="ref">Αναφ.: <code>.nvmrc</code> · <code>package.json</code> · docs/LOCAL_SETUP.md §1</p>
+    </article>
+
+    <article class="tc" id="SET-002" data-priority="P1">
+      <h3>Εγκατάσταση εξαρτήσεων με npm ci</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>npm ci</code>.</li>
+        <li>Εκτελέστε <code>npm audit --omit=dev</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το <code>npm ci</code> ολοκληρώνεται χωρίς σφάλμα και δημιουργεί το <code>node_modules</code>. Το <code>npm audit --omit=dev</code> αναφέρει 0 ευπάθειες. (Ένα απλό <code>npm audit</code> μπορεί να αναφέρει 4 μέτριες ειδοποιήσεις esbuild από το <code>drizzle-kit</code>· αυτό είναι γνωστό και αποδεκτό. Μην εκτελέσετε <code>npm audit fix</code>.)</p>
+      <p class="ref">Αναφ.: <code>package.json</code> (σημείωση <code>//audit-esbuild</code>) · docs/LOCAL_SETUP.md §2</p>
+    </article>
+
+    <article class="tc" id="SET-003" data-priority="P1">
+      <h3>Δημιουργία του .env.local με τις απαιτούμενες τιμές</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Μια κενή βάση δεδομένων που δημιουργήθηκε με <code>CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci</code> και ένας χρήστης με δικαιώματα στο <code>'user'@'%'</code> (βλ. docs/LOCAL_SETUP.md §3).</p>
+      <ol class="steps">
+        <li>Εκτελέστε <code>cp .env.example .env.local</code>.</li>
+        <li>Συμπληρώστε <code>DB_HOST=127.0.0.1</code>, <code>DB_PORT</code>, <code>DB_USER</code>, <code>DB_PASSWORD</code>, <code>DB_NAME</code> για τη βάση δεδομένων δοκιμών.</li>
+        <li>Εκτελέστε δύο φορές <code>openssl rand -base64 48</code> και επικολλήστε τα δύο αποτελέσματα στα <code>ADMIN_SESSION_SECRET</code> και <code>CMS_TOKEN_ENCRYPTION_KEY</code>.</li>
+        <li>Αφήστε το <code>NEXT_PUBLIC_SITE_URL=http://localhost:3002</code> όπως είναι (ή ορίστε το στο ακριβές origin του περιβάλλοντος δοκιμών).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε μυστικό έχει μήκος 64 χαρακτήρες (απαιτούνται τουλάχιστον 32). Το <code>.env.example</code> περιέχει ήδη <code>NEXT_PUBLIC_SITE_URL=http://localhost:3002</code> και <code>ADMIN_PATH=admin</code>. Δεν χρειάζεται καμία άλλη τιμή για να ξεκινήσει η εφαρμογή.</p>
+      <p class="ref">Αναφ.: <code>.env.example</code> · docs/LOCAL_SETUP.md §4 · docs/dev-guides/01-architecture.md §7.1</p>
+    </article>
+
+    <article class="tc" id="SET-004" data-priority="P3">
+      <h3>Έλεγχος του .env.example για μη ασφαλείς προεπιλογές</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>.env.example</code> και διαβάστε κάθε γραμμή.</li>
+      </ol>
+      <ul class="exp">
+        <li>Κάθε μυστικό (<code>ADMIN_SESSION_SECRET</code>, <code>CMS_TOKEN_ENCRYPTION_KEY</code>, <code>CMS_GIFTCARD_PEPPER</code>, <code>CMS_CRON_SECRET</code>, <code>CMS_LOCK_INTERNAL_SECRET</code>, κλειδιά πληρωμών, κλειδιά Azure) είναι κενό.</li>
+        <li>Το <code>ADMIN_MFA_BYPASS_CODE</code> είναι κενό, με σχόλιο που προειδοποιεί ότι λειτουργεί σε κάθε περιβάλλον.</li>
+        <li>Τα μόνα συμπληρωμένα κλειδιά είναι τα δύο κλειδιά reCAPTCHA, με σχόλιο ότι είναι τα δημόσια δοκιμαστικά κλειδιά της Google, καθώς και μη μυστικές προεπιλογές (θύρες, ώρες συνεδρίας, <code>PAYPAL_ENV=sandbox</code>, <code>VIVA_ENV=demo</code>).</li>
+      </ul>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ισχύουν και τα τρία σημεία.</p>
+      <p class="ref">Αναφ.: <code>.env.example</code></p>
+    </article>
+
+    <article class="tc" id="SET-005" data-priority="P3">
+      <h3>Όταν λείπουν οι ρυθμίσεις της βάσης δεδομένων, το CLI σταματά με σαφές μήνυμα</h3>
+      <ol class="steps">
+        <li>Μετονομάστε προσωρινά το <code>.env.local</code> σε <code>.env.local.bak</code> (βεβαιωθείτε ότι δεν υπάρχει αρχείο <code>.env</code>).</li>
+        <li>Εκτελέστε <code>npm run db:migrate</code>.</li>
+        <li>Επαναφέρετε το αρχικό όνομα του αρχείου.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η εντολή τερματίζει με σφάλμα που ξεκινά με <code>Database connection is not configured. Set either DATABASE_URL or</code> … Δεν δημιουργείται κανένας πίνακας.</p>
+      <p class="ref">Αναφ.: <code>src/cms/db/adapters/mysql/client.ts</code> · <code>src/cms/db/adapters/mysql/load-env.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-006" data-priority="P3">
+      <h3>Ένα σύντομο μυστικό συνεδρίας κάνει τη σύνδεση να αποτυγχάνει και καταγράφεται</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Έχουν γίνει τα migrations και έχει δημιουργηθεί ο διαχειριστής (επόμενη ενότητα). Η εφαρμογή τρέχει με <code>npm run dev</code>.</p>
+      <ol class="steps">
+        <li>Ορίστε <code>ADMIN_SESSION_SECRET=tooshort</code> στο <code>.env.local</code> και επανεκκινήστε το <code>npm run dev</code>.</li>
+        <li>Μεταβείτε στο <code>/admin/login</code>, τσεκάρετε το πλαίσιο reCAPTCHA, εισαγάγετε το email του διαχειριστή και τον σωστό κωδικό και πατήστε <strong>Sign in</strong>.</li>
+        <li>Κοιτάξτε το τερματικό όπου τρέχει ο server.</li>
+        <li>Επαναφέρετε το πραγματικό μυστικό και επανεκκινήστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η σύνδεση δεν ολοκληρώνεται (η φόρμα δείχνει σφάλμα και παραμένει στη σελίδα σύνδεσης). Το τερματικό του server δείχνει <code>ADMIN_SESSION_SECRET is missing or shorter than 32 characters.</code> Μετά την επαναφορά του μυστικού, η σύνδεση λειτουργεί. Σημειώστε στο αποτέλεσμα αν το μήνυμα στην οθόνη είναι το παραπλανητικό <em>Invalid email or password.</em></p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/auth/session.ts</code> · <code>src/cms/admin/login-error.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-007" data-priority="P3">
+      <h3>Όταν λείπει το κλειδί κρυπτογράφησης, μπλοκάρεται μόνο η ρύθμιση εφαρμογής ταυτοποίησης</h3>
+      <ol class="steps">
+        <li>Αδειάστε το <code>CMS_TOKEN_ENCRYPTION_KEY=</code> στο <code>.env.local</code> και επανεκκινήστε την εφαρμογή.</li>
+        <li>Συνδεθείτε, ανοίξτε το <strong>Your account</strong> στο πλευρικό μενού, ξεκινήστε τη ρύθμιση του ελέγχου ταυτότητας δύο παραγόντων και επιλέξτε <strong>Use an authenticator app</strong>.</li>
+        <li>Ανοίξτε οποιαδήποτε σελίδα στο <strong>Pages</strong> και αποθηκεύστε την.</li>
+        <li>Επαναφέρετε το κλειδί και επανεκκινήστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η ρύθμιση της εφαρμογής ελέγχου ταυτότητας δείχνει σφάλμα και κανέναν κωδικό QR· το αρχείο καταγραφής του server περιέχει <code>CMS_TOKEN_ENCRYPTION_KEY is missing or shorter than 32 characters.</code> Η περιήγηση και η αποθήκευση περιεχομένου λειτουργούν κανονικά. Μετά την επαναφορά του κλειδιού εμφανίζεται ο κωδικός QR.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/tokens/crypto.ts</code> · <code>src/cms/core/security/totp.ts</code> · <code>src/cms/admin/MfaEnrollPanel.tsx</code></p>
+    </article>
+
+    <article class="tc" id="SET-008" data-priority="P3">
+      <h3>Λάθος θύρα στο NEXT_PUBLIC_SITE_URL απορρίπτει τις εγγραφές του διαχειριστικού</h3>
+      <ol class="steps">
+        <li>Ορίστε <code>NEXT_PUBLIC_SITE_URL=http://localhost:3000</code> στο <code>.env.local</code> και επανεκκινήστε το <code>npm run dev</code> (εξακολουθεί να εξυπηρετεί στη θύρα 3002).</li>
+        <li>Ανοίξτε τα εργαλεία προγραμματιστή του browser, καρτέλα Network. Μεταβείτε στο <code>http://localhost:3002/admin/login</code> και προσπαθήστε να συνδεθείτε.</li>
+        <li>Εξετάστε το αίτημα <code>/api/cms/auth/login</code>.</li>
+        <li>Επαναφέρετε την τιμή σε <code>http://localhost:3002</code> και επανεκκινήστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η ίδια η σελίδα σύνδεσης φορτώνει, αλλά το POST απαντά <strong>403</strong> με σώμα <code>{"ok":false,"error":"forbidden","message":"Cross-origin request rejected."}</code>, οπότε η σύνδεση αποτυγχάνει. Μετά τη διόρθωση της τιμής, η σύνδεση λειτουργεί. (Αν είστε ήδη συνδεδεμένοι, κάθε αποθήκευση αποτυγχάνει με τον ίδιο τρόπο.)</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/api/same-origin.ts</code> · <code>src/cms/core/api/handler.ts</code> · docs/LOCAL_SETUP.md §4</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-db">
+    <h2>Migrations &amp; seeds</h2>
+    <p class="intro">Χρησιμοποιήστε κενή βάση δεδομένων. Οι έλεγχοι SQL μπορούν να εκτελεστούν σε οποιοδήποτε πρόγραμμα-πελάτη MySQL συνδεδεμένο σε αυτήν.</p>
+
+    <article class="tc" id="SET-009" data-priority="P1">
+      <h3>Εφαρμογή όλων των migrations σε κενή βάση δεδομένων</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>npm run db:migrate</code>.</li>
+        <li>Εκτελέστε το παρακάτω SQL.</li>
+      </ol>
+<pre><code>SELECT COUNT(*) FROM __drizzle_migrations;</code></pre>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η εντολή τυπώνει <code>✓ migrations applied</code> και τερματίζει κανονικά. Το πλήθος είναι <strong>25</strong> (αρχεία <code>0000</code> έως <code>0024</code>). Υπάρχουν πίνακες όπως οι <code>documents</code>, <code>admin_users</code>, <code>site_settings</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/db/migrate.ts</code> · <code>src/cms/db/adapters/mysql/migrations/</code> · docs/dev-guides/02-database.md</p>
+    </article>
+
+    <article class="tc" id="SET-010" data-priority="P2">
+      <h3>Η επανεκτέλεση των migrations είναι ακίνδυνη</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>npm run db:migrate</code> δεύτερη φορά.</li>
+        <li>Επαναλάβετε το ερώτημα πλήθους της προηγούμενης περίπτωσης.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ξανά <code>✓ migrations applied</code>, κανένα σφάλμα, και το πλήθος παραμένει 25.</p>
+      <p class="ref">Αναφ.: <code>src/cms/db/migrate.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-011" data-priority="P3">
+      <h3>Λάθος κωδικός βάσης δεδομένων αποτυγχάνει εμφανώς</h3>
+      <ol class="steps">
+        <li>Αλλάξτε το <code>DB_PASSWORD</code> στο <code>.env.local</code> σε λάθος τιμή.</li>
+        <li>Εκτελέστε <code>npm run db:migrate</code> και στη συνέχεια <code>echo $?</code>.</li>
+        <li>Επαναφέρετε τον σωστό κωδικό.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τυπώνεται σφάλμα <code>Access denied for user</code>, δεν τυπώνεται <code>✓ migrations applied</code>, και ο κωδικός εξόδου είναι <code>1</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/db/migrate.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-012" data-priority="P1">
+      <h3>Δημιουργία του πρώτου superadmin με το db:seed-admin</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>npm run db:seed-admin -- qa-admin@example.com 'Qa-Setup-Pass-2026!' 'QA Admin'</code> (κρατήστε τα απλά εισαγωγικά).</li>
+        <li>Εκτελέστε το παρακάτω SQL.</li>
+      </ol>
+<pre><code>SELECT u.email, u.name, u.disabled_at, r.name AS role
+FROM admin_users u
+JOIN admin_user_roles ur ON ur.user_id = u.id
+JOIN admin_roles r ON r.id = ur.role_id
+WHERE u.email = 'qa-admin@example.com';</code></pre>
+      <ul class="exp">
+        <li>Η έξοδος περιλαμβάνει <code>Roles seeded (created 2, updated 0, left as configured 0).</code>, <code>Created user qa-admin@example.com (id …).</code>, <code>Granted superadmin role.</code> και <code>Done. You can now sign in to the admin.</code></li>
+        <li>Το ερώτημα επιστρέφει μία γραμμή: όνομα <code>QA Admin</code>, <code>disabled_at</code> NULL, ρόλος <code>superadmin</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/db/seeds/cli/create-admin.ts</code> · <code>src/cms/db/seeds/roles.ts</code> · docs/LOCAL_SETUP.md §6</p>
+    </article>
+
+    <article class="tc" id="SET-013" data-priority="P2">
+      <h3>Οι προεπιλεγμένοι ρόλοι είναι superadmin και editor</h3>
+      <ol class="steps">
+        <li>Εκτελέστε: <code>SELECT name, permissions FROM admin_roles ORDER BY name;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Δύο γραμμές. Ο <code>superadmin</code> έχει <code>["*"]</code>. Ο <code>editor</code> έχει δικαιώματα για περιεχόμενο, πολυμέσα, SEO, ανάγνωση φορμών, ανάγνωση newsletter, παραγγελίες, αξιολογήσεις, κρατήσεις και πρόγραμμα, και κανένα δικαίωμα για ρυθμίσεις, χρήστες, ρόλους ή scripts.</p>
+      <p class="ref">Αναφ.: <code>src/cms/db/seeds/roles.ts</code> (<code>DEFAULT_ROLES</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-014" data-priority="P2">
+      <h3>Το db:seed-admin απορρίπτει αδύναμο κωδικό</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>npm run db:seed-admin -- weak@example.com 'password' 'Weak'</code>.</li>
+        <li>Εκτελέστε <code>npm run db:seed-admin -- weak@example.com 'Password1!' 'Weak'</code>.</li>
+        <li>Εκτελέστε <code>SELECT COUNT(*) FROM admin_users WHERE email = 'weak@example.com';</code></li>
+      </ol>
+      <ul class="exp">
+        <li>Η πρώτη εντολή τυπώνει <code>Password needs at least 10 characters, an uppercase letter, a number, a symbol, not a common password.</code> και τερματίζει με σφάλμα.</li>
+        <li>Η δεύτερη εντολή τυπώνει <code>Password needs not a common password.</code> και τερματίζει με σφάλμα.</li>
+        <li>Το πλήθος είναι 0.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/auth/password-policy.ts</code> · <code>src/cms/db/seeds/cli/create-admin.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-015" data-priority="P3">
+      <h3>Απορρίπτονται η έλλειψη ορισμάτων και μη έγκυρο --locale</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>npm run db:seed-admin</code> χωρίς ορίσματα.</li>
+        <li>Εκτελέστε <code>npm run db:seed-admin -- x@example.com 'Qa-Setup-Pass-2026!' 'X' --locale greek</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Πρώτη: <code>Usage: npm run db:seed-admin -- &lt;email&gt; &lt;password&gt; [name] [--locale &lt;code&gt;]</code>, μη μηδενικός κωδικός εξόδου.</li>
+        <li>Δεύτερη: <code>--locale needs a language code such as "en" (got "greek").</code>, μη μηδενικός κωδικός εξόδου, δεν δημιουργείται χρήστης <code>x@example.com</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/db/seeds/admin-args.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-016" data-priority="P2">
+      <h3>Η επανεκτέλεση του db:seed-admin επαναφέρει υπάρχοντα λογαριασμό</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Υπάρχει δεύτερος χρήστης <code>qa-editor@example.com</code> με ρόλο <strong>editor</strong> (δημιουργήστε τον στην οθόνη <strong>Users</strong>) και είναι απενεργοποιημένος εκεί.</p>
+      <ol class="steps">
+        <li>Εκτελέστε <code>npm run db:seed-admin -- qa-editor@example.com 'Qa-Editor-Reset-2026!'</code>.</li>
+        <li>Συνδεθείτε ως <code>qa-editor@example.com</code> με τον νέο κωδικό.</li>
+        <li>Εκτελέστε για αυτό το email το SQL ρόλων της περίπτωσης «Δημιουργία του πρώτου superadmin» (SET-012).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η έξοδος γράφει <code>Updated existing user qa-editor@example.com (id …).</code> και <code>Replaced the previous role with superadmin.</code> Η σύνδεση λειτουργεί (ο λογαριασμός ενεργοποιήθηκε ξανά). Το ερώτημα δείχνει ακριβώς έναν ρόλο, <code>superadmin</code>. Στη συνέχεια επαναφέρετε τον λογαριασμό σε editor στην οθόνη Users, αν τον χρειάζονται άλλες λίστες ελέγχου.</p>
+      <p class="ref">Αναφ.: <code>src/cms/db/seeds/cli/create-admin.ts</code> · <code>src/cms/db/seeds/admin-args.ts</code> (<code>superadminGrant</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-017" data-priority="P2">
+      <h3>Το seed των ρόλων δεν αντικαθιστά έναν προσαρμοσμένο ρόλο editor</h3>
+      <ol class="steps">
+        <li>Στο διαχειριστικό ανοίξτε το <strong>Roles</strong>, επεξεργαστείτε τον <strong>editor</strong>, αποεπιλέξτε ένα δικαίωμα (για παράδειγμα το δικαίωμα εγγραφής αξιολογήσεων) και αποθηκεύστε.</li>
+        <li>Εκτελέστε <code>npm run db:seed-roles</code>.</li>
+        <li>Ανοίξτε ξανά τον ρόλο editor.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η έξοδος είναι <code>Roles seeded (created 0, updated 1, left as configured 1).</code> (ο superadmin συγχρονίζεται ξανά, ο editor διατηρείται). Το δικαίωμα που αφαιρέσατε παραμένει αποεπιλεγμένο.</p>
+      <p class="ref">Αναφ.: <code>src/cms/db/seeds/roles.ts</code> (<code>planRoleSeed</code>) · <code>src/cms/db/seeds/cli/seed-roles.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-018" data-priority="P2">
+      <h3>Seed του καταλόγου cookies</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>npm run db:seed-cookies</code>.</li>
+        <li>Εκτελέστε <code>SELECT `key`, required, sort_order FROM cookie_categories ORDER BY sort_order;</code></li>
+        <li>Εκτελέστε ξανά <code>npm run db:seed-cookies</code>.</li>
+        <li>Στο διαχειριστικό ανοίξτε το <strong>Cookies</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η πρώτη εκτέλεση τυπώνει <code>Cookie catalogue seeded (created 3, skipped 0, services …).</code> Ο πίνακας έχει <code>necessary</code> (required = 1), <code>analytics</code> και <code>marketing</code>. Η δεύτερη εκτέλεση τυπώνει <code>created 0, skipped 3</code>. Η οθόνη Cookies εμφανίζει Necessary, Analytics και Marketing.</p>
+      <p class="ref">Αναφ.: <code>src/cms/db/seeds/cookies.ts</code> · <code>src/cms/core/cookies/defaults.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-019" data-priority="P2">
+      <h3>Seed των ρυθμίσεων του ιστότοπου και των ενδεικτικών σελίδων ως πρόχειρα</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>npm run db:seed-site</code>.</li>
+        <li>Εκτελέστε <code>SELECT slug, locale, status FROM documents WHERE type = 'page' ORDER BY slug, locale;</code></li>
+        <li>Στο διαχειριστικό ανοίξτε το <strong>Pages</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Έξοδος: <code>✓ 11 settings written</code>, <code>✓ brand written (…)</code>, <code>✓ Site content (drafts) seeded (created 10, updated 0, skipped 0)</code>.</li>
+        <li>Το SQL επιστρέφει 10 γραμμές: <code>about</code>, <code>contact</code>, <code>home</code>, <code>privacy</code>, <code>terms</code>, η καθεμία σε <code>el</code> και <code>en</code>, όλες <code>draft</code>.</li>
+        <li>Η λίστα Pages δείχνει τις πέντε σελίδες ως πρόχειρα.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/site-seed/cli.ts</code> · <code>src/site-seed/data.ts</code> · docs/LOCAL_SETUP.md §7</p>
+    </article>
+
+    <article class="tc" id="SET-020" data-priority="P2">
+      <h3>Η επανεκτέλεση του seed του ιστότοπου δεν αγγίζει επεξεργασμένο περιεχόμενο</h3>
+      <ol class="steps">
+        <li>Στο <strong>Pages</strong> ανοίξτε το <strong>About</strong>, αλλάξτε τον τίτλο EL σε <code>QA edited title</code> και πατήστε <strong>Save EL</strong>.</li>
+        <li>Εκτελέστε ξανά <code>npm run db:seed-site</code>.</li>
+        <li>Ανοίξτε ξανά το About.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η έξοδος δείχνει <code>created 0, updated 0, skipped 10</code> και στη συνέχεια <code>10 already in the database and left untouched. Re-run with --force to overwrite them.</code> και <code>✓ brand already set — left alone</code>. Ο τίτλος παραμένει <code>QA edited title</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/db/seeds/seed-mode.ts</code> · <code>src/site-seed/cli.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-021" data-priority="P3">
+      <h3>Δημοσίευση των ενδεικτικών σελίδων με --force --publish-samples</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>npm run db:seed-site -- --publish-samples</code> (σε βάση δεδομένων όπου έχει ήδη γίνει seed με πρόχειρα).</li>
+        <li>Εκτελέστε <code>npm run db:seed-site -- --force --publish-samples</code>.</li>
+        <li>Επαναλάβετε το SQL σελίδων της περίπτωσης με τα πρόχειρα. Ανοίξτε τα <code>/about</code> και <code>/en/about</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 1 παραλείπει και τις 10 (μόνο δημιουργία) και οι σελίδες παραμένουν πρόχειρα. Το βήμα 2 αναφέρει <code>Site content (published) seeded</code> με 10 ενημερωμένες, το SQL δείχνει <code>published</code> και και τα δύο URL εμφανίζουν τη σελίδα About. Σημείωση: το <code>--force</code> αντικαθιστά επίσης τον τίτλο που επεξεργαστήκατε στην προηγούμενη περίπτωση.</p>
+      <p class="ref">Αναφ.: <code>src/site-seed/cli.ts</code> · <code>src/cms/db/seeds/seed-mode.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-022" data-priority="P3">
+      <h3>Το seed του ιστότοπου επαναφέρει τους διακόπτες των modules</h3>
+      <ol class="steps">
+        <li>Στο <strong>Settings</strong> → <strong>Modules</strong> τσεκάρετε το <strong>Newsletter</strong> και πατήστε <strong>Save settings</strong>.</li>
+        <li>Εκτελέστε <code>npm run db:seed-site</code>.</li>
+        <li>Φορτώστε ξανά το <strong>Settings</strong> → <strong>Modules</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το Newsletter είναι ξανά αποεπιλεγμένο: οι ρυθμίσεις του <code>src/site-seed/data.ts</code> (μαζί με κάθε σημαία <code>module.*</code>) εγγράφονται πάντα (upsert). Καταγράψτε το, ώστε κανείς να μην εκτελέσει το seed του ιστότοπου σε περιβάλλον όπου τα modules ενεργοποιήθηκαν χειροκίνητα.</p>
+      <p class="ref">Αναφ.: <code>src/site-seed/cli.ts</code> (<code>seedSettings</code>) · <code>src/site-seed/data.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-023" data-priority="P3">
+      <h3>Το db:seed-content αρνείται να εκτελεστεί σε νέο clone</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>npm run db:seed-content</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τυπώνει <code>No content snapshot found at …/src/cms/db/seeds/data/content.json.</code> και προτείνει ως λύση το <code>npm run db:snapshot-content</code>, τερματίζει με σφάλμα και δεν γράφει τίποτα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/db/seeds/cli/seed-content.ts</code> · docs/LOCAL_SETUP.md §7</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-start">
+    <h2>Build, εκκίνηση &amp; πρώτη σύνδεση</h2>
+
+    <article class="tc" id="SET-024" data-priority="P1">
+      <h3>Εκκίνηση του dev server και έλεγχος λειτουργίας</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>npm run dev</code> και περιμένετε το μήνυμα ετοιμότητας.</li>
+        <li>Σε δεύτερο τερματικό εκτελέστε <code>curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3002/api/cms/auth/me</code>.</li>
+        <li>Ανοίξτε το <code>http://localhost:3002</code> στον browser.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ο server ακούει στη θύρα 3002. Το curl τυπώνει <code>401</code> (η εφαρμογή και η ταυτοποίηση λειτουργούν). Η δημόσια αρχική σελίδα εμφανίζεται στα ελληνικά. Ένα 404 στα πρώτα δευτερόλεπτα μετά την εκκίνηση είναι γνωστή καθυστέρηση μεταγλώττισης σε λειτουργία dev· δοκιμάστε ξανά πριν σημειώσετε αποτυχία.</p>
+      <p class="ref">Αναφ.: <code>package.json</code> (<code>dev</code>) · docs/LOCAL_SETUP.md §8–9</p>
+    </article>
+
+    <article class="tc" id="SET-025" data-priority="P1">
+      <h3>Η πρώτη σύνδεση οδηγεί στον πίνακα ελέγχου</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/admin</code>.</li>
+        <li>Στη σελίδα σύνδεσης τσεκάρετε το πλαίσιο reCAPTCHA, εισαγάγετε <code>qa-admin@example.com</code> και <code>Qa-Setup-Pass-2026!</code> και πατήστε <strong>Sign in</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το <code>/admin</code> ανακατευθύνει στο <code>/admin/login</code>, που δείχνει το όνομα του ιστότοπου και <strong>CMS · sign in</strong>. Μετά τη σύνδεση βρίσκεστε στον πίνακα ελέγχου στο <code>/admin</code>, με το όνομα του ιστότοπου ως επικεφαλίδα, το πλευρικό μενού (<strong>Back to site</strong>, <strong>Dashboard</strong>, <strong>Pages</strong>, … <strong>Settings</strong>) και το <strong>Sign out</strong> στην επάνω μπάρα.</p>
+      <p class="ref">Αναφ.: <code>src/app/admin/login/page.tsx</code> · <code>src/cms/admin/LoginForm.tsx</code> · <code>src/app/admin/(shell)/layout.tsx</code></p>
+    </article>
+
+    <article class="tc" id="SET-026" data-priority="P1">
+      <h3>Η πρώτη αποθήκευση περιεχομένου πετυχαίνει</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <strong>Pages</strong> και μετά το <strong>Home</strong>.</li>
+        <li>Προσθέστε μια λέξη στον τίτλο EL και πατήστε <strong>Save EL</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Εμφανίζεται το μήνυμα <code>EL saved.</code> και η αλλαγή παραμένει μετά από επαναφόρτωση. Αυτό αποδεικνύει ότι η βάση δεδομένων, το μυστικό συνεδρίας και ο έλεγχος same-origin είναι όλα σωστά ρυθμισμένα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/DocumentForm.tsx</code> · docs/LOCAL_SETUP.md §9</p>
+    </article>
+
+    <article class="tc" id="SET-027" data-priority="P2">
+      <h3>Σφάλματα σύνδεσης: χωρίς τσεκάρισμα captcha, λάθος κωδικός</h3>
+      <ol class="steps">
+        <li>Αποσυνδεθείτε. Στη σελίδα σύνδεσης εισαγάγετε το σωστό email και κωδικό αλλά μην τσεκάρετε το πλαίσιο reCAPTCHA· πατήστε <strong>Sign in</strong>.</li>
+        <li>Τσεκάρετε το πλαίσιο, εισαγάγετε λάθος κωδικό και πατήστε <strong>Sign in</strong>.</li>
+        <li>Τσεκάρετε το πλαίσιο, εισαγάγετε email που δεν υπάρχει και πατήστε <strong>Sign in</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: <code>Please confirm you are not a robot.</code></li>
+        <li>Βήματα 2 και 3: το ίδιο μήνυμα, <code>Invalid email or password.</code> (καμία ένδειξη για το αν υπάρχει ο λογαριασμός).</li>
+        <li>Με τα δοκιμαστικά κλειδιά που συνοδεύουν το έργο, το widget reCAPTCHA δείχνει την ειδοποίηση της Google “for testing purposes only”.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/LoginForm.tsx</code> · <code>src/cms/admin/login-error.ts</code> · <code>.env.example</code> (RECAPTCHA_*)</p>
+    </article>
+
+    <article class="tc" id="SET-028" data-priority="P2">
+      <h3>Ένας βαθύς σύνδεσμος διατηρείται μετά τη σύνδεση</h3>
+      <ol class="steps">
+        <li>Αποσυνδεθείτε. Πληκτρολογήστε <code>/admin/settings?tab=Languages</code> στη γραμμή διευθύνσεων.</li>
+        <li>Συνδεθείτε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Μεταφέρεστε στο <code>/admin/login?next=…</code> με τη ζητούμενη διαδρομή κωδικοποιημένη στο <code>next</code>. Μετά τη σύνδεση βρίσκεστε στις ρυθμίσεις με ανοιχτή την καρτέλα Languages, όχι στον πίνακα ελέγχου.</p>
+      <p class="ref">Αναφ.: <code>src/proxy.ts</code> · <code>src/cms/modules/auth/guards.ts</code> · <code>src/cms/admin/safe-next.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-029" data-priority="P3">
+      <h3>Η παράμετρος next δεν μπορεί να ανακατευθύνει εκτός ιστότοπου</h3>
+      <ol class="steps">
+        <li>Αποσυνδεθείτε. Ανοίξτε το <code>/admin/login?next=//evil.example</code> και συνδεθείτε.</li>
+        <li>Αποσυνδεθείτε. Ανοίξτε το <code>/admin/login?next=/%5Cevil.example</code> και συνδεθείτε.</li>
+        <li>Αποσυνδεθείτε. Ανοίξτε το <code>/admin/login?next=/adminevil</code> και συνδεθείτε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε φορά καταλήγετε στον πίνακα ελέγχου του διαχειριστικού (<code>/admin</code>) στον host δοκιμών. Ο browser δεν μεταβαίνει ποτέ σε άλλο domain.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/safe-next.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-030" data-priority="P2">
+      <h3>Build και εκκίνηση παραγωγής</h3>
+      <ol class="steps">
+        <li>Σταματήστε τον dev server. Ορίστε <code>NEXT_PUBLIC_SITE_URL=http://localhost:3000</code> στο <code>.env.local</code> (το <code>next start</code> της παραγωγής εξυπηρετεί στη θύρα 3000).</li>
+        <li>Εκτελέστε <code>npm run build</code> και μετά <code>npm run start</code>.</li>
+        <li>Εκτελέστε <code>curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3000/api/cms/auth/me</code> και ανοίξτε το <code>http://localhost:3000</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το build ολοκληρώνεται χωρίς σφάλματα (ένα <code>ConfigError</code> ή σφάλμα τύπων το κάνει να αποτύχει). Ο server ξεκινά στη θύρα 3000, το curl τυπώνει <code>401</code> και εμφανίζεται η αρχική σελίδα. Επαναφέρετε το URL στη θύρα 3002 πριν επιστρέψετε στο <code>npm run dev</code>.</p>
+      <p class="ref">Αναφ.: <code>package.json</code> · <code>next.config.ts</code> · docs/dev-guides/10-settings-cron-operations.md §7.1</p>
+    </article>
+
+    <article class="tc" id="SET-031" data-priority="P3">
+      <h3>Η παραγωγή αρνείται τη σύνδεση χωρίς X-Real-IP</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Το build παραγωγής της προηγούμενης περίπτωσης, προσπελάσιμο απευθείας στη θύρα 3000 χωρίς reverse proxy.</p>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>http://localhost:3000/admin/login</code>, τσεκάρετε το πλαίσιο και συνδεθείτε με σωστά στοιχεία.</li>
+        <li>Ελέγξτε το τερματικό του server.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η σύνδεση απορρίπτεται με <code>Too many attempts. Please wait and try again.</code> και το αρχείο καταγραφής δείχνει <code>[cms] No X-Real-IP on an incoming request</code>. Αυτό είναι σκόπιμο: η παραγωγή πρέπει να βρίσκεται πίσω από proxy που ορίζει το <code>X-Real-IP</code>. Στο πραγματικό περιβάλλον δοκιμών (πίσω από Nginx) η σύνδεση λειτουργεί.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/rate-limit.ts</code> · docs/dev-guides/01-architecture.md §4.8</p>
+    </article>
+
+    <article class="tc" id="SET-032" data-priority="P3">
+      <h3>Οι αυτόματοι έλεγχοι περνούν στο checkout</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>npm run type-check</code>, <code>npm run lint</code> και <code>npm test</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και τα τρία ολοκληρώνονται με κωδικό εξόδου 0. Το <code>npm test</code> δεν χρειάζεται βάση δεδομένων και αναφέρει περίπου 3000 επιτυχημένα tests (2979 τη στιγμή της συγγραφής) και 0 αποτυχίες.</p>
+      <p class="ref">Αναφ.: <code>package.json</code> · docs/dev-guides/01-architecture.md §9</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-modules">
+    <h2>Διακόπτες modules</h2>
+    <p class="intro">Οι διακόπτες βρίσκονται στο <strong>Settings</strong> → <strong>Modules</strong> (<code>/admin/settings?tab=Modules</code>) και αποθηκεύονται στον πίνακα <code>site_settings</code> ως <code>module.&lt;name&gt;</code>. Χρησιμοποιήστε τον superadmin. Για τις περιπτώσεις που καλούν ένα URL του API στον browser, πρέπει να είστε συνδεδεμένοι σε αυτόν τον browser.</p>
+
+    <article class="tc" id="SET-033" data-priority="P2">
+      <h3>Η καρτέλα Modules εμφανίζει κάθε διακόπτη με τη σημείωση απενεργοποίησης</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <strong>Settings</strong> και πατήστε την καρτέλα <strong>Modules</strong>.</li>
+        <li>Εκτελέστε <code>SELECT `key`, value FROM site_settings WHERE `key` LIKE 'module.%' ORDER BY `key`;</code></li>
+      </ol>
+      <ul class="exp">
+        <li>Δέκα πλαίσια επιλογής: <strong>Commerce</strong>, <strong>Booking</strong>, <strong>Forms</strong>, <strong>Seo</strong>, <strong>Newsletter</strong>, <strong>Customer accounts</strong>, <strong>Google reviews &amp; testimonials</strong>, <strong>Popups</strong>, <strong>Media</strong>, <strong>Praion.ai connection</strong>.</li>
+        <li>Μετά το seed του ιστότοπου είναι τσεκαρισμένα μόνο τα Forms, Seo και Media. Τα Commerce, Booking, Newsletter, Customer accounts, Google reviews, Popups και Praion.ai δείχνουν το καθένα μια γκρι γραμμή που ξεκινά με <code>Off:</code> και εξηγεί τι κάνει η απενεργοποίησή τους.</li>
+        <li>Το SQL δείχνει τις ίδιες τιμές (<code>true</code>/<code>false</code>).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SettingsForm.tsx</code> · <code>src/cms/core/settings/schema.ts</code> (<code>MODULE_LABELS</code>) · <code>src/site.config.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-034" data-priority="P1">
+      <h3>Commerce ανενεργό: το κατάστημα κρύβεται στο διαχειριστικό και στον ιστότοπο</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Το Commerce είναι αποεπιλεγμένο και αποθηκευμένο.</p>
+      <ol class="steps">
+        <li>Κοιτάξτε το πλευρικό μενού του διαχειριστικού.</li>
+        <li>Ανοίξτε τον δημόσιο ιστότοπο <code>/</code> και κοιτάξτε την πλοήγηση της κεφαλίδας· ανοίξτε τα <code>/shop</code> και <code>/en/shop</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το πλευρικό μενού δεν έχει <strong>Products</strong>, <strong>Tags</strong>, <strong>Size charts</strong>, <strong>Categories</strong> του καταστήματος, ούτε <strong>Orders</strong>, <strong>Gift cards</strong>, <strong>Reviews</strong>, <strong>Abandoned carts</strong>.</li>
+        <li>Η κεφαλίδα δείχνει μόνο Αρχική, Σχετικά, Επικοινωνία (χωρίς Κατάστημα) και κανένα καλάθι.</li>
+        <li>Τα <code>/shop</code> και <code>/en/shop</code> δείχνουν τη σελίδα «δεν βρέθηκε» του ιστότοπου.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/layout.tsx</code> · <code>src/cms/admin/shared.ts</code> (<code>visibleAdminCollections</code>) · <code>src/lib/nav.ts</code> · <code>src/app/[locale]/shop/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="SET-035" data-priority="P2">
+      <h3>Commerce ανενεργό: οι οθόνες του διαχειριστικού και τα API απαντούν 404</h3>
+      <ol class="steps">
+        <li>Στον browser όπου είστε συνδεδεμένοι ανοίξτε τα <code>/admin/orders</code>, <code>/admin/gift-cards</code>, <code>/admin/abandoned</code>.</li>
+        <li>Ανοίξτε τα <code>/api/cms/orders</code>, <code>/api/cms/product</code> και <code>/api/cms/commerce/search?q=test</code>.</li>
+        <li>Σε τερματικό εκτελέστε <code>curl -s -o /dev/null -w '%{http_code}\n' 'http://localhost:3002/api/cms/commerce/search?q=test'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τα τρία URL του διαχειριστικού δείχνουν σελίδα “Page not found”. Τα API απαντούν 404: τα orders και search με <code>{"ok":false,"error":"not_found"}</code>, το product με <code>not_found</code> και <code>Unknown collection "product".</code> Το curl τυπώνει <code>404</code>.</p>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/orders/page.tsx</code> · <code>src/app/api/cms/orders/route.ts</code> · <code>src/cms/core/routes/collections.ts</code> (<code>assertCollection</code>) · <code>src/app/api/cms/commerce/search/route.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-036" data-priority="P3">
+      <h3>Commerce ανενεργό: το URL της λίστας προϊόντων δεν είναι προσβάσιμο στο διαχειριστικό</h3>
+      <ol class="steps">
+        <li>Με το Commerce ανενεργό, πληκτρολογήστε <code>/admin/product</code> και <code>/admin/product/new</code> στη γραμμή διευθύνσεων.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και τα δύο δείχνουν “Page not found”, όπως η οθόνη Orders. Αν αντί γι' αυτό εμφανιστεί λίστα προϊόντων ή φόρμα δημιουργίας, σημειώστε Αποτυχία: το πλευρικό μενού κρύβει τη συλλογή, αλλά η ίδια η σελίδα δεν προστατεύεται (το API πίσω της προστατεύεται).</p>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/[collection]/page.tsx</code> · <code>src/lib/cms/collection-route.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-037" data-priority="P2">
+      <h3>Commerce ενεργό: το κατάστημα εμφανίζεται, το περιεχόμενο διατηρείται</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Το Commerce ήταν ενεργό νωρίτερα και έχει δημιουργηθεί τουλάχιστον ένα προϊόν (ή δημιουργήστε ένα τώρα, μετά το βήμα 1).</p>
+      <ol class="steps">
+        <li>Τσεκάρετε το <strong>Commerce</strong> και πατήστε <strong>Save settings</strong>.</li>
+        <li>Φορτώστε ξανά το διαχειριστικό και τη δημόσια αρχική σελίδα.</li>
+        <li>Απενεργοποιήστε το Commerce, αποθηκεύστε, ενεργοποιήστε το ξανά και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Εμφανίζεται το <code>Settings saved.</code> Στο πλευρικό μενού προστίθενται τα Products, Categories, Tags, Size charts και η ομάδα Orders / Gift cards / Reviews / Abandoned carts. Στη δημόσια κεφαλίδα προστίθεται το Κατάστημα, το <code>/shop</code> εμφανίζεται και το <code>/api/cms/orders</code> δεν επιστρέφει πλέον 404. Μετά την απενεργοποίηση και επανενεργοποίηση εμφανίζονται τα ίδια προϊόντα. Το <code>SELECT value FROM site_settings WHERE `key`='module.commerce';</code> επιστρέφει <code>true</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/settings/modules.ts</code> · <code>src/app/api/cms/settings/route.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-038" data-priority="P2">
+      <h3>Booking ανενεργό και ενεργό</h3>
+      <ol class="steps">
+        <li>Με το Booking ανενεργό: ελέγξτε το πλευρικό μενού, ανοίξτε τα <code>/admin/reservations</code>, <code>/admin/availability</code>, <code>/booking</code>, <code>/api/cms/booking/availability</code>.</li>
+        <li>Τσεκάρετε το <strong>Booking</strong>, αποθηκεύστε και επαναλάβετε.</li>
+      </ol>
+      <ul class="exp">
+        <li>Ανενεργό: στο πλευρικό μενού δεν υπάρχουν <strong>Experiences</strong>, <strong>Categories</strong> κρατήσεων, <strong>Types</strong>, <strong>Locations</strong>, <strong>Reservations</strong> ή <strong>Availability</strong>· τα URL του διαχειριστικού δείχνουν “Page not found”· το <code>/booking</code> δείχνει τη σελίδα «δεν βρέθηκε» του ιστότοπου· το API επιστρέφει 404 <code>not_found</code>· η κεφαλίδα δεν έχει Κρατήσεις.</li>
+        <li>Ενεργό: εμφανίζονται όλα τα παραπάνω· το API απαντά με κάτι διαφορετικό από 404.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/layout.tsx</code> · <code>src/app/[locale]/booking/page.tsx</code> · <code>src/app/api/cms/booking/availability/route.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-039" data-priority="P2">
+      <h3>Newsletter ανενεργό και ενεργό</h3>
+      <ol class="steps">
+        <li>Με το Newsletter ανενεργό: ελέγξτε το πλευρικό μενού, ανοίξτε το <code>/admin/newsletter</code>, ανοίξτε το <code>/about</code> και μετακινηθείτε στο υποσέλιδο.</li>
+        <li>Εκτελέστε <code>curl -s -X POST -H 'Content-Type: application/json' -d '{"email":"qa@example.com"}' http://localhost:3002/api/newsletter -w '\n%{http_code}\n'</code>.</li>
+        <li>Τσεκάρετε το <strong>Newsletter</strong>, αποθηκεύστε και επαναλάβετε τα βήματα 1–2.</li>
+      </ol>
+      <ul class="exp">
+        <li>Ανενεργό: δεν υπάρχει <strong>Newsletter</strong> στο πλευρικό μενού, το URL του διαχειριστικού δείχνει “Page not found”, δεν υπάρχει ζώνη εγγραφής στο υποσέλιδο και το curl τελειώνει με <code>404</code>.</li>
+        <li>Ενεργό: το <strong>Newsletter</strong> εμφανίζεται στο πλευρικό μενού, η σελίδα ανοίγει, η ζώνη εγγραφής του υποσέλιδου εμφανίζεται στο <code>/about</code> (όχι στην αρχική σελίδα) και το curl δεν επιστρέφει πλέον 404.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/api/newsletter/route.ts</code> · <code>src/components/layout/Footer.tsx</code> · <code>src/app/admin/(shell)/newsletter/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="SET-040" data-priority="P3">
+      <h3>Οι διακόπτες Customer accounts, Popups και Praion.ai ελέγχουν τα αντίστοιχα σημεία</h3>
+      <ol class="steps">
+        <li>Με το Customer accounts ανενεργό, ανοίξτε το <code>/api/cms/customer/me</code>.</li>
+        <li>Με το Popups ανενεργό, ελέγξτε αν υπάρχει <strong>Popups</strong> στο πλευρικό μενού.</li>
+        <li>Με το Praion.ai connection ανενεργό, ανοίξτε το <code>/api/cms/pm/v1/ping</code> στον browser όπου είστε συνδεδεμένοι.</li>
+        <li>Ενεργοποιήστε το καθένα, αποθηκεύστε και επαναλάβετε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ανενεργά: τα API customer και ping επιστρέφουν 404 και το Popups δεν υπάρχει στο πλευρικό μενού. Ενεργά: το API customer δεν επιστρέφει πλέον 404 (το 401 όταν δεν είστε συνδεδεμένοι ως πελάτης είναι αποδεκτό), το Popups εμφανίζεται και το ping επιστρέφει JSON με <code>"ok":true</code> και ένα <code>bridge_version</code>.</p>
+      <p class="ref">Αναφ.: <code>src/app/api/cms/customer/me/route.ts</code> · <code>src/cms/modules/pm/routes.ts</code> (<code>bridgeRoute</code>) · <code>src/cms/modules/popups/collection.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-041" data-priority="P3">
+      <h3>Οι διακόπτες Forms, Seo και Media δεν αλλάζουν τίποτα</h3>
+      <ol class="steps">
+        <li>Αποεπιλέξτε τα <strong>Forms</strong>, <strong>Seo</strong> και <strong>Media</strong> και αποθηκεύστε.</li>
+        <li>Φορτώστε ξανά το διαχειριστικό και ελέγξτε το πλευρικό μενού· ανοίξτε τα <code>/admin/submissions</code>, <code>/admin/seo</code>, <code>/admin/media</code>.</li>
+        <li>Τσεκάρετε ξανά και τα τρία και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Σύμφωνα με τον τρέχοντα κώδικα αυτά τα τρία είναι πάντα ενεργά: τα Submissions, SEO και Media παραμένουν στο πλευρικό μενού και ανοίγουν κανονικά. Σημειώστε στο αποτέλεσμα ότι οι διακόπτες εμφανίζονται αλλά δεν κάνουν τίποτα (ζήτημα UX προς αναφορά, όχι μπλοκαριστικό).</p>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/layout.tsx</code> · docs/dev-guides/01-architecture.md §10</p>
+    </article>
+
+    <article class="tc" id="SET-042" data-priority="P3">
+      <h3>Οι προγραμματισμένες εργασίες ενός ανενεργού module απαντούν 404</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Το <code>CMS_CRON_SECRET</code> έχει οριστεί σε τιμή 32+ χαρακτήρων στο <code>.env.local</code>, η εφαρμογή έχει επανεκκινηθεί· το Commerce είναι ανενεργό.</p>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s -X POST -H "x-cron-secret: &lt;your secret&gt;" http://localhost:3002/api/cms/cron/commerce-stale-orders -w '\n%{http_code}\n'</code>.</li>
+        <li>Εκτελέστε το ίδιο για το <code>content-publish-scheduled</code>.</li>
+        <li>Εκτελέστε την πρώτη εντολή με λάθος μυστικό.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>404</code>. Βήμα 2: <code>200</code> με <code>"status":"ran"</code> (ή <code>"skipped"</code> αν εκτελείται ήδη άλλη εκτέλεση). Βήμα 3: <code>401</code>.</p>
+      <p class="ref">Αναφ.: <code>src/app/api/cms/cron/[job]/route.ts</code> · <code>src/cms/core/cron/service.ts</code> · docs/dev-guides/10-settings-cron-operations.md §3.4</p>
+    </article>
+
+    <article class="tc" id="SET-043" data-priority="P2">
+      <h3>Μόνο όσοι έχουν δικαίωμα ρυθμίσεων μπορούν να αλλάξουν τα modules</h3>
+      <ol class="steps">
+        <li>Συνδεθείτε ως χρήστης με ρόλο <strong>editor</strong>.</li>
+        <li>Αναζητήστε το <strong>Settings</strong> στο πλευρικό μενού και μετά πληκτρολογήστε <code>/admin/settings</code> στη γραμμή διευθύνσεων.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Δεν υπάρχει καταχώριση Settings ή Cookies στο πλευρικό μενού. Το URL ανακατευθύνει στο <code>/admin/403</code>, που δείχνει <strong>403 — Forbidden</strong>.</p>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/settings/page.tsx</code> · <code>src/cms/modules/auth/guards.ts</code> · <code>src/app/admin/403/page.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-lang">
+    <h2>Γλώσσες</h2>
+    <p class="intro">Ο ιστότοπος περιλαμβάνει ελληνικά (<code>el</code>, κύρια γλώσσα, χωρίς πρόθεμα στο URL) και αγγλικά (<code>en</code>, κάτω από το <code>/en</code>). Ποιες γλώσσες είναι επεξεργάσιμες και δημόσιες ορίζεται στο <strong>Settings</strong> → <strong>Languages</strong>. Οι σελίδες πρέπει να είναι δημοσιευμένες (βλ. την περίπτωση <code>--force --publish-samples</code>).</p>
+
+    <article class="tc" id="SET-044" data-priority="P1">
+      <h3>Τα ελληνικά είναι η προεπιλογή χωρίς πρόθεμα, τα αγγλικά βρίσκονται κάτω από το /en</h3>
+      <ol class="steps">
+        <li>Ανοίξτε τα <code>/</code> και <code>/about</code>· δείτε τον πηγαίο κώδικα της σελίδας και βρείτε την ετικέτα <code>&lt;html</code>.</li>
+        <li>Ανοίξτε τα <code>/en</code> και <code>/en/about</code>· ελέγξτε την ετικέτα <code>&lt;html</code>.</li>
+        <li>Ανοίξτε το <code>/el/about</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τα <code>/</code> και <code>/about</code> είναι στα ελληνικά με <code>lang="el"</code> (μενού Αρχική, Σχετικά, Επικοινωνία). Το <code>/en/…</code> είναι στα αγγλικά με <code>lang="en"</code> (Home, About, Contact). Το <code>/el/about</code> ανακατευθύνει στο <code>/about</code>.</p>
+      <p class="ref">Αναφ.: <code>src/lib/i18n/config.ts</code> · <code>src/lib/i18n/routing.ts</code> · <code>src/app/[locale]/layout.tsx</code></p>
+    </article>
+
+    <article class="tc" id="SET-045" data-priority="P3">
+      <h3>Η γλώσσα του browser δεν αλλάζει τη γλώσσα του ιστότοπου</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' -H 'Accept-Language: en-US,en;q=0.9' http://localhost:3002/</code>.</li>
+        <li>Ανοίξτε τα <code>/home</code> και <code>/en/home</code> στον browser.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 1 τυπώνει <code>200</code> χωρίς ανακατεύθυνση (εξυπηρετείται η ελληνική αρχική σελίδα· δεν γίνεται ανίχνευση Accept-Language). Το <code>/home</code> ανακατευθύνει στο <code>/</code> και το <code>/en/home</code> στο <code>/en</code>.</p>
+      <p class="ref">Αναφ.: <code>src/lib/i18n/routing.ts</code> (<code>localeDetection: false</code>) · <code>next.config.ts</code> (<code>redirects</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-046" data-priority="P2">
+      <h3>Η καρτέλα Languages δείχνει την κύρια γλώσσα κλειδωμένη</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <strong>Settings</strong> → <strong>Languages</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Δύο γραμμές με αυτή τη σειρά: <code>EL — Ελληνικά</code> με πράσινη ένδειξη <strong>Main</strong> και τα <strong>Editing</strong> και <strong>Public</strong> τσεκαρισμένα και γκριζαρισμένα· <code>EN — English</code> με τα Editing και Public τσεκαρισμένα και τροποποιήσιμα (σε νέα εγκατάσταση, όταν δεν έχει αποθηκευτεί ακόμη τίποτα).</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SettingsForm.tsx</code> · <code>src/cms/core/settings/locales.ts</code> · docs/user-guides/src/06-rythmiseis-xristes.md</p>
+    </article>
+
+    <article class="tc" id="SET-047" data-priority="P2">
+      <h3>Αφαίρεση των αγγλικών από τον δημόσιο ιστότοπο</h3>
+      <ol class="steps">
+        <li>Στην καρτέλα Languages αποεπιλέξτε το <strong>Public</strong> για το EN και πατήστε <strong>Save settings</strong>.</li>
+        <li>Ανοίξτε τα <code>/en</code> και <code>/en/about</code>. Ανοίξτε το <code>/</code> και αναζητήστε τον επιλογέα γλώσσας στην κεφαλίδα (και στο μενού κινητού σε πλάτος τηλεφώνου).</li>
+        <li>Ανοίξτε οποιαδήποτε σελίδα στον επεξεργαστή του διαχειριστικού.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τα URL <code>/en</code> δείχνουν τη σελίδα «δεν βρέθηκε». Ο ελληνικός ιστότοπος δεν έχει επιλογέα γλώσσας (κρύβεται όταν υπάρχουν λιγότερες από δύο δημόσιες γλώσσες). Ο επεξεργαστής εξακολουθεί να δείχνει τις καρτέλες <strong>EL</strong> και <strong>EN</strong>, ώστε τα αγγλικά να μπορούν να μεταφραστούν πριν δημοσιευτούν.</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/layout.tsx</code> (<code>localeSettings.public</code>) · <code>src/components/layout/Header.tsx</code> · LanguageSwitcher</p>
+    </article>
+
+    <article class="tc" id="SET-048" data-priority="P2">
+      <h3>Απενεργοποίηση της επεξεργασίας στα αγγλικά</h3>
+      <ol class="steps">
+        <li>Αποεπιλέξτε το <strong>Editing</strong> για το EN και αποθηκεύστε.</li>
+        <li>Ελέγξτε το πλαίσιο <strong>Public</strong> του EN και μετά δημιουργήστε νέα σελίδα στο <strong>Pages</strong>.</li>
+        <li>Ανοίξτε μια υπάρχουσα σελίδα που έχει ήδη αγγλική έκδοση.</li>
+        <li>Εκτελέστε <code>SELECT value FROM site_settings WHERE `key` = 'i18n.locales';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το Public του EN είναι αποεπιλεγμένο και γκριζαρισμένο. Μια νέα σελίδα δείχνει μόνο την καρτέλα <strong>EL</strong>. Μια υπάρχουσα σελίδα με αγγλικό περιεχόμενο εξακολουθεί να δείχνει την καρτέλα EN (το περιεχόμενο δεν μένει ποτέ απροσπέλαστο). Η τιμή του SQL είναι <code>{"editing":["el"],"public":["el"]}</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/settings/schema.ts</code> (<code>resolveLocaleSet</code>) · <code>src/app/admin/(shell)/[collection]/[id]/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="SET-049" data-priority="P2">
+      <h3>Επανενεργοποίηση των αγγλικών</h3>
+      <ol class="steps">
+        <li>Τσεκάρετε τα <strong>Editing</strong> και <strong>Public</strong> του EN και αποθηκεύστε.</li>
+        <li>Ανοίξτε το <code>/en/about</code> και την ελληνική αρχική σελίδα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το <code>/en/about</code> εμφανίζεται ξανά, ο επιλογέας γλώσσας επιστρέφει στην κεφαλίδα και οι νέες σελίδες δείχνουν τις καρτέλες EL και EN. Η τιμή του SQL είναι <code>{"editing":["el","en"],"public":["el","en"]}</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SettingsForm.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-adminpath">
+    <h2>Προσαρμοσμένη διαδρομή διαχειριστικού</h2>
+    <p class="intro">Πριν από αυτή την ενότητα ορίστε <code>ADMIN_PATH=studio</code> στο <code>.env.local</code> και επανεκκινήστε τον server (η τιμή διαβάζεται κατά την εκκίνηση για τις κεφαλίδες ασφαλείας). Στο τέλος επαναφέρετε την τιμή σε <code>admin</code> και επανεκκινήστε.</p>
+
+    <article class="tc" id="SET-050" data-priority="P2">
+      <h3>Το διαχειριστικό εξυπηρετείται στο /studio</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/studio</code> ενώ είστε αποσυνδεδεμένοι.</li>
+        <li>Συνδεθείτε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το <code>/studio</code> ανακατευθύνει στο <code>/studio/login</code> (με παράμετρο <code>next</code>). Μετά τη σύνδεση ο πίνακας ελέγχου βρίσκεται στο <code>/studio</code>. Η γραμμή διευθύνσεων δεν δείχνει ποτέ <code>/admin</code>.</p>
+      <p class="ref">Αναφ.: <code>src/proxy.ts</code> · <code>src/cms/admin/admin-path.ts</code> · <code>src/cms/core/paths.ts</code> (<code>getAdminPath</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-051" data-priority="P2">
+      <h3>Το /admin επιστρέφει απλό 404 μόλις μετακινηθεί το διαχειριστικό</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s -i http://localhost:3002/admin</code> και στη συνέχεια το ίδιο για τα <code>/admin/login</code> και <code>/admin/settings</code>.</li>
+        <li>Ανοίξτε το <code>/admin/login</code> στον browser όπου είστε συνδεδεμένοι.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και τα τρία απαντούν <code>HTTP/1.1 404</code> με κενό σώμα: καμία φόρμα σύνδεσης, καμία ανακατεύθυνση και καμία ανακατεύθυνση στο <code>/el/admin</code> ή <code>/en/admin</code>. Ο browser δείχνει τη δική του κενή σελίδα 404, όχι το διαχειριστικό.</p>
+      <p class="ref">Αναφ.: <code>src/proxy.ts</code> (<code>kind: 'hidden'</code>) · <code>src/cms/admin/admin-path.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-052" data-priority="P2">
+      <h3>Κάθε σύνδεσμος του διαχειριστικού χρησιμοποιεί τη νέα διαδρομή</h3>
+      <ol class="steps">
+        <li>Περάστε τον δείκτη πάνω από κάθε καταχώριση του πλευρικού μενού ή πατήστε την (Dashboard, κάθε συλλογή, Submissions, SEO, Media, Users, Roles, Audit log, Your account, Cookies, Settings, Scripts), καθώς και τα στοιχεία της επάνω μπάρας.</li>
+        <li>Ανοίξτε μια σελίδα στο Pages και επιστρέψτε στη λίστα με το κουμπί Πίσω του browser και με τους συνδέσμους της σελίδας.</li>
+        <li>Πατήστε <strong>Sign out</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε σύνδεσμος ξεκινά με <code>/studio/</code>· κανένας δεν οδηγεί στο <code>/admin</code> ούτε καταλήγει σε 404. Η αποσύνδεση οδηγεί στο <code>/studio/login</code>.</p>
+      <p class="ref">Αναφ.: <code>src/app/admin/(shell)/layout.tsx</code> · <code>src/cms/admin/TopBar.tsx</code> · <code>src/cms/admin/Sidebar.tsx</code></p>
+    </article>
+
+    <article class="tc" id="SET-053" data-priority="P2">
+      <h3>Ένας βαθύς σύνδεσμος στη μετακινημένη διαδρομή επιστρέφει εκεί μετά τη σύνδεση</h3>
+      <ol class="steps">
+        <li>Αποσυνδεδεμένοι, ανοίξτε το <code>/studio/settings?tab=Modules</code>.</li>
+        <li>Συνδεθείτε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ανακατεύθυνση στο <code>/studio/login?next=%2Fstudio%2Fsettings%3Ftab%3DModules</code> (ή ισοδύναμη κωδικοποίηση)· μετά τη σύνδεση οι ρυθμίσεις ανοίγουν στην καρτέλα Modules στο <code>/studio/settings</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/admin-deep-link.ts</code> · <code>src/cms/admin/safe-next.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-054" data-priority="P2">
+      <h3>Η αποσύνδεση λόγω αδράνειας προειδοποιεί, αποσυνδέει και χρησιμοποιεί τη μετακινημένη διαδρομή</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> <code>ADMIN_SESSION_IDLE_MINUTES=2</code> στο <code>.env.local</code>, ο server έχει επανεκκινηθεί, είστε συνδεδεμένοι στο <code>/studio</code>.</p>
+      <ol class="steps">
+        <li>Ανοίξτε τον πίνακα ελέγχου και μην κάνετε κλικ, πληκτρολόγηση, κύλιση ή άγγιγμα στη σελίδα (η κίνηση του ποντικιού επιτρέπεται).</li>
+        <li>Περιμένετε περίπου ένα λεπτό και παρακολουθήστε την κάτω δεξιά γωνία.</li>
+        <li>Συνεχίστε να περιμένετε μέχρι να περάσουν περίπου δύο λεπτά.</li>
+        <li>Συνδεθείτε ξανά και ανοίξτε το <strong>Audit log</strong>.</li>
+        <li>Ορίστε ξανά <code>ADMIN_SESSION_IDLE_MINUTES=60</code> και επανεκκινήστε.</li>
+      </ol>
+      <ul class="exp">
+        <li>Μετά από περίπου ένα λεπτό εμφανίζεται ένα πλαίσιο: <strong>You are about to be signed out</strong> με <strong>Stay signed in</strong> και <strong>Sign out now</strong>.</li>
+        <li>Στα δύο λεπτά περίπου ο browser μεταβαίνει στο <code>/studio/login?timeout=1</code>, που δείχνει <code>You were signed out because you had been inactive. Please sign in again.</code></li>
+        <li>Το αρχείο ελέγχου (audit log) έχει καταχώριση <em>Signed out automatically (inactive)</em> για τον χρήστη.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/IdleLogout.tsx</code> · <code>src/cms/modules/auth/session-idle.ts</code> · <code>src/cms/core/audit-labels.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-055" data-priority="P3">
+      <h3>Το Stay signed in και η δραστηριότητα σε άλλη καρτέλα διατηρούν τη συνεδρία</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Όπως στην προηγούμενη περίπτωση (παράθυρο αδράνειας 2 λεπτών).</p>
+      <ol class="steps">
+        <li>Περιμένετε την προειδοποίηση και πατήστε <strong>Stay signed in</strong>. Περιμένετε άλλα 90 δευτερόλεπτα και μετά πατήστε κάπου.</li>
+        <li>Ανοίξτε το διαχειριστικό σε δύο καρτέλες. Μείνετε αδρανείς στην καρτέλα A· πατήστε διάφορα στην καρτέλα B για 3 λεπτά.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: η προειδοποίηση εξαφανίζεται και είστε ακόμη συνδεδεμένοι 90 δευτερόλεπτα αργότερα. Βήμα 2: η καρτέλα A δεν αποσυνδέεται όσο εργάζεστε στην καρτέλα B (η δραστηριότητα είναι κοινή μεταξύ καρτελών).</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/IdleLogout.tsx</code> (μεταξύ καρτελών, <code>cms:last-activity</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-056" data-priority="P3">
+      <h3>Η δημόσια μπάρα διαχείρισης οδηγεί στο μετακινημένο διαχειριστικό</h3>
+      <ol class="steps">
+        <li>Συνδεδεμένοι ως superadmin, ανοίξτε μια δημοσιευμένη σελίδα στον δημόσιο ιστότοπο, π.χ. <code>/about</code>.</li>
+        <li>Ελέγξτε τη σκούρα μπάρα στο πάνω μέρος της σελίδας.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η μπάρα δείχνει <strong>Διαχείριση</strong> (ή <strong>Admin</strong> για χρήστη με αγγλική γλώσσα) με σύνδεσμο στο <code>/studio</code>, και <strong>Επεξεργασία</strong>/<strong>Edit</strong> με σύνδεσμο στο <code>/studio/page/&lt;id&gt;?locale=el</code>. Και οι δύο ανοίγουν τη σωστή οθόνη του διαχειριστικού.</p>
+      <p class="ref">Αναφ.: <code>src/lib/admin-bar.ts</code> · <code>src/components/admin-bar/AdminBar.tsx</code> · <code>src/components/admin-bar/AdminEditTarget.tsx</code></p>
+    </article>
+
+    <article class="tc" id="SET-057" data-priority="P3">
+      <h3>Το μετακινημένο διαχειριστικό διατηρεί τις κεφαλίδες ασφαλείας του</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Build παραγωγής (<code>npm run build</code> και μετά <code>npm run start</code>) με <code>ADMIN_PATH=studio</code> ορισμένο πριν από το build και την εκκίνηση.</p>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s -I http://localhost:3000/studio/login</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το <code>Content-Security-Policy</code> περιέχει <code>https://www.google.com https://www.gstatic.com</code> στο <code>script-src</code> και μια οδηγία <code>frame-src 'self' https://www.google.com</code>· <code>Cross-Origin-Embedder-Policy: unsafe-none</code>.</p>
+      <p class="ref">Αναφ.: <code>next.config.ts</code> (<code>ADMIN_SEGMENT</code>, <code>adminSecurityHeaders</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-058" data-priority="P3">
+      <h3>Ένα μη έγκυρο ADMIN_PATH επιστρέφει στο /admin</h3>
+      <ol class="steps">
+        <li>Ορίστε <code>ADMIN_PATH=cms/panel</code>, επανεκκινήστε και ανοίξτε τα <code>/admin</code> και <code>/cms/panel</code>.</li>
+        <li>Ελέγξτε το τερματικό του server.</li>
+        <li>Ορίστε <code>ADMIN_PATH=admin</code> και επανεκκινήστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το διαχειριστικό εξυπηρετείται στο <code>/admin</code>· το <code>/cms/panel</code> είναι δημόσια σελίδα «δεν βρέθηκε». Το αρχείο καταγραφής δείχνει <code>[cms] ADMIN_PATH "cms/panel" is not a plain URL slug ([A-Za-z0-9_-]) — falling back to "admin".</code></p>
+      <p class="ref">Αναφ.: <code>src/cms/core/paths.ts</code> (<code>ADMIN_SEGMENT_PATTERN</code>) · <code>next.config.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-locks">
+    <h2>Αναμεταδότης κλειδωμάτων επεξεργασίας σε πραγματικό χρόνο</h2>
+    <p class="intro">Για τοπικές εκτελέσεις ορίστε <code>CMS_LOCK_INTERNAL_SECRET</code> (32+ χαρακτήρες, π.χ. <code>openssl rand -hex 32</code>) και <code>NEXT_PUBLIC_CMS_LOCK_WS_URL=ws://localhost:8081</code> στο <code>.env.local</code>, χρησιμοποιήστε <code>npm run dev</code> και ανοίξτε το διαχειριστικό ακριβώς στο <code>http://localhost:3002</code>. Χρειάζεστε δεύτερο superadmin: <code>npm run db:seed-admin -- qa2@example.com 'Qa-Second-2026!' 'QA Second'</code>.</p>
+
+    <article class="tc" id="SET-059" data-priority="P3">
+      <h3>Ο αναμεταδότης αρνείται να ξεκινήσει χωρίς κατάλληλο μυστικό</h3>
+      <ol class="steps">
+        <li>Με κενό το <code>CMS_LOCK_INTERNAL_SECRET</code>, εκτελέστε <code>npm run locks</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τυπώνει <code>[locks] CMS_LOCK_INTERNAL_SECRET missing or under 32 chars — refusing to start.</code> και τερματίζει.</p>
+      <p class="ref">Αναφ.: <code>src/cms/realtime/lock-server.mjs</code></p>
+    </article>
+
+    <article class="tc" id="SET-060" data-priority="P2">
+      <h3>Εκκίνηση του αναμεταδότη</h3>
+      <ol class="steps">
+        <li>Με ορισμένο το μυστικό, επανεκκινήστε το <code>npm run dev</code> και μετά εκτελέστε <code>npm run locks</code> σε δεύτερο τερματικό.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Παραμένει σε λειτουργία και τυπώνει <code>[locks] ws://127.0.0.1:8081/_ws/locks → app http://127.0.0.1:3002, origin http://localhost:3002, ttl 60s</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/realtime/lock-server.mjs</code> · <code>package.json</code> (<code>locks</code>) · docs/dev-guides/10-settings-cron-operations.md §3.6</p>
+    </article>
+
+    <article class="tc" id="SET-061" data-priority="P2">
+      <h3>Δύο συντάκτες στο ίδιο έγγραφο βλέπουν το κλείδωμα</h3>
+      <ol class="steps">
+        <li>Browser A: συνδεθείτε ως <code>qa-admin@example.com</code> και ανοίξτε <strong>Pages</strong> → <strong>About</strong>.</li>
+        <li>Browser B (άλλος browser ή ιδιωτικό παράθυρο): συνδεθείτε ως <code>qa2@example.com</code> και ανοίξτε την ίδια σελίδα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ο browser B δείχνει ένα πορτοκαλί πλαίσιο που ξεκινά με <code>QA Admin is editing this</code> (ακολουθεί το πότε ξεκίνησε) με κουμπί <strong>Take over editing</strong>. Ο browser A δεν δείχνει πλαίσιο. Όταν κλείσει η καρτέλα του browser A, το πλαίσιο στον B εξαφανίζεται μέσα σε περίπου ένα λεπτό.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/locks/EditLockBanner.tsx</code> · <code>src/cms/admin/locks/EditLockProvider.tsx</code></p>
+    </article>
+
+    <article class="tc" id="SET-062" data-priority="P2">
+      <h3>Αναμεταδότης εκτός λειτουργίας: η επεξεργασία εξακολουθεί να λειτουργεί</h3>
+      <ol class="steps">
+        <li>Σταματήστε το <code>npm run locks</code> (Ctrl+C) και αφήστε την εφαρμογή να τρέχει με ορισμένο το μυστικό.</li>
+        <li>Φορτώστε ξανά τον επεξεργαστή μιας σελίδας, αλλάξτε τον τίτλο και πατήστε <strong>Save EL</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Μια γκρι σημείωση γράφει <code>Live editing status is unavailable, so this page cannot tell you if someone else has this open. You can still edit and save as normal.</code> Η αποθήκευση πετυχαίνει (<code>EL saved.</code>).</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/locks/EditLockBanner.tsx</code> · <code>src/cms/core/locks/config.ts</code></p>
+    </article>
+
+    <article class="tc" id="SET-063" data-priority="P3">
+      <h3>Πλήρης απενεργοποίηση του κλειδώματος</h3>
+      <ol class="steps">
+        <li>Αδειάστε το <code>CMS_LOCK_INTERNAL_SECRET</code> και επανεκκινήστε την εφαρμογή.</li>
+        <li>Ανοίξτε την ίδια σελίδα στους browsers A και B και αποθηκεύστε και στους δύο.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κανένα πλαίσιο κλειδώματος και καμία σημείωση “unavailable” σε κανέναν browser· και οι δύο αποθηκεύσεις λειτουργούν (η δεύτερη μπορεί να προειδοποιήσει για νεότερη έκδοση, που είναι ο έλεγχος ταυτόχρονης επεξεργασίας, όχι κλείδωμα).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/locks/config.ts</code> (<code>locksEnabled</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-064" data-priority="P3">
+      <h3>Ο αναμεταδότης απορρίπτει ξένο origin</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ο αναμεταδότης τρέχει.</p>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s -i -H 'Origin: https://evil.example' -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' http://127.0.0.1:8081/_ws/locks</code>.</li>
+        <li>Επαναλάβετε με <code>Origin: http://localhost:3002</code> και χωρίς cookie.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>403 Forbidden</code>. Βήμα 2: <code>401 Unauthorized</code>. Κανένα από τα δύο δεν αναβαθμίζεται σε <code>101 Switching Protocols</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/realtime/lock-server.mjs</code> (<code>verifyClient</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-065" data-priority="P3">
+      <h3>Το dev:all ξεκινά μαζί την εφαρμογή και τον αναμεταδότη</h3>
+      <ol class="steps">
+        <li>Σταματήστε και τις δύο διεργασίες. Εκτελέστε <code>npm run dev:all</code>.</li>
+        <li>Σταματήστε το με Ctrl+C και ελέγξτε ότι τίποτα δεν ακούει πλέον: <code>curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3002/api/cms/auth/me</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Εμφανίζονται και ο dev server της Next και η γραμμή εκκίνησης <code>[locks]</code>. Μετά το Ctrl+C το curl αποτυγχάνει να συνδεθεί (τυπώνει <code>000</code>): κανένας ορφανός server δεν κρατά τη θύρα 3002.</p>
+      <p class="ref">Αναφ.: <code>scripts/dev-all.mjs</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-update">
+    <h2>Έκδοση &amp; μηχανισμός ενημέρωσης του CMS</h2>
+    <p class="intro">Εκτελέστε σε καθαρό git checkout του branch <code>CMS</code> (χωρίς τοπικές αλλαγές). Αυτές οι περιπτώσεις μόνο δημιουργούν ένα πακέτο και κάνουν δοκιμαστική εκτέλεση (dry run)· μην προσθέσετε ποτέ <code>--apply</code> σε κοινόχρηστο checkout και μη χρησιμοποιήσετε ποτέ <code>--bump</code> (κάνει commit και tag).</p>
+
+    <article class="tc" id="SET-066" data-priority="P2">
+      <h3>Το checkout καταγράφει την έκδοση του CMS</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>src/cms/version.json</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Περιέχει μόνο <code>{"version": "1.0.0"}</code> (ή την έκδοση που αναφέρουν οι σημειώσεις έκδοσης που ελέγχετε).</p>
+      <p class="ref">Αναφ.: <code>src/cms/version.json</code> · docs/dev-guides/01-architecture.md §2</p>
+    </article>
+
+    <article class="tc" id="SET-067" data-priority="P2">
+      <h3>Δημιουργία πακέτου ενημέρωσης χωρίς commit</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>npm run cms:release -- --out /tmp/cms-qa</code>.</li>
+        <li>Εκτελέστε <code>git status</code> και <code>git log -1 --oneline</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τυπώνει <code>Built /tmp/cms-qa/cms-update-1.0.0.zip</code>, την έκδοση, το σύντομο commit και ένα <code>sha256</code>, καθώς και τις δύο εντολές εγκατάστασης. Το <code>git status</code> είναι καθαρό και το τελευταίο commit δεν έχει αλλάξει (καμία αύξηση έκδοσης χωρίς <code>--bump</code>).</p>
+      <p class="ref">Αναφ.: <code>scripts/cms-release.mjs</code></p>
+    </article>
+
+    <article class="tc" id="SET-068" data-priority="P2">
+      <h3>Δοκιμαστική εκτέλεση στην ίδια έκδοση αναφέρει ότι είναι ενημερωμένο</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>npm run cms:update -- /tmp/cms-qa/cms-update-1.0.0.zip</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Έξοδος: <code>CMS update 1.0.0 (commit …, built …)</code>, <code>This site runs 1.0.0.</code>, και στη συνέχεια <code>This site already runs 1.0.0. Pass --reinstall to install it again.</code> Δεν γράφεται τίποτα (το <code>git status</code> είναι καθαρό).</p>
+      <p class="ref">Αναφ.: <code>src/cms/update/cli.mjs</code> · <code>src/cms/update/plan.mjs</code> · <code>src/cms/update/install.mjs</code></p>
+    </article>
+
+    <article class="tc" id="SET-069" data-priority="P2">
+      <h3>Το σχέδιο δοκιμαστικής εκτέλεσης με --reinstall δεν γράφει τίποτα</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>npm run cms:update -- /tmp/cms-qa/cms-update-1.0.0.zip --reinstall</code>.</li>
+        <li>Εκτελέστε <code>git status</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ένα σχέδιο με τις γραμμές <code>Core            N file(s) to write, 0 to delete</code>, <code>Core tests</code>, <code>New storefront</code>, <code>Unchanged</code>, που τελειώνει με <code>Dry run — nothing was written. Add --apply to install.</code> Το <code>git status</code> παραμένει καθαρό και το <code>src/cms/version.json</code> δεν έχει αλλάξει.</p>
+      <p class="ref">Αναφ.: <code>src/cms/update/install.mjs</code> (<code>report</code>, <code>runInstall</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-070" data-priority="P3">
+      <h3>Ο μηχανισμός ενημέρωσης απορρίπτει λανθασμένη είσοδο</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>npm run cms:update</code> χωρίς αρχείο και μετά <code>echo $?</code>.</li>
+        <li>Εκτελέστε <code>npm run cms:update -- /tmp/cms-qa/cms-update-1.0.0.zip --yes</code>.</li>
+        <li>Εκτελέστε <code>echo hello &gt; /tmp/cms-qa/fake.zip</code> και μετά <code>npm run cms:update -- /tmp/cms-qa/fake.zip</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: <code>Usage: npm run cms:update -- &lt;update.zip&gt; [--apply] …</code>, κωδικός εξόδου 2.</li>
+        <li>Βήμα 2: <code>Unknown option(s): --yes</code> μαζί με τις οδηγίες χρήσης, μη μηδενικός κωδικός εξόδου.</li>
+        <li>Βήμα 3: σφάλμα που ξεκινά με <code>Not a valid update archive</code> (ή <code>Not a CMS update</code>), μη μηδενικός κωδικός εξόδου, δεν γράφεται τίποτα.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/update/cli.mjs</code> · <code>src/cms/update/zip.mjs</code> · <code>src/cms/update/manifest.mjs</code></p>
+    </article>
+
+    <article class="tc" id="SET-071" data-priority="P3">
+      <h3>Το --apply αρνείται checkout με αλλαγές</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ένα αναλώσιμο αντίγραφο του checkout (για παράδειγμα <code>git worktree add /tmp/cms-qa-wt CMS</code>), ποτέ το αντίγραφο εργασίας σας.</p>
+      <ol class="steps">
+        <li>Στο αντίγραφο δημιουργήστε ένα αρχείο εκτός παρακολούθησης: <code>echo x &gt; qa-dirty.txt</code>.</li>
+        <li>Εκτελέστε <code>npm run cms:update -- /tmp/cms-qa/cms-update-1.0.0.zip --reinstall --apply</code> μέσα από το αντίγραφο.</li>
+        <li>Στη συνέχεια διαγράψτε το αντίγραφο (<code>git worktree remove --force /tmp/cms-qa-wt</code>).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τυπώνει το σχέδιο και μετά αποτυγχάνει με <code>… is not a clean git checkout. Commit or stash first, …</code>. Κανένα αρχείο του core δεν αλλάζει (το <code>git status</code> δείχνει μόνο το <code>qa-dirty.txt</code>) και δεν εκτελείται κανένα migration.</p>
+      <p class="ref">Αναφ.: <code>src/cms/update/install.mjs</code> (<code>isCleanGit</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-072" data-priority="P3">
+      <h3>Το release αρνείται δέντρο εργασίας με αλλαγές</h3>
+      <ol class="steps">
+        <li>Στο αντίγραφο εργασίας δημιουργήστε ένα αρχείο εκτός παρακολούθησης <code>qa-dirty.txt</code>.</li>
+        <li>Εκτελέστε <code>npm run cms:release -- --out /tmp/cms-qa</code>.</li>
+        <li>Διαγράψτε το <code>qa-dirty.txt</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>The working tree has uncommitted changes. A release must be exactly a commit — commit or stash first.</code> και μη μηδενικός κωδικός εξόδου· δεν γράφεται κανένα zip.</p>
+      <p class="ref">Αναφ.: <code>scripts/cms-release.mjs</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-headers">
+    <h2>Κεφαλίδες ασφαλείας &amp; robots.txt</h2>
+    <p class="intro">Το Content-Security-Policy στέλνεται μόνο από build παραγωγής (<code>npm run build</code> + <code>npm run start</code>, θύρα 3000) ή στο περιβάλλον δοκιμών. Οι υπόλοιπες κεφαλίδες στέλνονται και σε dev.</p>
+
+    <article class="tc" id="SET-073" data-priority="P1">
+      <h3>Οι αποκρίσεις του διαχειριστικού φέρουν τις κεφαλίδες ασφαλείας</h3>
+      <ol class="steps">
+        <li>Στο build παραγωγής ή στο περιβάλλον δοκιμών εκτελέστε <code>curl -s -I http://localhost:3000/admin/login</code> (χρησιμοποιήστε το URL και τη διαδρομή διαχειριστικού του περιβάλλοντος).</li>
+      </ol>
+      <ul class="exp">
+        <li>Υπάρχουν: <code>X-Content-Type-Options: nosniff</code>, <code>X-Frame-Options: DENY</code>, <code>Referrer-Policy: strict-origin-when-cross-origin</code>, <code>Cross-Origin-Opener-Policy: same-origin</code>, <code>Cross-Origin-Resource-Policy: same-site</code>, <code>Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(), usb=(), interest-cohort=()</code>.</li>
+        <li><code>Cross-Origin-Embedder-Policy: unsafe-none</code> (μόνο στο διαχειριστικό, ώστε να λειτουργεί το reCAPTCHA).</li>
+        <li>Το <code>Content-Security-Policy</code> περιλαμβάνει <code>default-src 'self'</code>, <code>frame-ancestors 'none'</code>, <code>object-src 'none'</code>, τους hosts του Google reCAPTCHA και <code>frame-src 'self' https://www.google.com</code>.</li>
+        <li>Δεν υπάρχει κεφαλίδα <code>X-Powered-By</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>next.config.ts</code> (<code>baseSecurityHeaders</code>, <code>ADMIN_CSP</code>, <code>poweredByHeader</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-074" data-priority="P2">
+      <h3>Οι δημόσιες σελίδες χρησιμοποιούν την αυστηρότερη πολιτική του ιστότοπου</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s -I http://localhost:3000/about</code> στο build παραγωγής.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Οι ίδιες βασικές κεφαλίδες με το διαχειριστικό, αλλά <code>Cross-Origin-Embedder-Policy: credentialless</code>, και ένα <code>Content-Security-Policy</code> χωρίς <code>www.gstatic.com</code> και χωρίς οδηγία <code>frame-src</code>. Δεν υπάρχει <code>X-Powered-By</code>.</p>
+      <p class="ref">Αναφ.: <code>next.config.ts</code> (<code>PRODUCTION_CSP</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-075" data-priority="P3">
+      <h3>Ο dev server στέλνει κεφαλίδες αλλά όχι CSP· οι αποκρίσεις του API καλύπτονται</h3>
+      <ol class="steps">
+        <li>Με <code>npm run dev</code>, εκτελέστε <code>curl -s -I http://localhost:3002/admin/login</code>.</li>
+        <li>Εκτελέστε <code>curl -s -D - -o /dev/null http://localhost:3002/api/cms/auth/me</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>X-Frame-Options: DENY</code> και οι υπόλοιπες βασικές κεφαλίδες, αλλά όχι <code>Content-Security-Policy</code> (σκόπιμα μόνο σε dev). Βήμα 2: κατάσταση 401 και οι ίδιες βασικές κεφαλίδες (<code>X-Content-Type-Options</code>, <code>X-Frame-Options</code>, …) στην απόκριση του API.</p>
+      <p class="ref">Αναφ.: <code>next.config.ts</code> (<code>IS_DEV</code>, <code>source: '/:path*'</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-076" data-priority="P1">
+      <h3>Το robots.txt μπλοκάρει τα πάντα σε origin εκτός παραγωγής</h3>
+      <ol class="steps">
+        <li>Στον dev server ή στο περιβάλλον δοκιμών ανοίξτε το <code>/robots.txt</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ακριβώς μία ομάδα κανόνων: <code>User-Agent: *</code> με <code>Disallow: /</code>, καθώς και μια γραμμή <code>Host:</code> με το origin αυτού του περιβάλλοντος. Καμία γραμμή <code>Sitemap:</code> και κανένα <code>Allow: /</code>.</p>
+      <p class="ref">Αναφ.: <code>src/app/robots.ts</code> · <code>src/cms/core/paths.ts</code> (<code>isProductionHost</code>) · docs/STAGING-SETUP.md §1</p>
+    </article>
+
+    <article class="tc" id="SET-077" data-priority="P3">
+      <h3>Το robots.txt σε build με origin παραγωγής</h3>
+      <ol class="steps">
+        <li>Κάντε build με το origin παραγωγής: <code>NEXT_PUBLIC_SITE_URL=https://example.com npm run build</code> (η τιμή του <code>url</code> στο <code>src/site.brand.ts</code>) και μετά <code>npm run start</code>.</li>
+        <li>Εκτελέστε <code>curl -s http://localhost:3000/robots.txt</code>.</li>
+        <li>Στη συνέχεια κάντε ξανά build με την κανονική τιμή.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>User-Agent: *</code> με <code>Allow: /</code>, <code>Disallow: /api/</code> και <code>Disallow: /admin/</code>, οι ίδιοι κανόνες επαναλαμβάνονται για GPTBot, ChatGPT-User, OAI-SearchBot, ClaudeBot, anthropic-ai, PerplexityBot και Google-Extended, και <code>Sitemap: https://example.com/sitemap.xml</code>.</p>
+      <p class="ref">Αναφ.: <code>src/app/robots.ts</code> (<code>robotsRules</code>) · <code>src/site.config.ts</code> (<code>productionOrigin</code>)</p>
+    </article>
+
+    <article class="tc" id="SET-078" data-priority="P3">
+      <h3>Ένα build χωρίς NEXT_PUBLIC_SITE_URL δεν πρέπει να είναι ευρετηριάσιμο</h3>
+      <ol class="steps">
+        <li>Αφαιρέστε το <code>NEXT_PUBLIC_SITE_URL</code> από το <code>.env.local</code> και από το shell, εκτελέστε <code>npm run build</code> και <code>npm run start</code>.</li>
+        <li>Εκτελέστε <code>curl -s http://localhost:3000/robots.txt</code>.</li>
+        <li>Επαναφέρετε την τιμή και κάντε ξανά build.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>Disallow: /</code> για όλους τους agents, επειδή αυτό το build δεν είναι ο ζωντανός ιστότοπος. Αν η έξοδος έχει αντί γι' αυτό <code>Allow: /</code> και sitemap παραγωγής, σημειώστε Αποτυχία: το URL του ιστότοπου επιστρέφει στο URL παραγωγής του brand, κάτι που κάνει ευρετηριάσιμο ένα λάθος ρυθμισμένο build staging.</p>
+      <p class="ref">Αναφ.: <code>src/lib/seo/schemas.ts</code> (<code>SITE_URL</code>) · <code>src/app/robots.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-docs">
+    <h2>Τεκμηρίωση εγκατάστασης &amp; οδηγοί χρήσης</h2>
+
+    <article class="tc" id="SET-079" data-priority="P2">
+      <h3>Τα έξι ελληνικά PDF των οδηγών χρήσης υπάρχουν και διαβάζονται</h3>
+      <ol class="steps">
+        <li>Εμφανίστε τα περιεχόμενα του <code>docs/user-guides/</code>.</li>
+        <li>Ανοίξτε κάθε PDF.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Έξι αρχεία: <code>01-vasika.pdf</code> (Τα βασικά), <code>02-periexomeno.pdf</code> (Περιεχόμενο), <code>03-katastima.pdf</code> (Ηλεκτρονικό κατάστημα), <code>04-kratiseis.pdf</code> (Κρατήσεις), <code>05-formes-seo-marketing.pdf</code> (Φόρμες, SEO &amp; marketing), <code>06-rythmiseis-xristes.pdf</code> (Ρυθμίσεις &amp; χρήστες). Το καθένα ανοίγει, το ελληνικό κείμενο διαβάζεται (χωρίς κουτάκια ή χαρακτήρες που λείπουν) και ο τίτλος στη σελίδα 1 ταιριάζει με τη γραμμή <code>title:</code> του αντίστοιχου αρχείου στο <code>docs/user-guides/src/</code>.</p>
+      <p class="ref">Αναφ.: <code>docs/user-guides/</code> · <code>docs/user-guides/_build/build.mjs</code></p>
+    </article>
+
+    <article class="tc" id="SET-080" data-priority="P3">
+      <h3>Οι οδηγοί χρήσης περιγράφουν τις τρέχουσες οθόνες ρυθμίσεων</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>06-rythmiseis-xristes.pdf</code> και βρείτε τις ενότητες για τα Modules και τις Languages.</li>
+        <li>Συγκρίνετε με τα <strong>Settings</strong> → <strong>Modules</strong> και <strong>Languages</strong> στην οθόνη.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ο οδηγός αναφέρει τις ίδιες καρτέλες και τα ίδια στοιχεία ελέγχου με την οθόνη (<strong>Modules</strong>, <strong>Languages</strong>, <strong>Editing</strong>, <strong>Public</strong>) και η περιγραφή του για τα Editing/Public συμφωνεί με τη συμπεριφορά που ελέγχθηκε παραπάνω. Σημειώστε κάθε ετικέτα που διαφέρει.</p>
+      <p class="ref">Αναφ.: <code>docs/user-guides/src/06-rythmiseis-xristes.md</code> · <code>src/cms/admin/SettingsForm.tsx</code></p>
+    </article>
+
+    <article class="tc" id="SET-081" data-priority="P3">
+      <h3>Κάθε εντολή στους οδηγούς εγκατάστασης υπάρχει</h3>
+      <ol class="steps">
+        <li>Συγκεντρώστε κάθε εντολή <code>npm run …</code> στα <code>docs/LOCAL_SETUP.md</code> και <code>docs/STAGING-SETUP.md</code>.</li>
+        <li>Εκτελέστε <code>npm run</code> (χωρίς ορίσματα) για να δείτε τα διαθέσιμα scripts και συγκρίνετε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε εντολή και των δύο εγγράφων εμφανίζεται στη λίστα του <code>npm run</code>. Καταγράψτε κάθε εντολή που λείπει ως σφάλμα τεκμηρίωσης.</p>
+      <p class="ref">Αναφ.: <code>package.json</code> · docs/STAGING-SETUP.md (“First deployment”) · docs/dev-guides/10-settings-cron-operations.md §7.3</p>
+    </article>
+  </section>
+
+</main>
+<footer class="page">Λίστα ελέγχου 01 από 12. Τα αποτελέσματα αποθηκεύονται μόνο σε αυτόν τον browser· χρησιμοποιήστε την εξαγωγή πριν καθαρίσετε τα δεδομένα του browser. Επαναφέρετε το <code>.env.local</code> (ADMIN_PATH, λεπτά αδράνειας, μυστικά, URL ιστότοπου) μετά τις ενότητες που το αλλάζουν.</footer>
+</body>
+</html>

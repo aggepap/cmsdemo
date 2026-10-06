@@ -1,0 +1,43 @@
+{
+  "generatedBy": "new-site skill",
+  "skillVersion": 2,
+  "baseBranch": "main",
+  "baseCommit": "65011ac2e570fc0ed3795ecec8e3b9e635b808e8",
+  "baseDirty": true,
+  "date": "2026-10-06T14:21:41.698Z",
+  "siteType": "ecommerce",
+  "answers": {
+    "siteType": "ecommerce",
+    "name": "CMS Demo",
+    "legalName": "CMS Demo",
+    "slug": "cms-demo",
+    "domain": "cms-demo.gr",
+    "tagline": "Ιστότοπος επίδειξης όλων των δυνατοτήτων του CMS.",
+    "email": "info@cms-demo.gr",
+    "phone": "",
+    "address": {
+      "street": "",
+      "city": "",
+      "postcode": "",
+      "country": "GR"
+    },
+    "socials": {},
+    "locales": [
+      "el"
+    ],
+    "defaultLocale": "el",
+    "newsletter": true,
+    "content": {
+      "articles": true,
+      "answers": true,
+      "scenarios": true
+    },
+    "ecommerce": {
+      "currency": "EUR",
+      "paymentProvider": "manual"
+    },
+    "booking": null,
+    "targetDir": "/home/aggepap/Projects/cms-demo",
+    "setupDatabase": false
+  }
+}

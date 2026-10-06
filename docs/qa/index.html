@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CMS manual QA</title>
+<link rel="stylesheet" href="qa.css">
+<script src="qa.js" defer></script>
+</head>
+<body>
+<header class="page">
+  <h1>CMS manual QA</h1>
+  <p class="scope">Checklists a human tester works through to confirm every part of the CMS works, from install and database schema to the admin, the shop, bookings and the public site.</p>
+</header>
+<main>
+  <section>
+    <h2>Checklists</h2>
+    <div id="qa-index"></div>
+  </section>
+
+  <section>
+    <h2>How to use these pages</h2>
+    <ol>
+      <li>Fill in your name, the environment URL and the build or commit at the top. They are saved in this browser and included in every export.</li>
+      <li>Open a checklist. Each case has an ID, a priority, preconditions, steps and the expected result.</li>
+      <li>Work through the steps, then mark the case <strong>Pass</strong>, <strong>Fail</strong>, <strong>Blocked</strong> (you could not run it) or <strong>N/A</strong> (the feature is off on this site). Click a pressed button again to clear it.</li>
+      <li>For every Fail, write what happened in the notes: the actual result, the URL, and a screenshot or defect link.</li>
+      <li>Use <strong>Export CSV</strong> or <strong>Export JSON</strong> to hand results over. Results are stored only in this browser; clearing site data or switching browsers loses them.</li>
+    </ol>
+    <div class="callout">
+      <p><strong>Priorities.</strong> <strong>P1</strong> is the smoke set: run it on every release and after every deploy. <strong>P2</strong> covers the core behaviour of each feature: run it before a release. <strong>P3</strong> covers edge cases and hardening: run it for major releases or after changes in that area.</p>
+      <p>Filter a page by priority to run only the smoke set.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Before you start</h2>
+    <ul>
+      <li><strong>Use a test environment, never production.</strong> Several cases create orders, send email, take payments in sandbox mode and delete data.</li>
+      <li>Set up the site as described in <code>docs/LOCAL_SETUP.md</code> or <code>docs/STAGING-SETUP.md</code>, with migrations applied and the seeds run (checklist 01 walks through this).</li>
+      <li>Payment providers must be in <strong>sandbox / test mode</strong>. Use each provider's published test cards.</li>
+      <li>Have a mailbox you can read for the admin address and a second one to act as a customer.</li>
+      <li>Have database access (a MySQL/MariaDB client) for checklist 02 and for the cases that check stored rows.</li>
+      <li>Create these accounts before running role tests: a <strong>superadmin</strong>, an <strong>editor</strong>, and a custom role with only a few permissions (checklist 05 explains how).</li>
+      <li>Test in at least one Chromium browser and Firefox; run the public-site checks on a phone-width window too.</li>
+      <li>If a module is switched off on the site under test (shop, booking, newsletter), mark its cases N/A, but still run the case that checks the module is hidden when off.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Reporting a failure</h2>
+    <p>A useful defect report has the case ID, the environment and build from the top of the page, the exact steps you took if they differ from the case, what you expected, what happened, and a screenshot. For server errors include the time so developers can find the log line.</p>
+    <p>The technical background for each area is in <code>docs/dev-guides/</code>; the end-user explanations are in <code>docs/user-guides/</code>.</p>
+  </section>
+</main>
+<footer class="page">Results are saved in this browser only. Export them before clearing browser data.</footer>
+</body>
+</html>

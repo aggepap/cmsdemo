@@ -1,0 +1,1315 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Πολυμέσα, SEO &amp; δομημένα δεδομένα</title>
+<link rel="stylesheet" href="../qa.css">
+<script src="../qa.js" defer></script>
+</head>
+<body>
+<nav class="crumbs"><a href="index.html">Χειροκίνητος έλεγχος CMS</a></nav>
+<header class="page">
+  <h1>06 · Πολυμέσα, SEO &amp; δομημένα δεδομένα</h1>
+  <p class="scope">Η βιβλιοθήκη πολυμέσων (επιτρεπόμενα και απορριπτόμενα ανεβάσματα, το όριο των 10 MB, η μετατροπή σε WebP με συνοδευτικό αρχείο AVIF, ο εντοπισμός διπλοτύπων, το εναλλακτικό κείμενο (alt), η αναζήτηση, η σελιδοποίηση, η διαγραφή, ο επιλογέας στον επεξεργαστή, το δημόσιο URL του αρχείου και οι κεφαλίδες cache του), η ταυτότητα (branding) (όνομα, λογότυπο, favicon, εικόνα κοινοποίησης, χρώματα) στον ιστότοπο, στο JSON-LD και στα email, το πάνελ SEO &amp; AEO ανά έγγραφο και οι ετικέτες που παράγει στο head της σελίδας (title, description, canonical, Open Graph, Twitter, robots, hreflang), η οθόνη SEO (ανακατευθύνσεις, παρακολούθηση 404, παρακάμψεις meta ανά διαδρομή), η διαχείριση πεδίων SEO, το sitemap.xml, οι προσθήκες του robots.txt, οι Ρυθμίσεις → Structured data και κάθε τμήμα JSON-LD που ελέγχουν, το JSON-LD προϊόντων και κρατήσεων, και η γέφυρα του Product Manager (Praion.ai) στον βαθμό που μπορεί να τη χειριστεί ένας ελεγκτής με υπογεγραμμένα αιτήματα. Οι ανακατευθύνσεις λόγω αλλαγής slug που γράφει ο επεξεργαστής, το sitemap πέραν των 200 σελίδων και το ίδιο το robots.txt βρίσκονται στις λίστες ελέγχου 01 και 03 και αναφέρονται με το ID τους. Χρειάζεστε τερματικό με <code>curl</code>, <code>openssl</code>, <code>sha256sum</code>, <code>file</code> και ImageMagick (<code>magick</code> ή <code>convert</code>)· τα <code>jq</code> και <code>exiftool</code> βοηθούν αλλά είναι προαιρετικά. Χρειάζεστε επίσης πρόσβαση στη βάση δεδομένων μέσω client και browser με εργαλεία προγραμματιστή.</p>
+</header>
+<main>
+
+  <section class="suite" id="suite-prep">
+    <h2>Πριν ξεκινήσετε</h2>
+    <p class="intro">Η λίστα ελέγχου 01 πρέπει να έχει ολοκληρωθεί (migrations, seeds, superadmin <code>qa-admin@example.com</code>), με τα EL και EN επιλεγμένα και στο <strong>Editing</strong> και στο <strong>Public</strong> στις <strong>Settings</strong> → <strong>Languages</strong>. Συνδεθείτε ως <code>qa-admin@example.com</code>, εκτός αν μια περίπτωση ελέγχου ορίζει διαφορετικά. Τα URL χρησιμοποιούν το <code>http://localhost:3002</code> (<code>npm run dev</code>)· σε φιλοξενούμενο περιβάλλον δοκιμών χρησιμοποιήστε τη διεύθυνσή του, και διαβάστε το <code>.data/uploads</code> ως το <code>CMS_UPLOAD_DIR</code> εκείνου του περιβάλλοντος. Τα αρχεία που ανεβαίνουν αποθηκεύονται με το uuid τους χωρίς κατάληξη· το uuid είναι αυτό που αντιγράφει το κουμπί <strong>uuid</strong> σε ένα πλακίδιο του Media.</p>
+    <div class="callout">
+      <p><strong>Βοηθητικές εντολές τερματικού.</strong> Στον φάκελο του έργου εκτελέστε <code>BASE=http://localhost:3002</code> και έπειτα επικολλήστε αυτές τις τρεις γραμμές. Η <code>H</code> εμφανίζει τις ετικέτες head μιας δημόσιας σελίδας, η <code>LD</code> εμφανίζει κάθε μπλοκ JSON-LD και η <code>R</code> εμφανίζει τον κωδικό κατάστασης και τον προορισμό ανακατεύθυνσης μιας διεύθυνσης. Στέλνουν user agent ανιχνευτή (crawler), επειδή το Next.js μεταδίδει τα μεταδεδομένα μέσα στο body για τους συνηθισμένους browsers· με <code>Googlebot</code> οι ετικέτες βρίσκονται στο <code>&lt;head&gt;</code>. (Στην προβολή πηγαίου κώδικα ενός κανονικού browser οι ίδιες ετικέτες μπορεί να εμφανίζονται κοντά στο τέλος του εγγράφου: αυτό είναι αναμενόμενο.)</p>
+<pre><code>H()  { curl -s -A Googlebot "$BASE$1" | grep -oE '&lt;title&gt;[^&lt;]*&lt;/title&gt;|&lt;meta (name|property)="[^"]*" content="[^"]*"|&lt;link rel="(canonical|alternate|icon)"[^&gt;]*&gt;'; }
+LD() { curl -s -A Googlebot "$BASE$1" | grep -o '&lt;script type="application/ld+json"&gt;[^&lt;]*&lt;/script&gt;' | sed -e 's/&lt;script[^&gt;]*&gt;//' -e 's#&lt;/script&gt;##'; }
+R()  { curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$BASE$1"; }</code></pre>
+      <p><strong>Κλήσεις API με τη συνεδρία σας.</strong> Αντιγράψτε την τιμή του cookie <code>cms_session</code> στο <code>S</code> όπως περιγράφεται στη λίστα ελέγχου 05 («Χρήση του curl με συνεδρία») και προσθέστε το <code>-b "cms_session=$S"</code>.</p>
+      <p><strong>Επικύρωση του JSON-LD.</strong> Το περιβάλλον δοκιμών δεν είναι προσβάσιμο από την Google, οπότε επικυρώστε τον πηγαίο κώδικα της σελίδας ως κώδικα: εκτελέστε <code>curl -s -A Googlebot "$BASE/&lt;path&gt;" &gt; page.html</code>, ανοίξτε το <code>https://search.google.com/test/rich-results</code>, επιλέξτε <strong>Code</strong>, επικολλήστε ολόκληρο το αρχείο και πατήστε <strong>Test code</strong>. Για τύπους που η Google δεν εμφανίζει ως rich results (WebSite, TouristTrip, Accommodation…) χρησιμοποιήστε το <code>https://validator.schema.org</code> → <strong>Code snippet</strong> → επικόλληση → <strong>Run test</strong>.</p>
+    </div>
+
+    <article class="tc" id="MED-001" data-priority="P2">
+      <h3>Δημιουργία των αρχείων δοκιμής</h3>
+      <ol class="steps">
+        <li>Σε έναν κενό φάκελο, για παράδειγμα <code>~/qa-media</code>, εκτελέστε (χρησιμοποιήστε <code>convert</code> αντί για <code>magick</code> στο ImageMagick 6):
+<pre><code>magick -size 4000x3000 plasma: photo-large.jpg
+magick -size 3000x4000 plasma: photo-portrait.jpg
+magick -size 800x600 gradient:navy-gold small.png
+magick -size 640x480 plasma: pic.gif
+magick -size 640x480 plasma: pic.webp
+magick -size 640x480 plasma: pic.avif
+magick -delay 30 -size 120x80 xc:red xc:blue xc:green anim.gif
+magick -size 7000x7000 xc:white bomb.png
+printf '%%PDF-1.4\n1 0 obj&lt;&lt;&gt;&gt;endobj\ntrailer&lt;&lt;&gt;&gt;\n%%%%EOF\n' &gt; doc.pdf
+printf '&lt;svg xmlns="http://www.w3.org/2000/svg"&gt;&lt;script&gt;alert(1)&lt;/script&gt;&lt;/svg&gt;' &gt; evil.svg
+cp evil.svg evil-renamed.png
+echo hello &gt; notes.txt
+printf '\xff\xd8\xff\xe0' &gt; broken.jpg; head -c 5000 /dev/urandom &gt;&gt; broken.jpg
+head -c 11000000 /dev/urandom &gt; big.jpg
+cp photo-large.jpg photo-large-copy.jpg</code></pre></li>
+        <li>Εκτελέστε <code>ls -l</code> και <code>file *</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Υπάρχουν και τα 15 αρχεία (αν το ImageMagick σας δεν μπορεί να γράψει AVIF, το <code>pic.avif</code> λείπει: παραλείψτε το στη MED-005). Το <code>file</code> αναφέρει JPEG, PNG, GIF, Web/P, αρχείο πολυμέσων AVIF/ISO, PDF και SVG σύμφωνα με τα ονόματα· το <code>broken.jpg</code> ξεκινά σαν JPEG αλλά περιέχει τυχαία bytes· το <code>big.jpg</code> είναι περίπου 11 MB τυχαίων δεδομένων· το <code>bomb.png</code> είναι μικρό στον δίσκο αλλά έχει 49 εκατομμύρια pixels.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/media/mime.ts</code> (<code>ALLOWED_UPLOAD_MIME</code>) · <code>src/cms/core/media/normalize.ts</code> (<code>UPLOAD_MAX_PIXELS = 40_000_000</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-002" data-priority="P1">
+      <h3>Δημιουργία της σελίδας που χρησιμοποιούν οι περιπτώσεις SEO</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <strong>Pages</strong> → <strong>+ New</strong>. Title <code>QA SEO Page</code>, Slug <code>qa-seo</code>, μια πρόταση κειμένου στο σώμα, <strong>Status — EL</strong> <code>published</code> (συμπληρώστε όποιο υποχρεωτικό προσαρμοσμένο πεδίο έχει απομείνει από τη λίστα ελέγχου 03). Πατήστε <strong>Create Page</strong>.</li>
+        <li>Προσθέστε μια έκδοση EN όπως στη CON-045: καρτέλα <strong>EN</strong> → <strong>Copy from EL</strong>, τίτλος <code>QA SEO Page EN</code>, κατάσταση <code>published</code>, <strong>Create EN</strong>.</li>
+        <li>Εκτελέστε <code>R /qa-seo</code> και <code>R /en/qa-seo</code>. Σημειώστε τα id των γραμμών EL και EN: <code>SELECT id, locale FROM documents WHERE type = 'page' AND slug = 'qa-seo';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και οι δύο διευθύνσεις απαντούν <code>200</code> με κενό προορισμό ανακατεύθυνσης. Δύο γραμμές, <code>el</code> και <code>en</code>.</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/[slug]/page.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-upload">
+    <h2>Βιβλιοθήκη πολυμέσων: ανέβασμα</h2>
+    <p class="intro">Ανοίξτε το <strong>Media</strong> στο πλευρικό μενού (<code>/admin/media</code>). Το <strong>Upload files</strong> δέχεται πολλά αρχεία ταυτόχρονα. Η συμβουλή <strong>About uploads</strong> γράφει: <code>PNG, JPEG, GIF, WebP, AVIF or PDF, up to 10 MB each.</code> Ο διακομιστής καθορίζει τον τύπο από τα bytes του αρχείου, ποτέ από το όνομά του ή από τον τύπο που δηλώνει ο browser. Το ανέβασμα και η διαγραφή απαιτούν το <strong>Edit media</strong>· ο έλεγχος ανά δικαίωμα βρίσκεται στη λίστα ελέγχου 05 (πίνακας ρόλων &amp; δικαιωμάτων).</p>
+
+    <article class="tc" id="MED-003" data-priority="P1">
+      <h3>Ένα JPG αποθηκεύεται και σερβίρεται ως WebP</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>Upload files</strong> και επιλέξτε το <code>photo-large.jpg</code>.</li>
+        <li>Πατήστε <strong>uuid</strong> στο νέο πλακίδιο και επικολλήστε το στο τερματικό: <code>U=&lt;pasted uuid&gt;</code>.</li>
+        <li>Εκτελέστε <code>SELECT original_name, mime, size, width, height, hash, alt_text, uploaded_by FROM media_files WHERE uuid = '&lt;uuid&gt;';</code></li>
+        <li>Εκτελέστε <code>ls -l .data/uploads/$U*</code>, <code>file .data/uploads/$U</code> και <code>sha256sum .data/uploads/$U</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το πλακίδιο εμφανίζεται πρώτο στο πλέγμα, με όνομα <code>photo-large.webp</code>, με το μέγεθός του και <code>1600×1200</code>. Ο αριθμός δίπλα στο πλαίσιο αναζήτησης αυξάνεται κατά ένα. Το κουμπί <strong>uuid</strong> γράφει για λίγο <code>copied</code>.</li>
+        <li>SQL: <code>original_name</code> <code>photo-large.webp</code>, <code>mime</code> <code>image/webp</code>, πλάτος 1600, ύψος 1200, <code>alt_text</code> NULL, <code>uploaded_by</code> το id του superadmin. Το <code>size</code> ισούται με το μέγεθος σε bytes του <code>.data/uploads/$U</code>, και το <code>hash</code> ισούται με το sha256 του.</li>
+        <li>Το <code>file</code> αναφέρει <code>RIFF (little-endian) data, Web/P image</code>. Υπάρχει δεύτερο αρχείο <code>$U.avif</code> και είναι μικρότερο από το WebP (διατηρείται μόνο όταν είναι μικρότερο· αν λείπει, σημειώστε τα δύο μεγέθη).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/media/service.ts</code> (<code>uploadMedia</code>) · <code>src/cms/core/media/normalize.ts</code> (<code>prepareUpload</code>, <code>webpName</code>) · <code>src/cms/core/media/storage.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-004" data-priority="P2">
+      <h3>Οι εικόνες προσαρμόζονται μέσα σε 1600×1200 και δεν μεγεθύνονται ποτέ</h3>
+      <ol class="steps">
+        <li>Ανεβάστε μαζί το <code>photo-portrait.jpg</code> και το <code>small.png</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Δύο πλακίδια: <code>photo-portrait.webp</code> σε <code>900×1200</code> και <code>small.webp</code> σε <code>800×600</code> (αμετάβλητο). Και οι δύο γραμμές έχουν mime <code>image/webp</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/media/normalize.ts</code> (<code>UPLOAD_MAX_WIDTH</code>, <code>UPLOAD_MAX_HEIGHT</code>, <code>withoutEnlargement</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-005" data-priority="P2">
+      <h3>Τα GIF, WebP και AVIF γίνονται δεκτά· ένα animation διατηρεί τα καρέ του</h3>
+      <ol class="steps">
+        <li>Ανεβάστε τα <code>pic.gif</code>, <code>pic.webp</code>, <code>pic.avif</code> και <code>anim.gif</code>.</li>
+        <li>Για το πλακίδιο <code>anim</code> αντιγράψτε το uuid του στο <code>A</code> και εκτελέστε <code>ls .data/uploads/$A*</code> και <code>magick identify .data/uploads/$A</code>.</li>
+        <li>Πατήστε τη μικρογραφία του <code>anim.webp</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Τέσσερα πλακίδια με όνομα <code>pic.webp</code> (τρεις φορές, ή λιγότερες αν δύο κωδικοποιούνται σε πανομοιότυπα bytes, οπότε εμφανίζεται ειδοποίηση διπλοτύπου) και <code>anim.webp</code>· κάθε γραμμή έχει mime <code>image/webp</code>.</li>
+        <li>Το animation δεν έχει συνοδευτικό <code>.avif</code> (παρατίθεται μόνο το <code>$A</code>)· το <code>identify</code> εμφανίζει τρία καρέ. Το πλακίδιό του γράφει <code>120×80</code> (το ύψος ενός καρέ).</li>
+        <li>Η μικρογραφία ανοίγει το <code>/api/cms/media/file/&lt;uuid&gt;</code> σε νέα καρτέλα και η εικόνα εναλλάσσεται κόκκινο, μπλε, πράσινο.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/media/normalize.ts</code> (animation: χωρίς <code>rotate()</code>, χωρίς AVIF) · <code>src/cms/admin/MediaLibrary.tsx</code> (<code>Open … full size</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-006" data-priority="P2">
+      <h3>Ένα PDF αποθηκεύεται ως έχει</h3>
+      <ol class="steps">
+        <li>Ανεβάστε το <code>doc.pdf</code>. Αντιγράψτε το uuid του στο <code>P</code>.</li>
+        <li>Εκτελέστε <code>SELECT original_name, mime, width, height FROM media_files WHERE uuid = '&lt;uuid&gt;';</code> και <code>cmp doc.pdf .data/uploads/$P &amp;&amp; echo same</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το πλακίδιο εμφανίζει το κείμενο <code>application/pdf</code> αντί για μικρογραφία και δεν έχει πλαίσιο <strong>Alt text</strong>. SQL: όνομα <code>doc.pdf</code>, mime <code>application/pdf</code>, πλάτος και ύψος NULL. Το <code>cmp</code> εμφανίζει <code>same</code>· δεν υπάρχει αρχείο <code>.avif</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/media/normalize.ts</code> (διέλευση PDF χωρίς επεξεργασία)</p>
+    </article>
+
+    <article class="tc" id="MED-007" data-priority="P1">
+      <h3>Το SVG απορρίπτεται</h3>
+      <ol class="steps">
+        <li>Ανεβάστε το <code>evil.svg</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κόκκινο κείμενο δίπλα στο πλαίσιο αναζήτησης: <code>evil.svg: Unsupported file type. Allowed: image/png, image/jpeg, image/gif, image/webp, image/avif, application/pdf.</code> Δεν προστίθεται πλακίδιο και ο αριθμός δεν αλλάζει. (Οι Settings → Branding εξακολουθούν να περιγράφουν το λογότυπο ως “An SVG or a transparent PNG works best”· ένα λογότυπο SVG απορρίπτεται με τον ίδιο τρόπο. Καταγράψτε το ως σφάλμα κειμένου.)</p>
+      <p class="ref">Αναφ.: <code>src/app/api/cms/media/upload/route.ts</code> (415) · <code>src/cms/core/media/mime.ts</code> (<code>sniffMime</code>) · <code>src/cms/admin/BrandSettings.tsx</code> (<code>MEDIA_FIELDS</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-008" data-priority="P3">
+      <h3>Ένα μετονομασμένο αρχείο ή οποιοσδήποτε άλλος τύπος απορρίπτεται</h3>
+      <ol class="steps">
+        <li>Ανεβάστε το <code>evil-renamed.png</code> και έπειτα το <code>notes.txt</code>.</li>
+        <li>Με τη συνεδρία σας εκτελέστε <code>curl -s -w ' %{http_code}\n' -b "cms_session=$S" -F 'file=@evil-renamed.png;type=image/png' "$BASE/api/cms/media/upload"</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και τα δύο ανεβάσματα απορρίπτονται με το ίδιο μήνυμα <code>Unsupported file type. Allowed: …</code> με πρόθεμα το όνομα του αρχείου. Το curl εμφανίζει <code>{"ok":false,"error":"unsupported_media_type","message":"Unsupported file type. Allowed: image/png, image/jpeg, image/gif, image/webp, image/avif, application/pdf."} 415</code>: ο δηλωμένος τύπος <code>image/png</code> αγνοείται.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/media/mime.ts</code> · <code>src/app/api/cms/media/upload/route.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-009" data-priority="P3">
+      <h3>Μια κατεστραμμένη εικόνα ή μια «βόμβα pixels» απορρίπτεται</h3>
+      <ol class="steps">
+        <li>Ανεβάστε το <code>broken.jpg</code> και έπειτα το <code>bomb.png</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το καθένα απορρίπτεται με <code>&lt;name&gt;: This file could not be processed as an image.</code> (HTTP 415). Δεν αποθηκεύεται ούτε γραμμή ούτε αρχείο· ο διακομιστής δεν «κολλάει».</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/media/normalize.ts</code> (<code>MediaProcessingError</code>, <code>limitInputPixels</code>) · <code>src/app/api/cms/media/upload/route.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-010" data-priority="P2">
+      <h3>Τα αρχεία άνω των 10 MB απορρίπτονται</h3>
+      <ol class="steps">
+        <li>Ανεβάστε το <code>big.jpg</code> (περίπου 11 MB).</li>
+        <li>Εκτελέστε <code>curl -s -w ' %{http_code}\n' -b "cms_session=$S" -F 'file=@big.jpg' "$BASE/api/cms/media/upload"</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η οθόνη εμφανίζει <code>big.jpg: File too large (max 10 MB)</code>. Το curl εμφανίζει <code>{"ok":false,"error":"too_large","message":"File too large (max 10 MB)"} 413</code>. Το μέγεθος ελέγχεται πριν από τον τύπο, οπότε τα τυχαία bytes δεν φτάνουν ποτέ στον έλεγχο τύπου.</p>
+      <p class="ref">Αναφ.: <code>src/app/api/cms/media/upload/route.ts</code> (<code>MAX_BYTES</code>, <code>MULTIPART_OVERHEAD_BYTES</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-011" data-priority="P3">
+      <h3>Ένα προβληματικό αρχείο σε μια επιλογή δεν σταματά τα υπόλοιπα</h3>
+      <ol class="steps">
+        <li>Διαγράψτε το πλακίδιο <code>small.webp</code> (η MED-022 περιγράφει το παράθυρο διαλόγου). Έπειτα επιλέξτε μονομιάς τα <code>evil.svg</code>, <code>small.png</code> και <code>notes.txt</code> και ανεβάστε τα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το <code>small.webp</code> εμφανίζεται στο πλέγμα. Το κόκκινο κείμενο κατονομάζει και τα δύο αρχεία που απορρίφθηκαν, ενωμένα με <code> · </code>: <code>evil.svg: Unsupported file type. …</code> · <code>notes.txt: Unsupported file type. …</code></p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/MediaLibrary.tsx</code> (<code>onFiles</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-012" data-priority="P2">
+      <h3>Το εκ νέου ανέβασμα της ίδιας εικόνας επαναχρησιμοποιεί το αποθηκευμένο αρχείο</h3>
+      <ol class="steps">
+        <li>Σημειώστε τον αριθμό αρχείων. Ανεβάστε το <code>photo-large-copy.jpg</code> (ίδια bytes με το <code>photo-large.jpg</code>, άλλο όνομα).</li>
+        <li>Εκτελέστε <code>SELECT COUNT(*), MIN(original_name) FROM media_files WHERE hash = (SELECT hash FROM media_files WHERE uuid = '&lt;uuid from MED-003&gt;');</code></li>
+        <li>Εκτελέστε <code>curl -s -o /dev/null -w '%{http_code}\n' -b "cms_session=$S" -F 'file=@photo-large.jpg' "$BASE/api/cms/media/upload"</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Μια γκρι γραμμή κατάστασης γράφει <code>photo-large-copy.jpg was already in the library — the existing file was used.</code> Ο αριθμός δεν αλλάζει και δεν εμφανίζεται νέο πλακίδιο· το υπάρχον πλακίδιο διατηρεί το όνομα <code>photo-large.webp</code> (και όποιο εναλλακτικό κείμενο έχει).</li>
+        <li>SQL: πλήθος 1. Το curl εμφανίζει <code>200</code> (ένα νέο αρχείο απαντά <code>201</code>).</li>
+        <li>Το ανέβασμα δύο διπλοτύπων ταυτόχρονα δίνει <code>2 files were already in the library — the existing files were used: …</code> με τα δύο ονόματα. Ο επιλογέας εμφανίζει την ίδια διατύπωση (CON-039).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/media-upload-notice.ts</code> (<code>duplicateNotice</code>) · <code>src/cms/core/media/service.ts</code> (<code>findMediaByHash</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-013" data-priority="P3">
+      <h3>Τα δεδομένα κάμερας αφαιρούνται και εφαρμόζεται η περιστροφή</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Το <code>exiftool</code> είναι εγκατεστημένο· διαφορετικά σημειώστε Μπλοκαρισμένο.</p>
+      <ol class="steps">
+        <li>Εκτελέστε <code>magick -size 600x400 plasma: gps.jpg &amp;&amp; exiftool -overwrite_original -GPSLatitude=37.97 -GPSLatitudeRef=N -GPSLongitude=23.72 -GPSLongitudeRef=E -Orientation=6 -n gps.jpg</code>.</li>
+        <li>Ανεβάστε το <code>gps.jpg</code>. Αντιγράψτε το uuid του στο <code>G</code>. Εκτελέστε <code>exiftool -gps:all -Orientation .data/uploads/$G</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το πλακίδιο γράφει <code>400×600</code> (σε όρθια θέση). Το exiftool δεν εμφανίζει γραμμές GPS ούτε Orientation.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/media/normalize.ts</code> (<code>rotate()</code>, επανακωδικοποίηση) · docs/dev-guides/06-media-seo-structured-data.md §4.1</p>
+    </article>
+
+    <article class="tc" id="MED-014" data-priority="P3">
+      <h3>Τα ανεβάσματα καταγράφονται στο αρχείο ελέγχου· τα διπλότυπα όχι</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <strong>Audit log</strong> και δείτε τις πιο πρόσφατες εγγραφές.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Μία εγγραφή <em>Uploaded a file</em> για κάθε αρχείο που αποθηκεύτηκε στις παραπάνω περιπτώσεις, η καθεμία με Subject το uuid του αρχείου και λεπτομέρειες <code>originalName</code>, <code>mime</code>, <code>size</code>. Δεν υπάρχει εγγραφή για τα διπλότυπα ανεβάσματα της MED-012 ούτε για τα αρχεία που απορρίφθηκαν.</p>
+      <p class="ref">Αναφ.: <code>src/app/api/cms/media/upload/route.ts</code> (<code>logAudit</code> εκτός αν είναι διπλότυπο) · <code>src/cms/core/audit-labels.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-015" data-priority="P3">
+      <h3>Το endpoint ανεβάσματος απορρίπτει αίτημα browser από άλλη προέλευση (cross-origin)</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s -w ' %{http_code}\n' -b "cms_session=$S" -H 'Origin: https://evil.example' -F 'file=@small.png' "$BASE/api/cms/media/upload"</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>{"ok":false,"error":"forbidden","message":"Cross-origin request rejected."} 403</code>. Δεν αποθηκεύεται τίποτα.</p>
+      <p class="ref">Αναφ.: <code>src/app/api/cms/media/upload/route.ts</code> (πρώτα <code>isSameOrigin</code>) · <code>src/cms/core/api/same-origin.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-library">
+    <h2>Βιβλιοθήκη πολυμέσων: περιήγηση, εναλλακτικό κείμενο, διαγραφή και επιλογέας</h2>
+
+    <article class="tc" id="MED-016" data-priority="P2">
+      <h3>Αναζήτηση με όνομα αρχείου</h3>
+      <ol class="steps">
+        <li>Πληκτρολογήστε <code>PHOTO</code> στο <strong>Search by file name…</strong> και πατήστε Enter.</li>
+        <li>Αναζητήστε το <code>zzz-nothing</code> με το κουμπί <strong>Search</strong>.</li>
+        <li>Πατήστε <strong>Clear</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: μόνο τα πλακίδια <code>photo-…</code>· ο αριθμός γράφει <code>N matching</code> (τα πεζά-κεφαλαία δεν έχουν σημασία). Βήμα 2: <code>No files match “zzz-nothing”.</code> και <code>0 matching</code>. Βήμα 3: το πλαίσιο αναζήτησης αδειάζει, όλα τα αρχεία επιστρέφουν και ο αριθμός γράφει <code>N files</code>. Η πληκτρολόγηση από μόνη της δεν φιλτράρει· το Enter ή το <strong>Search</strong> φιλτράρει.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/MediaLibrary.tsx</code> (<code>runSearch</code>) · <code>src/cms/core/media/service.ts</code> (<code>listMedia</code>, LIKE στο <code>original_name</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-017" data-priority="P2">
+      <h3>«Load more files» μετά τα 200</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Μόνο σε βάση δεδομένων δοκιμών. Οι παρακάτω γραμμές δεν έχουν bytes από πίσω, οπότε οι μικρογραφίες τους είναι σπασμένες· αυτό είναι αναμενόμενο.</p>
+      <ol class="steps">
+        <li>Εκτελέστε το παρακάτω SQL και έπειτα φορτώστε ξανά το <code>/admin/media</code>.</li>
+        <li>Κάντε κύλιση μέχρι το τέλος και πατήστε <strong>Load more files</strong>.</li>
+        <li>Αναζητήστε το <code>qa-bulk-20</code>.</li>
+      </ol>
+<pre><code>INSERT INTO media_files (uuid, original_name, mime, size, width, height, hash, created_at)
+SELECT UUID(), CONCAT('qa-bulk-', n.i, '.webp'), 'image/webp', 100, 10, 10,
+       SHA2(CONCAT('qa-bulk-', n.i), 256), NOW() - INTERVAL 1 DAY - INTERVAL n.i MINUTE
+FROM (SELECT a.d + 10 * b.d + 100 * c.d + 1 AS i
+      FROM (SELECT 0 d UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+            UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) a
+      CROSS JOIN (SELECT 0 d UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+            UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) b
+      CROSS JOIN (SELECT 0 d UNION ALL SELECT 1 UNION ALL SELECT 2) c) n
+WHERE n.i &lt;= 205;</code></pre>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Εισάγονται 205 γραμμές. Η σελίδα ανοίγει με ακριβώς 200 πλακίδια, πρώτα τα δικά σας πραγματικά ανεβάσματα (τα νεότερα πρώτα), και ο αριθμός εμφανίζει το πλήρες σύνολο. Μετά το <strong>Load more files</strong> (το κουμπί γράφει <code>Loading…</code> στο μεταξύ) εμφανίζονται όλα τα αρχεία και το κουμπί εξαφανίζεται. Το βήμα 3 παραθέτει τα <code>qa-bulk-20</code> και <code>qa-bulk-200</code>…<code>qa-bulk-205</code> (7 αποτελέσματα).</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/MediaLibrary.tsx</code> (<code>PAGE_SIZE = 200</code>, <code>loadMore</code>) · <code>src/app/admin/(shell)/media/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MED-018" data-priority="P3">
+      <h3>Μέγεθος σελίδας του API λίστας: 200 εξ ορισμού, 500 το πολύ</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s -b "cms_session=$S" "$BASE/api/cms/media" | jq '{n: (.items|length), page, pageSize, total, pageCount}'</code>.</li>
+        <li>Επαναλάβετε με <code>?limit=500</code>, <code>?limit=501</code>, <code>?limit=50&amp;offset=50</code> και <code>?search=qa-bulk-1</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Προεπιλογή: 200 στοιχεία, <code>pageSize</code> 200, <code>pageCount</code> = σύνολο ÷ 200 στρογγυλεμένο προς τα πάνω.</li>
+        <li><code>limit=500</code>: όλα τα αρχεία έως 500, <code>pageSize</code> 500. <code>limit=501</code>: <code>422</code> με <code>"error":"invalid_input"</code>. <code>limit=50&amp;offset=50</code>: 50 στοιχεία, <code>page</code> 2.</li>
+        <li><code>search=qa-bulk-1</code>: το <code>total</code> μετρά μόνο τις γραμμές που ταιριάζουν (<code>qa-bulk-1</code>, <code>-10</code>…<code>-19</code>, <code>-100</code>…<code>-199</code>: 111).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/media.ts</code> (<code>mediaListQuery</code>, <code>MEDIA_PAGE_MAX</code>) · <code>src/cms/core/media/service.ts</code> (<code>mediaPageLimit</code>) · <code>src/cms/core/api/respond.ts</code> (<code>paginated</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-019" data-priority="P1">
+      <h3>Επεξεργασία του εναλλακτικού κειμένου μιας εικόνας</h3>
+      <ol class="steps">
+        <li>Στο πλακίδιο <code>photo-large.webp</code> πληκτρολογήστε <code>Purple and orange test pattern</code> στο <strong>Alt text</strong>.</li>
+        <li>Πατήστε <strong>Save alt text</strong>. Φορτώστε ξανά τη σελίδα.</li>
+        <li>Εκτελέστε <code>SELECT alt_text FROM media_files WHERE uuid = '&lt;uuid&gt;';</code> και ανοίξτε το <strong>Audit log</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κατά την πληκτρολόγηση η κατάσταση δίπλα στο κουμπί γράφει <code>Unsaved</code> (πορτοκαλί)· το κουμπί είναι απενεργοποιημένο όταν δεν έχει αλλάξει τίποτα. Μετά την αποθήκευση: <code>Saving…</code> και έπειτα <code>Saved</code>. Μετά την επαναφόρτωση το κείμενο παραμένει. Το SQL περιέχει το κείμενο. Αρχείο ελέγχου: <em>Changed a file’s alt text</em> με Subject το uuid και <code>altText</code> στις λεπτομέρειες.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/MediaAltText.tsx</code> (<code>altTextStatus</code>) · <code>src/cms/core/routes/media.ts</code> (<code>mediaUpdateRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-020" data-priority="P3">
+      <h3>Όρια του εναλλακτικού κειμένου και μη έγκυρα id</h3>
+      <ol class="steps">
+        <li>Αντικαταστήστε το εναλλακτικό κείμενο με τρία κενά και αποθηκεύστε. Εκτελέστε το SQL της MED-019.</li>
+        <li>Επικολλήστε 600 χαρακτήρες στο πλαίσιο.</li>
+        <li>Εκτελέστε <code>curl -s -w ' %{http_code}\n' -b "cms_session=$S" -X PATCH -H 'Content-Type: application/json' -d "{\"altText\":\"$(printf 'a%.0s' $(seq 513))\"}" "$BASE/api/cms/media/$U"</code>.</li>
+        <li>Στείλτε <code>-d '{"altText":"x"}'</code> στο <code>/api/cms/media/00000000-0000-4000-8000-000000000000</code> και στο <code>/api/cms/media/not-a-uuid</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: αποθηκεύεται· στο SQL το <code>alt_text</code> είναι NULL, όχι κενά.</li>
+        <li>Βήμα 2: το πλαίσιο σταματά στους 512 χαρακτήρες.</li>
+        <li>Βήμα 3: <code>422</code> <code>"error":"invalid_input"</code>. Βήμα 4: <code>404</code> <code>{"ok":false,"error":"not_found","message":"No such media file."}</code> και <code>400</code> <code>"message":"Invalid media id."</code>.</li>
+        <li>Επαναφέρετε το εναλλακτικό κείμενο της MED-019.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/media.ts</code> · <code>src/cms/core/api/params.ts</code> (<code>uuidParam</code>) · <code>src/cms/admin/MediaAltText.tsx</code> (<code>ALT_TEXT_MAX = 512</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-021" data-priority="P2">
+      <h3>Πού χρησιμοποιείται και πού όχι το εναλλακτικό κείμενο της βιβλιοθήκης</h3>
+      <ol class="steps">
+        <li>Στο QA SEO Page πατήστε <strong>Choose image…</strong> κάτω από το <strong>Hero image</strong>. Δείτε το πλακίδιο <code>photo-large.webp</code> στον επιλογέα, επιλέξτε το, <strong>Save EL</strong>.</li>
+        <li>Εκτελέστε <code>curl -s -A Googlebot "$BASE/qa-seo" | grep -o '&lt;img[^&gt;]*alt="[^"]*"' | head -3</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το πλακίδιο του επιλογέα εμφανίζει <code>Alt: Purple and orange test pattern</code> (τα πλακίδια χωρίς εναλλακτικό κείμενο εμφανίζουν <em>No alt text</em>). Στη δημόσια σελίδα το <code>&lt;img&gt;</code> του hero έχει <code>alt="QA SEO Page"</code> (τον τίτλο της σελίδας), όχι το εναλλακτικό κείμενο της βιβλιοθήκης. <strong>Γνωστό κενό:</strong> η οθόνη Media αναφέρει ότι το εναλλακτικό κείμενο “Applies wherever this image appears without alt text of its own”, αλλά κανένα δημόσιο πρότυπο δεν διαβάζει ακόμη το <code>media_files.alt_text</code>· το χρησιμοποιούν μόνο ο επιλογέας και η ροή του Product Manager. Σημειώστε Επιτυχία αν η συμπεριφορά ταιριάζει, και κρατήστε το κενό στη λίστα εκκρεμοτήτων.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/fields/MediaPicker.tsx</code> (<code>MediaPickerTile</code>) · <code>src/app/[locale]/[slug]/page.tsx</code> (<code>alt={title}</code>) · docs/dev-guides/06-media-seo-structured-data.md §4.3</p>
+    </article>
+
+    <article class="tc" id="MED-022" data-priority="P2">
+      <h3>Διαγραφή αρχείου</h3>
+      <ol class="steps">
+        <li>Σε ένα από τα πλακίδια <code>pic.webp</code> αντιγράψτε το uuid του στο <code>D</code>, πατήστε <strong>delete</strong> και διαβάστε το παράθυρο διαλόγου. Πατήστε <strong>Cancel</strong>, έπειτα ξανά <strong>delete</strong> και επιβεβαιώστε με <strong>Delete</strong>.</li>
+        <li>Εκτελέστε <code>ls .data/uploads/$D*</code>, <code>R /api/cms/media/file/$D</code> και <code>SELECT COUNT(*) FROM media_files WHERE uuid = '&lt;uuid&gt;';</code></li>
+        <li>Ανοίξτε το <strong>Audit log</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τίτλος διαλόγου <code>Delete this file?</code>, κείμενο <code>Any content still pointing at it will lose the image. This cannot be undone.</code>, κουμπιά <strong>Cancel</strong> και <strong>Delete</strong>. Το Cancel διατηρεί το πλακίδιο. Μετά το Delete το πλακίδιο εξαφανίζεται και ο αριθμός μειώνεται κατά ένα. Έχουν διαγραφεί και το WebP και το αρχείο <code>.avif</code> (<code>ls</code>: no such file), το URL απαντά <code>404</code>, το πλήθος είναι 0. Αρχείο ελέγχου: <em>Deleted a file</em> με το uuid.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/MediaLibrary.tsx</code> (<code>remove</code>) · <code>src/cms/core/media/service.ts</code> (<code>deleteMedia</code>) · <code>src/cms/admin/ui/ConfirmDialog.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MED-023" data-priority="P3">
+      <h3>Η διαγραφή εικόνας που χρησιμοποιείται δεν αποτρέπεται (γνωστό κενό)</h3>
+      <ol class="steps">
+        <li>Ανεβάστε ξανά το <code>small.png</code> αν χρειάζεται, ορίστε το ως Hero image του QA SEO Page, <strong>Save EL</strong>, και ανοίξτε το <code>/qa-seo</code> χωρίς σύνδεση.</li>
+        <li>Στο Media διαγράψτε εκείνο το πλακίδιο <code>small.webp</code>. Φορτώστε ξανά το <code>/qa-seo</code>.</li>
+        <li>Ανοίξτε το QA SEO Page στον επεξεργαστή.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο (γνωστό κενό):</span> Το παράθυρο διαγραφής δίνει μόνο τη γενική προειδοποίηση· τίποτα δεν αναφέρει ότι το αρχείο χρησιμοποιείται, και η διαγραφή επιτυγχάνει. Η δημόσια σελίδα εμφανίζει σπασμένη εικόνα, και το πεδίο Hero image του επεξεργαστή εμφανίζει σπασμένη μικρογραφία με το παλιό uuid. Τίποτα δεν καταγράφει πού χρησιμοποιείται ένα αρχείο (το <code>media_usages</code> δεν χρησιμοποιείται). Στη συνέχεια αδειάστε το πεδίο και αποθηκεύστε. Σημειώστε Επιτυχία αν συμπεριφέρεται έτσι, και κρατήστε το κενό στη λίστα εκκρεμοτήτων.</p>
+      <p class="ref">Αναφ.: docs/dev-guides/06-media-seo-structured-data.md §10 (“Deleting media does not check usage”) · <code>src/cms/db/adapters/mysql/schema/media.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-024" data-priority="P3">
+      <h3>Ο επιλογέας εμφανίζει μόνο τα 200 νεότερα και δέχεται PDF</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Οι 205 μαζικές γραμμές της MED-017 υπάρχουν ακόμη.</p>
+      <ol class="steps">
+        <li>Στο QA SEO Page ανοίξτε το <strong>Choose image…</strong> κάτω από το <strong>Hero image</strong> και κάντε κύλιση μέχρι το τέλος του πλέγματος.</li>
+        <li>Επιλέξτε το πλακίδιο <code>doc.pdf</code>, <strong>Save EL</strong>, και ανοίξτε το <code>/qa-seo</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: ακριβώς 200 πλακίδια, χωρίς πλαίσιο αναζήτησης και χωρίς «load more», οπότε τα παλαιότερα αρχεία δεν είναι προσβάσιμα από τον επιλογέα. Βήμα 2: η αποθήκευση επιτυγχάνει και η δημόσια σελίδα εμφανίζει σπασμένη εικόνα, επειδή ένα πεδίο εικόνας δέχεται οποιοδήποτε αρχείο της βιβλιοθήκης. Καταγράψτε και τα δύο ως παρατηρήσεις (κενά ευχρηστίας, όχι εμπόδια). Αδειάστε το πεδίο και αποθηκεύστε ξανά.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/fields/MediaPicker.tsx</code> (<code>listMedia({ limit: 200 })</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-025" data-priority="P3">
+      <h3>Αφαίρεση των μαζικών γραμμών</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>DELETE FROM media_files WHERE original_name LIKE 'qa-bulk-%';</code> και φορτώστε ξανά το Media.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Διαγράφονται 205 γραμμές· ο αριθμός μειώνεται κατά 205 και το <strong>Load more files</strong> εξαφανίζεται.</p>
+      <p class="ref">Αναφ.: <code>src/cms/db/adapters/mysql/schema/media.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-serve">
+    <h2>Σερβίρισμα αρχείων</h2>
+    <p class="intro">Κάθε αρχείο έχει ένα δημόσιο URL, το <code>/api/cms/media/file/&lt;uuid&gt;</code>, που διαβάζεται χωρίς σύνδεση. Ορίστε το <code>U</code> στο uuid του <code>photo-large.webp</code>.</p>
+
+    <article class="tc" id="MED-026" data-priority="P1">
+      <h3>Δημόσιο URL αρχείου και οι κεφαλίδες cache του</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s -D - -o /dev/null "$BASE/api/cms/media/file/$U"</code> (χωρίς cookie).</li>
+      </ol>
+      <ul class="exp">
+        <li>Κατάσταση <code>200</code>, <code>Content-Type: image/webp</code>, <code>Cache-Control: public, max-age=31536000, immutable</code>, <code>Vary: Accept</code>, <code>X-Content-Type-Options: nosniff</code>, <code>X-Frame-Options: DENY</code>.</li>
+        <li>Το <code>Content-Security-Policy</code> περιέχει <code>sandbox</code> (η διαδρομή ορίζει <code>default-src 'none'; sandbox; frame-ancestors 'none'</code>· αν εμφανίζεται αντί γι' αυτό η πολιτική όλου του ιστοτόπου, καταγράψτε την τιμή).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/api/cms/media/file/[uuid]/route.ts</code> · <code>next.config.ts</code> (<code>headers()</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-027" data-priority="P2">
+      <h3>Το AVIF σερβίρεται μόνο σε clients που το ζητούν ρητά</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>for a in 'image/avif,image/webp,*/*' 'image/*' 'image/avif;q=0,image/webp' ''; do curl -s -D - -o /dev/null -H "Accept: $a" "$BASE/api/cms/media/file/$U" | grep -i '^content-type'; done</code></li>
+        <li>Επαναλάβετε την πρώτη τιμή Accept για το uuid του <code>anim.webp</code> (<code>$A</code>).</li>
+        <li>Ανοίξτε το URL του <code>$U</code> στο Chrome και ελέγξτε τον τύπο της απάντησης στα εργαλεία προγραμματιστή → Network.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 1 εμφανίζει <code>image/avif</code> και έπειτα τρεις φορές <code>image/webp</code> (ένας χαρακτήρας μπαλαντέρ ή το <code>q=0</code> δεν μετράει). Βήμα 2: <code>image/webp</code> (τα animations δεν έχουν AVIF). Βήμα 3: το Chrome λαμβάνει <code>avif</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/media/variants.ts</code> (<code>acceptsAvif</code>, <code>readForAccept</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-028" data-priority="P3">
+      <h3>Άγνωστα αρχεία, PDF και γραμμές με απρόσμενο τύπο</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s -w ' %{http_code}\n' "$BASE/api/cms/media/file/00000000-0000-4000-8000-000000000000"</code> και το ίδιο με το <code>../../etc/passwd</code> κωδικοποιημένο για URL ως <code>..%2F..%2Fetc%2Fpasswd</code>.</li>
+        <li>Εκτελέστε <code>curl -s -D - -o /dev/null "$BASE/api/cms/media/file/$P"</code> (το PDF).</li>
+        <li>Εκτελέστε <code>UPDATE media_files SET mime = 'text/html' WHERE uuid = '&lt;PDF uuid&gt;';</code>, επαναλάβετε το βήμα 2 και έπειτα επαναφέρετε το mime σε <code>application/pdf</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>Not found 404</code> και τις δύο φορές. Βήμα 2: <code>Content-Type: application/pdf</code> και καμία κεφαλίδα <code>Vary</code>. Βήμα 3: <code>Content-Type: application/octet-stream</code> με <code>Content-Disposition: attachment</code>, οπότε ένας browser το κατεβάζει αντί να το εμφανίσει.</p>
+      <p class="ref">Αναφ.: <code>src/app/api/cms/media/file/[uuid]/route.ts</code> (<code>isAllowedMime</code>) · <code>src/cms/core/media/storage.ts</code> (περιορισμός διαδρομής)</p>
+    </article>
+
+    <article class="tc" id="MED-029" data-priority="P3">
+      <h3>Οι εικόνες στις σελίδες περνούν από τον βελτιστοποιητή εικόνων του Next.js</h3>
+      <ol class="steps">
+        <li>Ορίστε το <code>photo-large.webp</code> ως Hero image του QA SEO Page και αποθηκεύστε. Σε παράθυρο χωρίς σύνδεση ανοίξτε το <code>/qa-seo</code>, εργαλεία προγραμματιστή → Network → Img, και φορτώστε ξανά.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το αίτημα του hero είναι <code>/_next/image?url=%2Fapi%2Fcms%2Fmedia%2Ffile%2F&lt;uuid&gt;&amp;w=…&amp;q=75</code>, κατάσταση 200, τύπος <code>avif</code> (Chrome) ή <code>webp</code>. Καταγράψτε το <code>Cache-Control</code> του. Κανένα αίτημα προς τη διαδρομή αρχείων δεν αποτυγχάνει.</p>
+      <p class="ref">Αναφ.: <code>next.config.ts</code> (<code>images.formats</code>) · <code>src/app/[locale]/[slug]/page.tsx</code> (<code>next/image</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-brand">
+    <h2>Ταυτότητα (branding)</h2>
+    <p class="intro">Ανοίξτε τις <strong>Settings</strong> → <strong>Branding</strong> (<code>/admin/settings?tab=Branding</code>). Έχει τις ενότητες <strong>Identity</strong>, <strong>Logo and images</strong> και <strong>Colours</strong> και αποθηκεύεται με το <strong>Save branding</strong>. Σημειώστε πρώτα τις τρέχουσες τιμές ώστε να μπορείτε να τις επαναφέρετε.</p>
+
+    <article class="tc" id="MED-030" data-priority="P2">
+      <h3>Το όνομα και το σύνθημα του ιστοτόπου φτάνουν στον ιστότοπο</h3>
+      <ol class="steps">
+        <li>Ορίστε <strong>Site name</strong> <code>QA Brand</code> και <strong>Tagline</strong> <code>Tested daily</code>, αφαιρέστε όποιο <strong>Logo</strong> υπάρχει, πατήστε <strong>Save branding</strong>.</li>
+        <li>Ανοίξτε το <code>/</code> χωρίς σύνδεση. Εκτελέστε <code>H /qa-seo</code>, <code>H /page-not-found</code> και <code>LD /qa-seo</code>.</li>
+        <li>Εκτελέστε <code>SELECT value FROM site_settings WHERE `key` = 'brand.identity';</code></li>
+      </ol>
+      <ul class="exp">
+        <li>Εμφανίζεται το <code>Saved.</code> Η κεφαλίδα εμφανίζει το κείμενο <code>QA Brand</code> εκεί όπου θα ήταν το λογότυπο.</li>
+        <li>Το <code>og:site_name</code> είναι <code>QA Brand</code>. Ο τίτλος της σελίδας «δεν βρέθηκε» τελειώνει σε <code>| QA Brand</code>. Στο πρώτο μπλοκ JSON-LD το <code>name</code> των Organization και WebSite είναι <code>QA Brand</code> και το Organization έχει <code>"slogan":"Tested daily"</code>.</li>
+        <li>SQL: JSON με <code>"name":"QA Brand"</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/BrandSettings.tsx</code> · <code>src/cms/core/brand/index.ts</code> (<code>getBrand</code>) · <code>src/lib/seo/metadata.ts</code> (<code>siteMetadata</code>) · <code>src/lib/seo/schemas.ts</code> (<code>organizationSchema</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-031" data-priority="P2">
+      <h3>Λογότυπο, σκούρο λογότυπο και favicon</h3>
+      <ol class="steps">
+        <li>Κάτω από τα <strong>Logo</strong>, <strong>Logo on dark backgrounds</strong> και <strong>Favicon</strong> πατήστε <strong>Choose image…</strong> και επιλέξτε <code>small.webp</code> (λογότυπο), <code>pic.webp</code> (σκούρο λογότυπο) και <code>anim.webp</code> (favicon). <strong>Save branding</strong>.</li>
+        <li>Ανοίξτε το <code>/</code> χωρίς σύνδεση. Εξετάστε το λογότυπο της κεφαλίδας και το λογότυπο του υποσέλιδου. Εκτελέστε <code>H /</code> και <code>LD /</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κεφαλίδα: <code>&lt;img src="/api/cms/media/file/&lt;logo uuid&gt;" alt="QA Brand"&gt;</code>. Υποσέλιδο: το σκούρο λογότυπο, με το ίδιο alt. Head: <code>&lt;link rel="icon" href="/api/cms/media/file/&lt;favicon uuid&gt;"&gt;</code> (χωρίς favicon είναι <code>/favicon.svg</code>). Το <code>logo</code> του Organization στο JSON-LD είναι το απόλυτο URL <code>http://localhost:3002/api/cms/media/file/&lt;logo uuid&gt;</code>. Το διαχειριστικό συνεχίζει να λειτουργεί με την ίδια ταυτότητα.</p>
+      <p class="ref">Αναφ.: <code>src/components/layout/Header.tsx</code> · <code>src/components/layout/Footer.tsx</code> · <code>src/lib/seo/metadata.ts</code> (<code>icons</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-032" data-priority="P2">
+      <h3>Η προεπιλεγμένη εικόνα κοινοποίησης συμπληρώνει τις σελίδες που δεν έχουν δική τους</h3>
+      <ol class="steps">
+        <li>Ορίστε το <strong>Default share image</strong> σε <code>photo-portrait.webp</code> και αποθηκεύστε. Στο QA SEO Page αδειάστε το Hero image και το SEO <strong>Social image</strong>, <strong>Save EL</strong>.</li>
+        <li>Εκτελέστε <code>H /qa-seo | grep -E 'og:image|twitter:image'</code> και <code>H /contact | grep og:image</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και οι δύο σελίδες έχουν <code>og:image</code> και <code>twitter:image</code> = <code>http://localhost:3002/api/cms/media/file/&lt;portrait uuid&gt;</code> (απόλυτο).</p>
+      <p class="ref">Αναφ.: <code>src/lib/seo/metadata.ts</code> (εναλλακτική τιμή <code>brand.ogImageUrl</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-033" data-priority="P2">
+      <h3>Χρώματα: αποθηκευμένη παλέτα, προειδοποίηση αντίθεσης, επαναφορά</h3>
+      <ol class="steps">
+        <li>Στα <strong>Colours</strong> ορίστε το <strong>Accent</strong> σε <code>#c0392b</code>. Παρακολουθήστε την <strong>Preview</strong>. Πατήστε <strong>Save branding</strong>.</li>
+        <li>Ανοίξτε το <code>/</code> χωρίς σύνδεση και εκτελέστε <code>curl -s "$BASE/" | grep -o '&lt;style id="brand-palette"&gt;[^&lt;]*'</code>.</li>
+        <li>Ορίστε το <strong>Main text</strong> σε <code>#f0f0f0</code>.</li>
+        <li>Πατήστε <strong>Reset colours to the neutral defaults</strong> και έπειτα <strong>Save branding</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Η προεπισκόπηση αλλάζει καθώς επεξεργάζεστε· ο ιστότοπος αλλάζει μόνο μετά την αποθήκευση, στην επόμενη επαναφόρτωση. Η ετικέτα style περιέχει <code>--color-warm-gold:#c0392b;</code>, και τα χρυσά κουμπιά του ιστοτόπου γίνονται κόκκινα.</li>
+        <li>Βήμα 3: ένα πορτοκαλί πλαίσιο <code>Some text may be hard to read:</code> παραθέτει <code>Main text on Page background is …:1 — below the 4.5:1 needed to read comfortably.</code> και το ίδιο για το <code>Raised surface</code>. Η αποθήκευση εξακολουθεί να είναι δυνατή.</li>
+        <li>Βήμα 4: τα δείγματα χρωμάτων επιστρέφουν στις προεπιλογές και ο ιστότοπος χάνει το κόκκινο χρώμα έμφασης μετά την αποθήκευση.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/BrandSettings.tsx</code> (<code>contrastProblems</code>) · <code>src/cms/core/brand/policy.ts</code> (<code>PALETTE_TOKENS</code>, <code>paletteCss</code>) · <code>src/cms/core/brand/BrandStyle.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MED-034" data-priority="P3">
+      <h3>Το λογότυπο και τα χρώματα φτάνουν στα email</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Η εξερχόμενη αλληλογραφία είναι ρυθμισμένη (ρυθμίσεις Azure Graph, βλ. λίστα ελέγχου 07) και έχει οριστεί Logo· διαφορετικά σημειώστε Μπλοκαρισμένο.</p>
+      <ol class="steps">
+        <li>Υποβάλετε τη φόρμα επικοινωνίας στο <code>/contact</code> ώστε να σταλεί email ειδοποίησης στη διεύθυνση των <strong>Settings</strong> → <strong>Notifications</strong>.</li>
+        <li>Ανοίξτε το email και δείτε τον πηγαίο κώδικά του.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το σώμα ξεκινά με το λογότυπο, <code>&lt;img src="http://localhost:3002/api/cms/media/file/&lt;logo uuid&gt;" alt="QA Brand" height="40" …&gt;</code> (απόλυτο URL), πάνω από ένα λεπτό περίγραμμα. Τα έγχρωμα στοιχεία χρησιμοποιούν την αποθηκευμένη παλέτα. Χωρίς λογότυπο το email δεν έχει κεφαλίδα εικόνας και παραδίδεται κανονικά.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/email/brand.ts</code> (<code>applyEmailBrand</code>) · <code>src/cms/core/brand/index.ts</code> (<code>getEmailBrand</code>) · <code>src/cms/core/email/graph.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-panel">
+    <h2>Πάνελ SEO και το head της σελίδας</h2>
+    <p class="intro">Κάθε επεξεργαστής σελίδας έχει μια ενότητα <strong>SEO &amp; AEO</strong> με τις καρτέλες <strong>General</strong>, <strong>Social</strong>, <strong>AEO</strong> και <strong>Advanced</strong> (η συμπεριφορά των καρτελών με το πληκτρολόγιο είναι η ADM-043). Οι τιμές είναι ανά γλώσσα: αποθηκεύστε κάθε γλώσσα με το δικό της <strong>Save EL</strong> / <strong>Save EN</strong>. Χρησιμοποιήστε το QA SEO Page (<code>/qa-seo</code>, <code>/en/qa-seo</code>). Πριν από αυτή την ενότητα αδειάστε το Default share image αν θέλετε να δείτε σελίδες χωρίς καμία εικόνα.</p>
+
+    <article class="tc" id="MED-035" data-priority="P1">
+      <h3>Ετικέτες head μιας σελίδας χωρίς τιμές SEO</h3>
+      <ol class="steps">
+        <li>Βεβαιωθείτε ότι το QA SEO Page δεν έχει τίποτα συμπληρωμένο σε καμία καρτέλα SEO. Εκτελέστε <code>H /qa-seo</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li><code>&lt;title&gt;QA SEO Page&lt;/title&gt;</code> (ο τίτλος της σελίδας, χωρίς κατάληξη με το όνομα του ιστοτόπου).</li>
+        <li><code>&lt;link rel="canonical" href="http://localhost:3002/qa-seo"&gt;</code>.</li>
+        <li>Τρία alternates: <code>el</code> → <code>http://localhost:3002/qa-seo</code>, <code>en</code> → <code>http://localhost:3002/en/qa-seo</code>, <code>x-default</code> → <code>http://localhost:3002/en/qa-seo</code>.</li>
+        <li><code>og:title</code> <code>QA SEO Page</code>, <code>og:url</code> το κανονικό URL (canonical), <code>og:site_name</code> το όνομα της ταυτότητας, <code>og:locale</code> <code>el_GR</code>, <code>og:locale:alternate</code> <code>en_US</code>, <code>og:type</code> <code>website</code>. <code>twitter:card</code> <code>summary_large_image</code> και <code>twitter:title</code> <code>QA SEO Page</code>.</li>
+        <li><code>&lt;meta name="robots" content="index, follow"&gt;</code>. Κάθε ετικέτα εμφανίζεται μία φορά.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/lib/seo/metadata.ts</code> (<code>localizedMetadata</code>) · <code>src/app/[locale]/[slug]/page.tsx</code> (<code>generateMetadata</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-036" data-priority="P2">
+      <h3>Τίτλος SEO και περιγραφή meta, με τους μετρητές τους</h3>
+      <ol class="steps">
+        <li>Στην καρτέλα <strong>General</strong> πληκτρολογήστε <code>Short</code> στο <strong>SEO title</strong>· έπειτα αντικαταστήστε το με 70 χαρακτήρες· έπειτα με <code>QA SEO title for testing</code>.</li>
+        <li>Πληκτρολογήστε 40 χαρακτήρες στο <strong>Meta description</strong> και έπειτα <code>A meta description that is long enough to sit inside the recommended range of characters.</code></li>
+        <li><strong>Save EL</strong>. Εκτελέστε <code>H /qa-seo</code> και <code>H /en/qa-seo</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Ο μετρητής κάτω από το SEO title γράφει <code>5 / 60 — a little short</code> (πορτοκαλί), έπειτα <code>70 / 60 — will be cut off</code> (πορτοκαλί), έπειτα <code>24 / 60</code> (γκρι). Meta description: <code>40 / 160 — a little short</code> και έπειτα γκρι αριθμός.</li>
+        <li><code>/qa-seo</code>: <code>&lt;title&gt;QA SEO title for testing&lt;/title&gt;</code>, <code>&lt;meta name="description"&gt;</code> με το κείμενο, και τα <code>og:title</code>, <code>og:description</code>, <code>twitter:title</code>, <code>twitter:description</code> ίσα με αυτά.</li>
+        <li>Το <code>/en/qa-seo</code> εμφανίζει ακόμη <code>QA SEO Page EN</code>: οι τιμές είναι ανά γλώσσα.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/seo/fields.ts</code> (μετρητής <code>seoTitle</code> 10–60, <code>metaDescription</code> 50–160) · <code>src/cms/admin/ui/CharCounter.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MED-037" data-priority="P2">
+      <h3>Τίτλος, περιγραφή, εικόνα κοινοποίησης και κάρτα Twitter</h3>
+      <ol class="steps">
+        <li>Στην καρτέλα <strong>Social</strong> συμπληρώστε <strong>Social title</strong> <code>QA share title</code>, <strong>Social description</strong> <code>QA share text</code>, επιλέξτε <code>photo-large.webp</code> ως <strong>Social image</strong> και ορίστε το <strong>Twitter card</strong> σε <code>Small thumbnail</code>. <strong>Save EL</strong>.</li>
+        <li>Εκτελέστε <code>H /qa-seo</code>.</li>
+        <li>Αδειάστε το Social image, ορίστε αντί γι' αυτό ένα Hero image, αποθηκεύστε και επαναλάβετε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>og:title</code> και <code>twitter:title</code> <code>QA share title</code>· <code>og:description</code> και <code>twitter:description</code> <code>QA share text</code>· το <code>&lt;title&gt;</code> παραμένει ο τίτλος SEO. Τα <code>og:image</code> και <code>twitter:image</code> είναι <code>http://localhost:3002/api/cms/media/file/&lt;uuid&gt;</code>· το <code>twitter:card</code> είναι <code>summary</code>. Βήμα 3: η εικόνα επιστρέφει στο URL του Hero image.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/seo/fields.ts</code> (καρτέλα social) · <code>src/cms/core/seo/document.ts</code> (<code>documentSeo</code>) · <code>src/app/[locale]/[slug]/page.tsx</code> (<code>ogUuid</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-038" data-priority="P2">
+      <h3>Οι ετικέτες head της αγγλικής έκδοσης</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>H /en/qa-seo</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>&lt;title&gt;QA SEO Page EN&lt;/title&gt;</code>, κανονικό URL (canonical) <code>http://localhost:3002/en/qa-seo</code>, τα ίδια τρία alternates με τη MED-035 (el, en, x-default), <code>og:locale</code> <code>en_US</code> με <code>og:locale:alternate</code> <code>el_GR</code>, <code>og:url</code> το κανονικό URL της EN. Δεν διαρρέει καμία τιμή social της EL.</p>
+      <p class="ref">Αναφ.: <code>src/lib/seo/metadata.ts</code> (<code>localeRelPath</code>, <code>OG_LOCALE</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-039" data-priority="P2">
+      <h3>Το hreflang ακολουθεί τις δημόσιες γλώσσες</h3>
+      <ol class="steps">
+        <li>Στις <strong>Settings</strong> → <strong>Languages</strong> αποεπιλέξτε το <strong>Public</strong> για την EN, <strong>Save settings</strong>.</li>
+        <li>Εκτελέστε <code>H /qa-seo | grep alternate</code> και <code>curl -s "$BASE/sitemap.xml" | grep -c '/en/'</code>.</li>
+        <li>Επιλέξτε ξανά το Public για την EN και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 2: μόνο δύο alternates, <code>el</code> → <code>http://localhost:3002/qa-seo</code> και <code>x-default</code> → <code>http://localhost:3002/qa-seo</code>· κανένα <code>og:locale:alternate</code>. Ο αριθμός στο sitemap είναι <code>0</code>. Μετά το βήμα 3 τα alternates <code>en</code> επιστρέφουν.</p>
+      <p class="ref">Αναφ.: <code>src/lib/seo/metadata.ts</code> (<code>getLocaleSettings</code>, κανόνας x-default) · <code>src/app/sitemap.ts</code> (ίδιος κανόνας)</p>
+    </article>
+
+    <article class="tc" id="MED-040" data-priority="P2">
+      <h3>Ορατότητα στις μηχανές αναζήτησης (robots)</h3>
+      <ol class="steps">
+        <li>Στην καρτέλα <strong>Advanced</strong> ανοίξτε το <strong>Search engine visibility</strong> και διαβάστε τις επιλογές. Επιλέξτε <code>No index, follow</code>, <strong>Save EL</strong>.</li>
+        <li>Εκτελέστε <code>H /qa-seo | grep robots</code>, <code>H /en/qa-seo | grep robots</code> και <code>curl -s "$BASE/sitemap.xml" | grep -o '&lt;loc&gt;[^&lt;]*qa-seo&lt;/loc&gt;'</code>.</li>
+        <li>Επιλέξτε <code>No index, no follow</code>, αποθηκεύστε και επαναλάβετε το βήμα 2. Εκτελέστε <code>SELECT locale, noindex, nofollow FROM documents WHERE type = 'page' AND slug = 'qa-seo';</code></li>
+        <li>Επαναφέρετε σε <code>Index, follow (default)</code> και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Επιλογές: <code>Index, follow (default)</code>, <code>No index, follow</code>, <code>Index, no follow</code>, <code>No index, no follow</code>. Βήμα 2: η EL έχει <code>content="noindex, follow"</code>, η EN ακόμη <code>index, follow</code>. Το sitemap θα έπρεπε να παραθέτει μόνο το <code>http://localhost:3002/en/qa-seo</code>. Σύμφωνα με τον τρέχοντα κώδικα, ένα slug παρατίθεται σε κάθε γλώσσα μόλις μία γλώσσα είναι indexable, οπότε το <code>http://localhost:3002/qa-seo</code> (noindex) πιθανότατα παρατίθεται ακόμη: αν ναι, σημειώστε Αποτυχία. Βήμα 3: <code>noindex, nofollow</code>· SQL EL 1/1, EN 0/0. Η ίδια η σελίδα εξακολουθεί να απαντά <code>200</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/seo/fields.ts</code> (<code>ROBOTS_OPTIONS</code>, <code>robotsColumns</code>) · <code>src/cms/core/seo/document.ts</code> (<code>seoRestrictsRobots</code>) · <code>src/app/sitemap.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-041" data-priority="P2">
+      <h3>Το “List in the sitemap” αφαιρεί μια σελίδα μόνο από το sitemap.xml</h3>
+      <ol class="steps">
+        <li>Αποεπιλέξτε το <strong>List in the sitemap</strong> στην καρτέλα EL και στην καρτέλα EN (αποθηκεύστε την καθεμία).</li>
+        <li>Εκτελέστε <code>curl -s "$BASE/sitemap.xml" | grep -c 'qa-seo'</code> και <code>H /qa-seo | grep robots</code>.</li>
+        <li>Επιλέξτε ξανά και τα δύο και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 2: <code>0</code>· το robots παραμένει <code>index, follow</code>· η σελίδα απαντά 200. Μετά το βήμα 3 η σελίδα παρατίθεται ξανά (εγγραφές EL και EN).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/seo/fields.ts</code> (<code>includeInSitemap</code>) · <code>src/app/sitemap.ts</code> (<code>documentRoutes</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-042" data-priority="P2">
+      <h3>Παράκαμψη του κανονικού URL (canonical)</h3>
+      <ol class="steps">
+        <li>Στην καρτέλα <strong>Advanced</strong> ορίστε το <strong>Canonical URL</strong> σε <code>/qa-original</code> και αποθηκεύστε. Εκτελέστε <code>H /qa-seo | grep -E 'canonical|og:url'</code>.</li>
+        <li>Ορίστε το σε <code>https://example.com/original</code>, αποθηκεύστε και επαναλάβετε.</li>
+        <li>Εκτελέστε <code>SELECT canonical_path, JSON_UNQUOTE(JSON_EXTRACT(data, '$.seo.canonicalUrl')) FROM documents WHERE type = 'page' AND slug = 'qa-seo' AND locale = 'el';</code> και <code>R /qa-seo</code>.</li>
+        <li>Αδειάστε το πεδίο και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: canonical και <code>og:url</code> <code>http://localhost:3002/qa-original</code>. Βήμα 2: <code>https://example.com/original</code>. Βήμα 3: το <code>canonical_path</code> παραμένει <code>/qa-seo</code> (η διεύθυνση δρομολόγησης δεν είναι η παράκαμψη του canonical) και η σελίδα εξακολουθεί να απαντά 200. Τα alternates hreflang δεν αλλάζουν.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/seo/fields.ts</code> (<code>canonicalUrl</code>, αποθήκευση στο data) · <code>src/lib/seo/metadata.ts</code> (<code>effectiveCanonical</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-043" data-priority="P3">
+      <h3>Το Canonical URL του επεξεργαστή δεν έχει έλεγχο μορφής</h3>
+      <ol class="steps">
+        <li>Ορίστε το <strong>Canonical URL</strong> σε <code>//evil.example/x</code> και αποθηκεύστε. Εκτελέστε <code>H /qa-seo | grep canonical</code>.</li>
+        <li>Ορίστε το σε <code>javascript:alert(1)</code>, αποθηκεύστε και επαναλάβετε.</li>
+        <li>Αδειάστε το πεδίο και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ο επεξεργαστής σελίδων θα έπρεπε να απορρίπτει και τα δύο, όπως κάνει η φόρμα παράκαμψης της οθόνης SEO (MED-070). Σύμφωνα με τον τρέχοντα κώδικα το πεδίο είναι απλό κείμενο: και οι δύο αποθηκεύσεις επιτυγχάνουν. Καταγράψτε την ετικέτα canonical που εμφανίζεται σε κάθε περίπτωση. Αν η σελίδα δημοσιεύει canonical εκτός ιστοτόπου (<code>evil.example</code>) ή τιμή <code>javascript:</code>, σημειώστε Αποτυχία.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/seo/fields.ts</code> (<code>f.text('canonicalUrl')</code>) · <code>src/cms/core/routes/seo.ts</code> (<code>publishableUrl</code>, χρησιμοποιείται μόνο από τη φόρμα παράκαμψης)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-redirects">
+    <h2>Οθόνη SEO: ανακατευθύνσεις</h2>
+    <p class="intro">Ανοίξτε το <strong>SEO</strong> στο πλευρικό μενού (<code>/admin/seo</code>). Η φόρμα <strong>Redirects</strong> έχει τα <strong>Source</strong>, <strong>Target</strong>, <strong>Status code</strong>, μια λίστα επιλογής είδους (<code>literal</code>, <code>wildcard</code>, <code>regex</code>) και το <strong>Add</strong>. Οι ανακατευθύνσεις εφαρμόζονται στην πλήρη δημόσια διαδρομή, μαζί με το πρόθεμα γλώσσας, πριν ο ιστότοπος χειριστεί το αίτημα. Δεν υπάρχει μαζική εισαγωγή: οι κανόνες προστίθενται ένας ένας. Οι αυτόματες ανακατευθύνσεις λόγω αλλαγής slug είναι οι CON-016 έως CON-022.</p>
+
+    <article class="tc" id="MED-044" data-priority="P1">
+      <h3>Δημιουργία ανακατεύθυνσης 301 και ακολούθησή της</h3>
+      <ol class="steps">
+        <li>Source <code>/qa-old</code>, Target <code>/qa-seo</code>, Status code <code>301 — permanent</code>, είδος <code>literal</code>, πατήστε <strong>Add</strong>.</li>
+        <li>Εκτελέστε <code>R /qa-old</code> τρεις φορές. Φορτώστε ξανά την οθόνη SEO.</li>
+        <li>Εκτελέστε <code>SELECT source, target, status_code, kind, active, hits, reason FROM seo_redirects WHERE source = '/qa-old';</code> και ανοίξτε το <strong>Audit log</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η φόρμα αδειάζει και εμφανίζεται μια γραμμή: <code>/qa-old → /qa-seo</code>, Code <code>301</code>, Kind <code>literal</code>, Active <code>active</code>. Το curl εμφανίζει <code>301 http://localhost:3002/qa-seo</code>. Μετά την επαναφόρτωση το Hits γράφει <code>3</code>. SQL: active 1, hits 3, reason NULL. Αρχείο ελέγχου: <em>Added a redirect</em>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SeoManager.tsx</code> · <code>src/cms/core/routes/seo.ts</code> (<code>redirectCreateRoute</code>) · <code>src/proxy.ts</code> · <code>src/cms/core/seo/resolve.ts</code> (<code>bumpRedirectHit</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-045" data-priority="P2">
+      <h3>302, 307 και 308</h3>
+      <ol class="steps">
+        <li>Ανοίξτε τη λίστα <strong>Status code</strong> και περάστε τον δείκτη πάνω από τη συμβουλή <strong>About status codes</strong> στην κεφαλίδα του πίνακα.</li>
+        <li>Προσθέστε <code>/qa-temp</code> → <code>/qa-seo</code> με <code>302 — temporary</code>, <code>/qa-t307</code> με <code>307 — temporary, keeps method</code>, <code>/qa-t308</code> με <code>308 — permanent, keeps method</code>.</li>
+        <li>Εκτελέστε <code>R</code> για κάθε source και <code>curl -s -o /dev/null -w '%{http_code}\n' -X POST "$BASE/qa-t307"</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η λίστα περιέχει <code>301 — permanent</code>, <code>302 — temporary</code>, <code>307 — temporary, keeps method</code>, <code>308 — permanent, keeps method</code>· η συμβουλή εξηγεί το καθένα. Το curl εμφανίζει <code>302</code>, <code>307</code>, <code>308</code> με προορισμό <code>http://localhost:3002/qa-seo</code>· και το POST λαμβάνει <code>307</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SeoManager.tsx</code> (<code>STATUS_CODE_HELP</code>) · <code>src/cms/core/routes/seo.ts</code> (κατάσταση 301/302/307/308)</p>
+    </article>
+
+    <article class="tc" id="MED-046" data-priority="P2">
+      <h3>Ανακατευθύνσεις wildcard</h3>
+      <ol class="steps">
+        <li>Επιλέξτε το είδος <code>wildcard</code> και διαβάστε την υπόδειξη κάτω από τη φόρμα. Προσθέστε <code>/qa-docs/*</code> → <code>/qa-seo</code>.</li>
+        <li>Εκτελέστε <code>R /qa-docs</code>, <code>R /qa-docs/a</code>, <code>R /qa-docs/a/b/c</code>, <code>R /qa-docsx</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Υπόδειξη: <code>wildcard — end the source with /* to catch everything below it, e.g. /docs/* .</code> Οι τρεις πρώτες απαντούν <code>301 http://localhost:3002/qa-seo</code> (το υπόλοιπο της διαδρομής δεν μεταφέρεται στον προορισμό)· το <code>/qa-docsx</code> δεν ανακατευθύνεται (καταλήγει στη σελίδα «δεν βρέθηκε»).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/seo/match.ts</code> (<code>redirectMatches</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-047" data-priority="P3">
+      <h3>Ένα wildcard πρέπει να τελειώνει σε /*</h3>
+      <ol class="steps">
+        <li>Προσθέστε <code>/qa-files</code> → <code>/qa-seo</code> με είδος <code>wildcard</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ένα κόκκινο μήνυμα στο πάνω μέρος: <code>A wildcard source has to end with "/*" — for example "/docs/*" to catch everything under /docs.</code> Δεν προστίθεται γραμμή· η φόρμα διατηρεί ό,τι πληκτρολογήσατε.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/seo.ts</code> (<code>checkKindShape</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-048" data-priority="P2">
+      <h3>Ανακατευθύνσεις regex, και μοτίβα που θα «πάγωναν» τον ιστότοπο</h3>
+      <ol class="steps">
+        <li>Επιλέξτε το είδος <code>regex</code> και διαβάστε την υπόδειξη. Προσθέστε <code>^/qa-rx-[0-9]+$</code> → <code>/qa-seo</code>. Εκτελέστε <code>R /qa-rx-42</code> και <code>R /qa-rx-abc</code>.</li>
+        <li>Προσθέστε <code>^/(a+)+$</code> → <code>/qa-seo</code> (regex).</li>
+        <li>Προσθέστε <code>^/qa-(</code> → <code>/qa-seo</code> (regex).</li>
+      </ol>
+      <ul class="exp">
+        <li>Υπόδειξη: <code>regex — a JavaScript regular expression. Avoid a repeat inside a repeat, such as (a+)+ , which would stall every request.</code> <code>/qa-rx-42</code> → <code>301</code>· το <code>/qa-rx-abc</code> δεν ανακατευθύνεται.</li>
+        <li>Το βήμα 2 απορρίπτεται: <code>A pattern like this can take seconds to match some paths, and while it does the whole site stops answering — matching runs on every request. Avoid a repeat inside a repeat, such as (a+)+ or (.*)*: write (a+) or [a-z]+ instead.</code></li>
+        <li>Το βήμα 3 απορρίπτεται με μήνυμα που ξεκινά με <code>That is not a valid regular expression:</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/seo.ts</code> (<code>regexIsSafe</code>, <code>nestedQuantifier</code>, δοκιμή 25 ms) · <code>src/cms/core/seo/match.ts</code> (όριο 256 χαρακτήρων)</p>
+    </article>
+
+    <article class="tc" id="MED-049" data-priority="P1">
+      <h3>Οι βρόχοι ανακατεύθυνσης απορρίπτονται</h3>
+      <ol class="steps">
+        <li>Προσθέστε <code>/qa-loop</code> → <code>/qa-loop</code>.</li>
+        <li>Προσθέστε <code>/qa-a</code> → <code>/qa-b</code>. Έπειτα προσθέστε <code>/qa-b</code> → <code>/qa-a</code>.</li>
+        <li>Προσθέστε <code>/qa-seo</code> → <code>/qa-old</code> (ο κανόνας της MED-044 στέλνει το <code>/qa-old</code> στο <code>/qa-seo</code>).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 1, ο δεύτερος κανόνας του βήματος 2 και το βήμα 3 απορρίπτονται με <code>This would create a redirect loop — following it comes back to where it started.</code> Προστίθεται μόνο το <code>/qa-a → /qa-b</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/seo/match.ts</code> (<code>redirectWouldLoop</code>, 20 βήματα) · <code>src/cms/core/routes/seo.ts</code> (<code>SELF_LOOP</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-050" data-priority="P3">
+      <h3>Η επανενεργοποίηση ενός κανόνα δεν μπορεί να κλείσει βρόχο</h3>
+      <ol class="steps">
+        <li>Πατήστε <code>active</code> στο <code>/qa-a → /qa-b</code> ώστε να γράφει <code>disabled</code>.</li>
+        <li>Προσθέστε <code>/qa-b</code> → <code>/qa-a</code> (επιτρέπεται: ο άλλος κανόνας είναι ανενεργός).</li>
+        <li>Πατήστε <code>disabled</code> στο <code>/qa-a → /qa-b</code> για να τον ενεργοποιήσετε. Εκτελέστε <code>R /qa-a</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 3 απορρίπτεται με το μήνυμα βρόχου και ο κανόνας παραμένει <code>disabled</code>· το <code>/qa-a</code> δεν ανακατευθύνεται. Η οθόνη αναφέρει ότι η ενεργοποίηση ενός κανόνα ελέγχεται όπως και η εγγραφή του. Σύμφωνα με τον τρέχοντα κώδικα ο διακόπτης στέλνει μόνο το <code>active</code> και ο διακομιστής παραλείπει τον έλεγχο βρόχου, οπότε και οι δύο κανόνες μπορεί να καταλήξουν ενεργοί και το <code>R /qa-a</code> να απαντά <code>301 …/qa-b</code> (και το <code>/qa-b</code> πίσω στο <code>/qa-a</code>): σημειώστε αυτό ως Αποτυχία. Στη συνέχεια διαγράψτε και τους δύο κανόνες.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/seo.ts</code> (<code>redirectUpdateRoute</code>: έλεγχος μόνο όταν στέλνεται source ή target) · <code>src/cms/admin/SeoManager.tsx</code> (<code>toggleRedirect</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-051" data-priority="P2">
+      <h3>Οι προορισμοί πρέπει να είναι διαδρομή του ιστοτόπου ή διεύθυνση http(s)</h3>
+      <ol class="steps">
+        <li>Προσθέστε <code>/qa-ext</code> → <code>https://example.com/landing</code>. Εκτελέστε <code>R /qa-ext</code>.</li>
+        <li>Δοκιμάστε τους προορισμούς <code>//evil.example/x</code>, <code>javascript:alert(1)</code>, <code>qa-seo</code> και <code>https://exa mple.com</code> για το source <code>/qa-bad</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>301 https://example.com/landing</code>. Βήμα 2: οι τρεις πρώτοι απορρίπτονται με <code>Redirect target must be an absolute http(s) URL or a path starting with "/".</code>· ο τελευταίος με <code>Redirect target is not a valid URL.</code> Δεν υπάρχει γραμμή <code>/qa-bad</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/seo.ts</code> (<code>publishableUrl</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-052" data-priority="P3">
+      <h3>Δεύτερος κανόνας με το ίδιο source και είδος</h3>
+      <ol class="steps">
+        <li>Προσθέστε <code>/qa-old</code> → <code>/qa-other</code>, είδος <code>literal</code>.</li>
+        <li>Προσθέστε <code>/qa-old/</code> → <code>/qa-other</code>, είδος <code>literal</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και οι δύο απορρίπτονται με <code>Already exists.</code> (η τελική κάθετος αφαιρείται πριν από την αποθήκευση, οπότε στο βήμα 2 πρόκειται για το ίδιο source). Το αρχείο καταγραφής του διακομιστή έχει μια γραμμή <code>[cms/api] duplicate key</code>.</p>
+      <p class="ref">Αναφ.: <code>seo_redirects</code> μοναδικό <code>(source, kind)</code> · <code>src/cms/core/api/handler.ts</code> (409 <code>conflict</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-053" data-priority="P2">
+      <h3>Αλλαγή του προορισμού ενός κανόνα επί τόπου</h3>
+      <ol class="steps">
+        <li>Πατήστε τον προορισμό <code>/qa-seo</code> του <code>/qa-temp</code> (tooltip <code>Click to change where this goes</code>), πληκτρολογήστε <code>/contact</code> και πατήστε Enter. Εκτελέστε <code>R /qa-temp</code>.</li>
+        <li>Πατήστε τον ξανά, πληκτρολογήστε <code>/xyz</code> και πατήστε Escape.</li>
+        <li>Πατήστε τον ξανά, πληκτρολογήστε <code>/qa-temp</code> και πατήστε Enter.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: η γραμμή εμφανίζει <code>/contact</code>, ο αριθμός hits διατηρείται, και το curl εμφανίζει <code>302 http://localhost:3002/contact</code>. Αρχείο ελέγχου: <em>Edited a redirect</em>. Βήμα 2: η επεξεργασία εγκαταλείπεται και το <code>/contact</code> παραμένει. Βήμα 3: απορρίπτεται με το μήνυμα βρόχου· ο προορισμός παραμένει <code>/contact</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SeoManager.tsx</code> (<code>saveTarget</code>) · <code>src/cms/core/routes/seo.ts</code> (<code>redirectUpdateRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-054" data-priority="P2">
+      <h3>Απενεργοποίηση, ενεργοποίηση και διαγραφή κανόνα</h3>
+      <ol class="steps">
+        <li>Πατήστε <code>active</code> στο <code>/qa-t308</code>. Εκτελέστε <code>R /qa-t308</code>. Πατήστε <code>disabled</code> και εκτελέστε το ξανά.</li>
+        <li>Πατήστε <strong>Delete</strong> στο <code>/qa-t308</code>, διαβάστε το παράθυρο διαλόγου και επιβεβαιώστε. Εκτελέστε <code>R /qa-t308</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Όσο είναι απενεργοποιημένος, η διεύθυνση δεν ανακατευθύνεται και η γραμμή διατηρεί τα Hits της· όταν ενεργοποιηθεί ξανά απαντά <code>308</code>. Παράθυρο διαλόγου: <code>Delete the redirect for /qa-t308?</code> / <code>/qa-t308 will stop redirecting to /qa-seo and go back to 404ing for everyone. This cannot be undone.</code> με <strong>Delete redirect</strong>. Στη συνέχεια η γραμμή έχει εξαφανιστεί και η διεύθυνση δεν ανακατευθύνεται. Αρχείο ελέγχου: <em>Deleted a redirect</em>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SeoManager.tsx</code> (<code>toggleRedirect</code>, <code>removeRedirect</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-055" data-priority="P2">
+      <h3>Υπερισχύει ο παλαιότερος κανόνας που ταιριάζει</h3>
+      <ol class="steps">
+        <li>Προσθέστε <code>/qa-sec/*</code> → <code>/qa-seo</code> (wildcard) και έπειτα <code>/qa-sec/page</code> → <code>/contact</code> (literal).</li>
+        <li>Εκτελέστε <code>R /qa-sec/page</code>. Περάστε τον δείκτη πάνω από τη συμβουλή <strong>About the order</strong> δίπλα στο <code>#</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>301 http://localhost:3002/qa-seo</code>: το παλαιότερο wildcard υπερισχύει του νεότερου, πιο συγκεκριμένου κανόνα. Ο πίνακας αριθμεί τους κανόνες με αυτή τη σειρά (το wildcard έχει τον μικρότερο αριθμό) και η συμβουλή γράφει <code>Rules are checked in this order, and the first one that matches a path wins.</code> Στη συνέχεια διαγράψτε και τους δύο κανόνες.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/seo/resolve.ts</code> (<code>loadActiveRedirects</code> ταξινομημένα κατά id) · docs/dev-guides/06-media-seo-structured-data.md §4.6</p>
+    </article>
+
+    <article class="tc" id="MED-056" data-priority="P2">
+      <h3>Το πρόθεμα γλώσσας είναι μέρος του source</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>R /en/qa-old</code>.</li>
+        <li>Προσθέστε <code>/en/qa-old</code> → <code>/en/qa-seo</code> και εκτελέστε το ξανά.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: δεν ανακατευθύνεται (ο κανόνας <code>/qa-old</code> καλύπτει μόνο την ελληνική διεύθυνση)· καταλήγει στο <code>/en/page-not-found</code>. Βήμα 2: <code>301 http://localhost:3002/en/qa-seo</code>.</p>
+      <p class="ref">Αναφ.: <code>src/proxy.ts</code> (ανακατευθύνσεις πριν από το next-intl) · docs/dev-guides/06-media-seo-structured-data.md §8 “Recipe: add a redirect”</p>
+    </article>
+
+    <article class="tc" id="MED-057" data-priority="P3">
+      <h3>Οι παλιές διευθύνσεις με κατάληξη αρχείου δεν ανακατευθύνονται ποτέ</h3>
+      <ol class="steps">
+        <li>Προσθέστε <code>/qa-legacy.html</code> → <code>/qa-seo</code> και <code>/qa-legacy.php</code> → <code>/qa-seo</code>.</li>
+        <li>Εκτελέστε <code>R /qa-legacy.html</code> και <code>R /qa-legacy.php</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και οι δύο κανόνες αποθηκεύονται. Ένας ιστότοπος που μεταφέρεται χρειάζεται αυτές να απαντούν <code>301</code>. Σύμφωνα με τον τρέχοντα κώδικα ο χειριστής αιτημάτων παραλείπει κάθε διαδρομή που περιέχει τελεία, οπότε δεν ανακατευθύνονται (καταγράψτε την κατάσταση) και τα Hits παραμένουν 0: σημειώστε Αποτυχία και καταγράψτε το ως κενό για τις μεταφορές ιστοτόπων. Διαγράψτε και τους δύο κανόνες.</p>
+      <p class="ref">Αναφ.: <code>src/proxy.ts</code> (ο <code>matcher</code> εξαιρεί το <code>.*\..*</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-058" data-priority="P3">
+      <h3>Τελική κάθετος, query string και κωδικοποιημένοι χαρακτήρες</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>R /qa-old/</code> και <code>R '/qa-old?utm_source=x'</code>.</li>
+        <li>Προσθέστε <code>/qa-καλημέρα</code> → <code>/qa-seo</code>. Εκτελέστε <code>R /qa-%CE%BA%CE%B1%CE%BB%CE%B7%CE%BC%CE%AD%CF%81%CE%B1</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και οι δύο διευθύνσεις του βήματος 1 καταλήγουν στο <code>/qa-seo</code> (για το <code>/qa-old/</code> το Next.js μπορεί πρώτα να απαντήσει <code>308</code> προς το <code>/qa-old</code>, το οποίο έπειτα απαντά <code>301</code>)· καταγράψτε αν διατηρείται το query string (ο προορισμός χρησιμοποιείται όπως είναι αποθηκευμένος, οπότε αναμένεται να αφαιρείται). Βήμα 2: <code>301</code> προς το <code>/qa-seo</code> (η διαδρομή αποκωδικοποιείται πριν από τη σύγκριση). Διαγράψτε τον ελληνικό κανόνα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/seo/match.ts</code> (<code>comparablePath</code>) · <code>src/proxy.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-059" data-priority="P3">
+      <h3>Αναζήτηση και “Show more” στους πίνακες SEO</h3>
+      <ol class="steps">
+        <li>Προσθέστε δοκιμαστικούς κανόνες μέχρι να γίνουν περισσότεροι από 25: <code>for i in $(seq 1 26); do curl -s -o /dev/null -b "cms_session=$S" -H 'Content-Type: application/json' -d "{\"source\":\"/qa-x$i\",\"target\":\"/qa-seo\"}" "$BASE/api/cms/seo/redirects"; done</code>. Φορτώστε ξανά και κοιτάξτε κάτω από τον πίνακα Redirects.</li>
+        <li>Πληκτρολογήστε <code>qa-x1</code> στο <strong>Search redirects</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Εμφανίζονται 25 γραμμές με <code>Showing 25 of N</code> και ένα κουμπί <strong>Show more redirects (… left)</strong> που προσθέτει έως 25 ακόμη. Η πληκτρολόγηση φιλτράρει αμέσως (source, target ή σημειώσεις) και ο αριθμός ενημερώνεται, π.χ. <code>Showing 11 of N</code>. Οι πίνακες 404 και παρακάμψεων συμπεριφέρονται με τον ίδιο τρόπο (<strong>Search 404 paths</strong>, <strong>Search paths</strong>).</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SeoManager.tsx</code> (<code>PAGE = 25</code>, <code>SearchBox</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-404">
+    <h2>Οθόνη SEO: παρακολούθηση 404</h2>
+    <p class="intro">Οι διευθύνσεις που δεν αντιστοιχούν σε καμία σελίδα καταγράφονται με τη διαδρομή όπως τη γράφει ο ελληνικός ιστότοπος (χωρίς <code>/en</code>) μαζί με τη γλώσσα. Ο πίνακας εμφανίζει τις 100 πιο πρόσφατες κατά τελευταία επίσκεψη. Χρησιμοποιήστε τερματικό χωρίς σύνδεση.</p>
+
+    <article class="tc" id="MED-060" data-priority="P1">
+      <h3>Μια άγνωστη διεύθυνση καταγράφεται και τα hits της αυξάνονται</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>R /qa-missing</code> τρεις φορές.</li>
+        <li>Φορτώστε ξανά την οθόνη SEO και βρείτε τη γραμμή κάτω από το <strong>404 monitor</strong>.</li>
+        <li>Εκτελέστε <code>SELECT path, locale, hits, first_seen, last_seen, ignored FROM seo_404_log WHERE path LIKE '/qa-missing%';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το curl εμφανίζει κάθε φορά <code>307 http://localhost:3002/page-not-found</code>. Γραμμή <code>/qa-missing (el)</code>, Hits <code>3</code>, Last seen η σημερινή ημερομηνία. SQL: μία γραμμή, locale <code>el</code>, hits 3, ignored 0.</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/[slug]/page.tsx</code> (<code>log404</code>) · <code>src/cms/core/seo/resolve.ts</code> (<code>log404</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-061" data-priority="P2">
+      <h3>Καταγράφονται επίσης οι βαθιές και οι αγγλικές διευθύνσεις</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>R /qa-missing/a/b/c</code>, <code>R /contact/qa-nothing</code>, <code>R /en/qa-missing</code> και <code>R /en/qa-missing/deeper</code>.</li>
+        <li>Φορτώστε ξανά την οθόνη SEO και επαναλάβετε το SQL της MED-060 με <code>OR path = '/contact/qa-nothing'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Οι ελληνικές διευθύνσεις ανακατευθύνουν στο <code>/page-not-found</code>, οι αγγλικές στο <code>/en/page-not-found</code>. Νέες γραμμές: <code>/qa-missing/a/b/c (el)</code>, <code>/contact/qa-nothing (el)</code>, <code>/qa-missing (en)</code>, <code>/qa-missing/deeper (en)</code>, η καθεμία με 1 hit. Η ελληνική γραμμή <code>/qa-missing</code> έχει ακόμη 3: η ίδια διαδρομή σε άλλη γλώσσα είναι ξεχωριστή γραμμή.</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/[...rest]/page.tsx</code> (catch-all, <code>log404</code>) · <code>seo_404_log</code> μοναδικό <code>(path, locale)</code></p>
+    </article>
+
+    <article class="tc" id="MED-062" data-priority="P2">
+      <h3>Τι απαντά μια ανύπαρκτη διεύθυνση σε έναν ανιχνευτή (crawler)</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s -o /dev/null -w '%{http_code}\n' -L -A Googlebot "$BASE/qa-missing"</code> και <code>H /page-not-found</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η τελική κατάσταση είναι <code>200</code> (ένα 307 προς το <code>/page-not-found</code>, που απαντά 200), και η σελίδα «δεν βρέθηκε» έχει <code>&lt;meta name="robots" content="noindex, nofollow"&gt;</code>, τίτλο <code>… | &lt;brand&gt;</code> και καμία ετικέτα canonical. Δεν στέλνεται πραγματικό HTTP 404, οπότε οι μηχανές αναζήτησης βλέπουν ένα «soft 404»· καταγράψτε το ως παρατήρηση SEO για τη λίστα εκκρεμοτήτων.</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/page-not-found/page.tsx</code> · <code>src/lib/i18n/page-not-found.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-063" data-priority="P2">
+      <h3>Δημιουργία ανακατεύθυνσης από εγγραφή 404</h3>
+      <ol class="steps">
+        <li>Στη γραμμή <code>/qa-missing (el)</code> πατήστε <strong>→ redirect</strong>. Διαβάστε τη σημείωση κάτω από τον πίνακα.</li>
+        <li>Εκτελέστε <code>R /qa-missing</code>.</li>
+        <li>Πατήστε τον προορισμό <code>/</code> του νέου κανόνα, αλλάξτε τον σε <code>/qa-seo</code>, πατήστε Enter και εκτελέστε ξανά <code>R /qa-missing</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ένας κανόνας <code>/qa-missing → /</code>, 301, literal εμφανίζεται κάτω από τα Redirects· η γραμμή 404 σκιάζεται και το κουμπί της γράφει <strong>unignore</strong>. Η σημείωση γράφει <code>“→ redirect” creates a 301 from the path to / and ignores the entry — set the real target above.</code> Βήμα 2: <code>301 http://localhost:3002/</code>. Βήμα 3: <code>301 http://localhost:3002/qa-seo</code>. Αν πατήσετε ξανά <strong>→ redirect</strong> στην ίδια γραμμή εμφανίζεται <code>Already exists.</code></p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SeoManager.tsx</code> (<code>redirectFrom404</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-064" data-priority="P3">
+      <h3>“→ redirect” σε αγγλική εγγραφή</h3>
+      <ol class="steps">
+        <li>Στη γραμμή <code>/qa-missing/deeper (en)</code> πατήστε <strong>→ redirect</strong>.</li>
+        <li>Εκτελέστε <code>R /en/qa-missing/deeper</code> και <code>R /qa-missing/deeper</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η αγγλική διεύθυνση που ζητήθηκε πραγματικά θα έπρεπε τώρα να ανακατευθύνεται. Σύμφωνα με τον τρέχοντα κώδικα ο κανόνας δημιουργείται με την καταγεγραμμένη διαδρομή <code>/qa-missing/deeper</code> (χωρίς <code>/en</code>), οπότε η αγγλική διεύθυνση εξακολουθεί να καταλήγει στο <code>/en/page-not-found</code>, ενώ ανακατευθύνεται η ελληνική διεύθυνση, την οποία δεν ζήτησε κανείς: σημειώστε Αποτυχία. Διαγράψτε εκείνον τον κανόνα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SeoManager.tsx</code> (<code>createRedirect({ source: nf.path, … })</code>) · <code>src/app/[locale]/[...rest]/page.tsx</code> (διαδρομή χωρίς πρόθεμα) · <code>src/proxy.ts</code> (σύγκριση με πρόθεμα)</p>
+    </article>
+
+    <article class="tc" id="MED-065" data-priority="P2">
+      <h3>Παράβλεψη, άρση παράβλεψης και διαγραφή εγγραφής</h3>
+      <ol class="steps">
+        <li>Στο <code>/qa-missing/a/b/c (el)</code> πατήστε <strong>ignore</strong>. Εκτελέστε <code>R /qa-missing/a/b/c</code> και φορτώστε ξανά.</li>
+        <li>Πατήστε <strong>unignore</strong>.</li>
+        <li>Πατήστε <strong>delete</strong>, διαβάστε το παράθυρο διαλόγου και επιβεβαιώστε. Εκτελέστε <code>R /qa-missing/a/b/c</code> και φορτώστε ξανά.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Οι γραμμές σε παράβλεψη είναι σκιασμένες, παραμένουν στη λίστα και συνεχίζουν να μετρούν (Hits 2 μετά την επαναφόρτωση). Το unignore αφαιρεί τη σκίαση. Παράθυρο διαλόγου: <code>Delete the log entry for /qa-missing/a/b/c?</code> / <code>Only the record of these hits is removed — the path itself is unaffected. Use "ignore" to keep the entry but hide it.</code> με <strong>Delete entry</strong>. Μετά την επόμενη επίσκεψη η διαδρομή καταγράφεται ξανά με 1 hit. Αρχείο ελέγχου: <em>Updated a 404 entry</em>, <em>Deleted a 404 entry</em>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SeoManager.tsx</code> (<code>toggle404</code>, <code>remove404</code>) · <code>src/cms/core/routes/seo.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-066" data-priority="P3">
+      <h3>Δείγματα user agent και referrer</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s -o /dev/null -A 'QA-Agent/1.0' -e 'https://referrer.example/page' "$BASE/qa-missing-ua"</code>.</li>
+        <li>Εκτελέστε <code>SELECT user_agent_sample, referrer_sample FROM seo_404_log WHERE path = '/qa-missing-ua';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Καταγράψτε τις τιμές. Ο πίνακας έχει στήλες για δείγμα user agent και referrer, αλλά κανένας καλών κώδικας δεν τις περνά, οπότε και οι δύο αναμένεται να είναι NULL· ούτε ο πίνακας του διαχειριστικού τις εμφανίζει. Καταγράψτε το ως παρατήρηση (ο referrer είναι αυτό που δείχνει πού βρίσκεται ένας σπασμένος σύνδεσμος).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/seo/resolve.ts</code> (<code>log404</code>, όρισμα <code>meta</code>) · <code>src/app/[locale]/[slug]/page.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-meta">
+    <h2>Οθόνη SEO: παρακάμψεις meta ανά διαδρομή</h2>
+    <p class="intro">Η φόρμα κάτω από το <strong>Per-path meta overrides</strong> έχει τα <strong>Path</strong>, <strong>Language</strong>, <strong>Title</strong>, <strong>Robots</strong>, <strong>Description</strong>, <strong>Canonical URL</strong>, <strong>OG image URL</strong> και <strong>Save override</strong>. Το Path γράφεται όπως το γράφει ο ελληνικός ιστότοπος (<code>/qa-seo</code>)· το Language καθορίζει ποια έκδοση επηρεάζεται. Μια παράκαμψη υπερισχύει όλων των άλλων, συμπεριλαμβανομένου του πάνελ SEO της σελίδας και του Product Manager.</p>
+
+    <article class="tc" id="MED-067" data-priority="P1">
+      <h3>Παράκαμψη του τίτλου και της περιγραφής μίας γλώσσας</h3>
+      <ol class="steps">
+        <li>Path <code>/qa-seo</code>, Language <code>en</code>, Title <code>Override title EN</code>, Description <code>Override description EN</code>. Πατήστε <strong>Save override</strong>.</li>
+        <li>Εκτελέστε <code>H /en/qa-seo</code> και <code>H /qa-seo</code>.</li>
+        <li>Εκτελέστε <code>SELECT path, locale, title, description, og_title FROM seo_meta WHERE path = '/qa-seo';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η φόρμα αδειάζει και εμφανίζεται μια γραμμή: Path <code>/qa-seo</code>, Locale <code>en</code>, Title <code>Override title EN</code>, Robots <code>—</code>. <code>/en/qa-seo</code>: <code>&lt;title&gt;Override title EN&lt;/title&gt;</code>, και η περιγραφή, το <code>og:title</code> και το <code>og:description</code> από την παράκαμψη (εκτός αν η σελίδα EN έχει δικό της Social title). Το <code>/qa-seo</code> δεν αλλάζει. SQL: μία γραμμή, locale <code>en</code>. Αρχείο ελέγχου: <em>Saved an SEO override</em>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SeoManager.tsx</code> (<code>saveMeta</code>) · <code>src/cms/core/routes/seo.ts</code> (<code>metaUpsertRoute</code>) · <code>src/lib/seo/metadata.ts</code> (<code>getMetaOverride</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-068" data-priority="P2">
+      <h3>Παρακάμψεις robots, canonical και εικόνας</h3>
+      <ol class="steps">
+        <li>Αποθηκεύστε μια παράκαμψη για Path <code>/qa-seo</code>, Language <code>el</code>: Robots <code>noindex</code>, Canonical URL <code>/qa-canonical</code>, OG image URL <code>/api/cms/media/file/&lt;photo-portrait uuid&gt;</code>.</li>
+        <li>Εκτελέστε <code>H /qa-seo | grep -E 'robots|canonical|og:image|og:url'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>&lt;meta name="robots" content="noindex"&gt;</code>, canonical και <code>og:url</code> <code>http://localhost:3002/qa-canonical</code>, <code>og:image</code> <code>http://localhost:3002/api/cms/media/file/&lt;uuid&gt;</code>. Αυτές υπερισχύουν των τιμών του πάνελ SEO που ορίστηκαν νωρίτερα. Τα alternates hreflang δεν αλλάζουν.</p>
+      <p class="ref">Αναφ.: <code>src/lib/seo/metadata.ts</code> (προτεραιότητα: πρώτα η παράκαμψη)</p>
+    </article>
+
+    <article class="tc" id="MED-069" data-priority="P2">
+      <h3>Η εκ νέου αποθήκευση ενημερώνει την ίδια γραμμή</h3>
+      <ol class="steps">
+        <li>Αποθηκεύστε ξανά Path <code>/qa-seo</code>, Language <code>el</code> μόνο με Title <code>Override title EL</code> (τα υπόλοιπα πεδία κενά).</li>
+        <li>Εκτελέστε το SQL της MED-067.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Εξακολουθεί να υπάρχει μία γραμμή EL (κανένα διπλότυπο)· ο τίτλος έχει οριστεί· τα robots, canonical και og_image είναι τώρα NULL, επειδή η φόρμα στέλνει κάθε πεδίο που εμφανίζει και ένα κενό πεδίο το αδειάζει. Εφαρμόζονται ξανά τα δικά της robots και canonical της σελίδας.</p>
+      <p class="ref">Αναφ.: <code>seo_meta</code> μοναδικό <code>(path, locale)</code> · <code>src/cms/core/seo/service.ts</code> (<code>patchMeta</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-070" data-priority="P3">
+      <h3>Τα μη ασφαλή URL canonical και εικόνας απορρίπτονται</h3>
+      <ol class="steps">
+        <li>Δοκιμάστε Canonical URL <code>//evil.example/x</code>, έπειτα <code>javascript:alert(1)</code>, έπειτα OG image URL <code>ftp://example.com/a.jpg</code> (Path <code>/qa-seo</code>, <code>el</code>).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Οι προσπάθειες για το canonical εμφανίζουν <code>Canonical URL must be an absolute http(s) URL or a path starting with "/".</code>· η προσπάθεια για την εικόνα <code>Social image URL must be an absolute http(s) URL or a path starting with "/".</code> (το μήνυμα γράφει “Social image URL” παρόλο που η ετικέτα του πεδίου είναι OG image URL). Δεν αποθηκεύεται τίποτα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/seo.ts</code> (<code>metaBody</code>, <code>publishableUrl</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-071" data-priority="P2">
+      <h3>Η αποθήκευση της φόρμας διατηρεί τον τίτλο και την περιγραφή social που έγραψε ο Product Manager</h3>
+      <ol class="steps">
+        <li>Γράψτε πεδία social στη γραμμή EN με τον τρόπο που το κάνει ο Product Manager (η φόρμα δεν έχει πεδία εισαγωγής γι' αυτά):
+<pre><code>curl -s -b "cms_session=$S" -H 'Content-Type: application/json' -X POST "$BASE/api/cms/seo/meta" \
+  -d '{"path":"/qa-seo","locale":"en","ogTitle":"PM social title","ogDescription":"PM social text"}'</code></pre></li>
+        <li>Στο διαχειριστικό αποθηκεύστε Path <code>/qa-seo</code>, Language <code>en</code>, Title <code>Override title EN 2</code>.</li>
+        <li>Εκτελέστε <code>SELECT title, og_title, og_description FROM seo_meta WHERE path = '/qa-seo' AND locale = 'en';</code> και <code>H /en/qa-seo | grep og:</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 1 απαντά <code>{"ok":true,…}</code>. Μετά το βήμα 2: title <code>Override title EN 2</code>, og_title <code>PM social title</code>, og_description <code>PM social text</code> (διατηρούνται, δεν γίνονται NULL). Η σελίδα εμφανίζει <code>og:title</code> <code>PM social title</code> και <code>og:description</code> <code>PM social text</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/seo.ts</code> (<code>metaUpsertRoute</code> → <code>patchMeta</code>) · docs/dev-guides/06-media-seo-structured-data.md §10 (“upsertMeta is whole-row”)</p>
+    </article>
+
+    <article class="tc" id="MED-072" data-priority="P2">
+      <h3>Διαγραφή παράκαμψης</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>Delete</strong> στη γραμμή EN <code>/qa-seo</code>, διαβάστε το παράθυρο διαλόγου και επιβεβαιώστε. Εκτελέστε <code>H /en/qa-seo</code>. Διαγράψτε και τη γραμμή EL.</li>
+        <li>Ανοίξτε τη λίστα <strong>Language</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Παράθυρο διαλόγου: <code>Delete the meta override for /qa-seo?</code> / <code>That path goes back to the title and description the page generates for itself. This cannot be undone.</code> με <strong>Delete override</strong>. Η σελίδα EN εμφανίζει ξανά τον δικό της τίτλο στο επόμενο αίτημα. Αρχείο ελέγχου: <em>Deleted an SEO override</em>. Βήμα 2: η λίστα προσφέρει μόνο <code>el</code> και <code>en</code> (σταθερά στη φόρμα, ανεξάρτητα από τις γλώσσες του ιστοτόπου· σημειώστε το αν ο ιστότοπος έχει περισσότερες).</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SeoManager.tsx</code> (<code>removeMeta</code>, επιλογές Language)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-fields">
+    <h2>Διαχείριση πεδίων SEO</h2>
+    <p class="intro">Ανοίξτε τις <strong>Settings</strong> → <strong>Fields</strong> → <strong>SEO &amp; AEO</strong> (<code>/admin/settings?tab=Fields</code>). Κάθε πεδίο είναι μια πτυσσόμενη γραμμή· οι αλλαγές εφαρμόζονται στο πάνελ SEO κάθε τύπου περιεχομένου μετά το <strong>Save SEO fields</strong> (<code>SEO fields saved.</code>). Τα προσαρμοσμένα πεδία στη δική τους υποκαρτέλα μιας συλλογής καλύπτονται από τη CON-002.</p>
+
+    <article class="tc" id="MED-073" data-priority="P2">
+      <h3>Αλλαγή ετικέτας, περιγραφής, καρτέλας και σειράς ενός ενσωματωμένου πεδίου</h3>
+      <ol class="steps">
+        <li>Αναπτύξτε το <strong>SEO title</strong>. Ορίστε <strong>Label — EL</strong> <code>Τίτλος αναζήτησης</code>, <strong>Label — EN</strong> <code>Search title</code>, <strong>Help text</strong> <code>QA help</code>. Παρατηρήστε ότι τα <strong>Key</strong> και <strong>Type</strong> είναι απενεργοποιημένα.</li>
+        <li>Αναπτύξτε το <strong>Twitter card</strong> και ορίστε το <strong>Tab</strong> σε <code>General</code>. Μετακινήστε το <strong>Meta description</strong> προς τα πάνω με το πάνω βέλος του.</li>
+        <li><strong>Save SEO fields</strong>, ανοίξτε το QA SEO Page και δείτε το πάνελ SEO στις καρτέλες EL και EN.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Στην EL το πεδίο γράφει <strong>Τίτλος αναζήτησης</strong> με το <code>QA help</code> από κάτω· στην EN <strong>Search title</strong>. Το Meta description βρίσκεται τώρα πάνω από αυτό. Το <strong>Twitter card</strong> βρίσκεται στην καρτέλα General. Η τιμή που αποθηκεύτηκε στη MED-036 υπάρχει ακόμη και εξακολουθεί να εμφανίζεται.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SeoFieldsManager.tsx</code> · <code>src/cms/core/seo/field-overrides.ts</code> (<code>resolveSeoFields</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-074" data-priority="P2">
+      <h3>Απόκρυψη ενός πεδίου παντού ή σε έναν τύπο περιεχομένου</h3>
+      <ol class="steps">
+        <li>Αναπτύξτε το <strong>Focus keywords</strong>, απενεργοποιήστε το <strong>Shown in the editor</strong> και αποθηκεύστε. Ανοίξτε το QA SEO Page.</li>
+        <li>Ενεργοποιήστε το ξανά. Στο <strong>Per-collection exceptions</strong> επιλέξτε το <strong>Social image</strong> για τα <strong>Pages</strong>, αποθηκεύστε και ανοίξτε ξανά το QA SEO Page.</li>
+        <li>Εκτελέστε <code>H /qa-seo | grep og:image</code>. Αναιρέστε την εξαίρεση και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: κανένα Focus keywords στην καρτέλα General. Βήμα 2: το Focus keywords επιστρέφει με τις παλιές του τιμές· το Social image έχει εξαφανιστεί μόνο στα Pages (οι άλλοι τύποι περιεχομένου το διατηρούν). Βήμα 3: ένα Social image που αποθηκεύτηκε νωρίτερα εξακολουθεί να εμφανίζεται: η απόκρυψη ενός πεδίου διατηρεί την τιμή του.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/seo/field-overrides.ts</code> (<code>disabled</code>, <code>perCollection</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-075" data-priority="P2">
+      <h3>Προσθήκη προσαρμοσμένου πεδίου SEO</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>Add SEO field</strong>. Αφήστε το Key κενό και δείτε την πορτοκαλί λίστα και το κουμπί αποθήκευσης.</li>
+        <li>Δοκιμάστε Key <code>1bad</code> και έπειτα <code>seoTitle</code>. Έπειτα ορίστε Key <code>qa_extra</code>, Type text, Tab <code>Advanced</code>, Label — EL/EN <code>QA extra</code>. Αποθηκεύστε.</li>
+        <li>Στο QA SEO Page συμπληρώστε το <strong>QA extra</strong> με <code>hello</code>, <strong>Save EL</strong>. Εκτελέστε <code>SELECT JSON_EXTRACT(data, '$.seo.qa_extra') FROM documents WHERE type = 'page' AND slug = 'qa-seo' AND locale = 'el';</code> και <code>curl -s -A Googlebot "$BASE/qa-seo" | grep -c hello</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>An extra field is missing a key.</code> και το <strong>Save SEO fields</strong> είναι απενεργοποιημένο. Βήμα 2: <code>"1bad" — key must start with a letter and use only letters, digits or _.</code> και έπειτα <code>"seoTitle" — that key belongs to a built-in SEO field.</code> Η γραμμή εμφανίζει χρυσό σήμα <code>custom</code> και αποθηκεύεται. Βήμα 3: SQL <code>"hello"</code>· η δημόσια σελίδα δεν το εμφανίζει (<code>0</code>): ένα προσαρμοσμένο πεδίο SEO αποθηκεύεται, και ένας προγραμματιστής πρέπει να το διαβάσει στο πρότυπο.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SeoFieldsManager.tsx</code> (<code>problems</code>) · docs/dev-guides/06-media-seo-structured-data.md §8 “Recipe: add an SEO field”</p>
+    </article>
+
+    <article class="tc" id="MED-076" data-priority="P3">
+      <h3>Το “Required to publish” υπάρχει μόνο για πεδία που αποθηκεύονται ως data</h3>
+      <ol class="steps">
+        <li>Αναπτύξτε το <strong>SEO title</strong> και διαβάστε το <strong>Required to publish</strong>. Αναπτύξτε το <strong>Social title</strong>, ενεργοποιήστε το <strong>Required to publish</strong> και αποθηκεύστε.</li>
+        <li>Στο QA SEO Page αδειάστε το Social title και πατήστε <strong>Save EL</strong> (κατάσταση published).</li>
+        <li>Απενεργοποιήστε την απαίτηση και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Για το SEO title ο διακόπτης είναι απενεργοποιημένος με <code>Not available: this field writes to a document column, which the write API validates on its own — a rule set here would hold in the form and nowhere else.</code> Βήμα 2: η αποθήκευση απορρίπτεται και το Social title επισημαίνεται ως υποχρεωτικό. Μετά το βήμα 3 η σελίδα αποθηκεύεται.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SeoFieldsManager.tsx</code> (<code>canRequire</code>) · <code>src/cms/core/seo/field-overrides.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-077" data-priority="P3">
+      <h3>Αφαίρεση προσαρμοσμένου πεδίου SEO και επαναφορά των προεπιλογών</h3>
+      <ol class="steps">
+        <li>Πατήστε τον κάδο στο <code>qa_extra</code>, διαβάστε το παράθυρο διαλόγου και επιβεβαιώστε με <strong>Remove</strong>. Αποθηκεύστε.</li>
+        <li>Αναιρέστε τις αλλαγές ετικέτας, κειμένου βοήθειας, καρτέλας και σειράς της MED-073 (αδειάστε τις ετικέτες και το κείμενο βοήθειας, Tab <code>Social</code>, κενό <strong>Position</strong>). Αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Παράθυρο διαλόγου <code>Remove this field?</code> / <code>Values already saved on documents are dropped. This cannot be undone.</code> Μετά την αποθήκευση, το QA extra έχει εξαφανιστεί από τον επεξεργαστή. Μετά το βήμα 2 το πάνελ SEO είναι όπως πριν από τη MED-073.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SeoFieldsManager.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-sitemap">
+    <h2>sitemap.xml και προσθήκες του robots.txt</h2>
+    <p class="intro">Το sitemap που παραθέτει κάθε δημοσιευμένη σελίδα πέραν των 200 είναι η CON-096· το robots.txt σε προέλευση δοκιμών και σε προέλευση παραγωγής είναι οι SET-076 και SET-077.</p>
+
+    <article class="tc" id="MED-078" data-priority="P1">
+      <h3>Δομή του sitemap και μία εγγραφή ανά γλώσσα</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/sitemap.xml</code> στον browser και εκτελέστε <code>curl -s "$BASE/sitemap.xml" | grep -A12 '&lt;loc&gt;http://localhost:3002/qa-seo&lt;/loc&gt;'</code>.</li>
+        <li>Αναζητήστε στο αρχείο τα <code>&lt;loc&gt;http://localhost:3002&lt;/loc&gt;</code>, <code>/contact</code>, <code>/legal/cookies</code> και <code>/home</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Έγκυρο XML με ρίζα <code>urlset</code>. Το <code>qa-seo</code> έχει δύο εγγραφές, <code>http://localhost:3002/qa-seo</code> και <code>http://localhost:3002/en/qa-seo</code>, η καθεμία με <code>lastmod</code> (ημερομηνία στις 12:00 UTC), <code>changefreq</code> <code>monthly</code>, <code>priority</code> <code>0.6</code>, και τρεις γραμμές <code>xhtml:link rel="alternate"</code>: <code>el</code>, <code>en</code> και <code>x-default</code> (= η διεύθυνση <code>/en/</code>).</li>
+        <li>Η αρχική σελίδα παρατίθεται ως <code>http://localhost:3002</code> και <code>http://localhost:3002/en</code> με <code>weekly</code> και priority <code>1</code>· τα <code>/contact</code> και <code>/legal/cookies</code> παρατίθενται χωρίς <code>lastmod</code>· δεν υπάρχει <code>/home</code> ούτε διπλότυπο της σελίδας <code>/contact</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/sitemap.ts</code> (<code>STATIC_ROUTES</code>, <code>PAGE_SLUGS_NOT_LISTED</code>, <code>getRouteLastModified</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-079" data-priority="P2">
+      <h3>Οι διευθύνσεις καταστήματος και κρατήσεων εμφανίζονται μόνο με το module τους</h3>
+      <ol class="steps">
+        <li>Με τα <strong>Commerce</strong> και <strong>Booking</strong> απενεργοποιημένα στις <strong>Settings</strong> → <strong>Modules</strong>, εκτελέστε <code>curl -s "$BASE/sitemap.xml" | grep -cE '/(shop|booking)'</code>.</li>
+        <li>Ενεργοποιήστε και τα δύο (με τουλάχιστον ένα δημοσιευμένο προϊόν και μία εμπειρία), αποθηκεύστε και επαναλάβετε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>0</code>. Βήμα 2: τα <code>/shop</code>, <code>/booking</code>, κάθε δημοσιευμένο προϊόν στο <code>/shop/&lt;slug&gt;</code> και κάθε εμπειρία στο <code>/booking/&lt;slug&gt;</code>, το καθένα μία φορά ανά δημόσια γλώσσα. Επαναφέρετε τους διακόπτες των modules που αναμένουν οι άλλες λίστες ελέγχου.</p>
+      <p class="ref">Αναφ.: <code>src/app/sitemap.ts</code> (<code>SITEMAP_FAMILIES</code>, <code>liveFamilies</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-080" data-priority="P2">
+      <h3>Επιπλέον URL στο sitemap</h3>
+      <ol class="steps">
+        <li>Ανοίξτε τις <strong>Settings</strong> → <strong>SEO</strong>. Στο <strong>Sitemap — extra URLs</strong> εισαγάγετε τρεις γραμμές: <code>https://example.com/qa-extra</code>, <code>not-a-url</code>, <code>http://localhost:3002/qa-seo</code>. Πατήστε <strong>Save settings</strong>.</li>
+        <li>Εκτελέστε <code>curl -s "$BASE/sitemap.xml" | grep -E 'qa-extra|not-a-url' ; curl -s "$BASE/sitemap.xml" | grep -c '&lt;loc&gt;http://localhost:3002/qa-seo&lt;/loc&gt;'</code>.</li>
+        <li>Αδειάστε το πλαίσιο και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το <code>https://example.com/qa-extra</code> παρατίθεται μία φορά (priority 0.5)· το <code>not-a-url</code> παραλείπεται· η διεύθυνση <code>qa-seo</code> εξακολουθεί να παρατίθεται ακριβώς μία φορά (<code>1</code>).</p>
+      <p class="ref">Αναφ.: <code>src/app/sitemap.ts</code> (<code>seo.sitemapExtraUrls</code>) · <code>src/cms/core/settings/schema.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-081" data-priority="P3">
+      <h3>Επιπλέον γραμμές Disallow στο robots.txt (build παραγωγής)</h3>
+      <ol class="steps">
+        <li>Στις <strong>Settings</strong> → <strong>SEO</strong> → <strong>robots.txt — extra Disallow</strong> εισαγάγετε <code>/qa-private/</code> και αποθηκεύστε.</li>
+        <li>Ανοίξτε το <code>/robots.txt</code> στην προέλευση δοκιμών.</li>
+        <li>Κάντε build και εκκίνηση με την προέλευση παραγωγής όπως στη SET-077 και εκτελέστε <code>curl -s http://localhost:3000/robots.txt</code>. Έπειτα κάντε ξανά κανονικό build και αδειάστε τη ρύθμιση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 2: εξακολουθεί να υπάρχει μόνο <code>Disallow: /</code> (SET-076)· οι προσθήκες δεν ανοίγουν ποτέ έναν ιστότοπο δοκιμών. Βήμα 3: το <code>Disallow: /qa-private/</code> εμφανίζεται κάτω από το <code>User-Agent: *</code> και κάτω από κάθε ανιχνευτή AI, δίπλα στα <code>/api/</code> και <code>/admin/</code>.</p>
+      <p class="ref">Αναφ.: <code>src/app/robots.ts</code> (<code>robotsRules</code>, <code>seo.robotsExtraDisallow</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-schema">
+    <h2>Δομημένα δεδομένα (JSON-LD)</h2>
+    <p class="intro">Ανοίξτε τις <strong>Settings</strong> → <strong>Structured data</strong> (<code>/admin/settings?tab=Structured%20data</code>). Η κάρτα <strong>Business type</strong> ισχύει για κάθε σελίδα· κάτω από αυτήν υπάρχει μία κάρτα για κάθε είδος περιεχομένου του ιστοτόπου (<strong>Pages</strong> στη βάση· <strong>Products</strong>, <strong>Day trips</strong>, <strong>Stays</strong> όταν είναι ενεργά τα modules τους· <strong>Articles</strong>, <strong>Answers (FAQ)</strong>, <strong>Case studies</strong> σε παραγόμενους ιστοτόπους με αυτές τις συλλογές). Το <strong>Save</strong> εμφανίζει <code>Saved. Live on the next page load.</code> και αποθηκεύει ολόκληρη την πολιτική. Κάθε έγγραφο μπορεί να παρακάμψει τον τύπο με το <strong>Schema type</strong> στην καρτέλα Advanced του πάνελ SEO. Χρησιμοποιήστε το <code>LD</code> και τους επικυρωτές της εισαγωγής.</p>
+
+    <article class="tc" id="MED-082" data-priority="P1">
+      <h3>Κάθε σελίδα φέρει το γράφημα Organization και WebSite</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>LD /</code>, <code>LD /contact</code> και <code>LD /en/qa-seo</code>.</li>
+        <li>Επικυρώστε το <code>/</code> με το Rich Results Test και τον Schema.org validator.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το πρώτο μπλοκ σε κάθε σελίδα είναι <code>{"@context":"https://schema.org","@graph":[…]}</code> με ένα <code>Organization</code> (<code>@id</code> <code>http://localhost:3002/#organization</code>, <code>name</code>, <code>url</code>, <code>logo</code> απόλυτο αν έχει οριστεί λογότυπο, <code>contactPoint</code> όταν έχει οριστεί email ή τηλέφωνο, <code>sameAs</code> με τα προφίλ κοινωνικών δικτύων) και ένα <code>WebSite</code> (<code>@id</code> <code>http://localhost:3002/#website</code>, <code>publisher</code> που δείχνει στον οργανισμό, <code>inLanguage</code> <code>el</code> ή <code>en</code> ανά σελίδα).</li>
+        <li>Κανένας από τους δύο επικυρωτές δεν αναφέρει σφάλματα.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/layout.tsx</code> (<code>globalGraph</code>) · <code>src/lib/seo/schemas.ts</code> (<code>organizationSchema</code>, <code>websiteSchema</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-083" data-priority="P2">
+      <h3>Ένας τύπος τοπικής επιχείρησης χρειάζεται διεύθυνση</h3>
+      <ol class="steps">
+        <li>Στο Branding αδειάστε τα <strong>Street</strong> και <strong>City</strong> και αποθηκεύστε. Στο Structured data ορίστε το <strong>The business is a</strong> σε <code>Restaurant</code>, <strong>Price range</strong> <code>€€</code>, <strong>Save</strong>. Εκτελέστε <code>LD /</code>.</li>
+        <li>Στο Branding ορίστε Street <code>Ermou 1</code>, City <code>Athens</code>, Postcode <code>10563</code>, Country <code>GR</code>, Phone <code>+30 210 123 4567</code> και αποθηκεύστε. Εκτελέστε <code>LD /</code> και επικυρώστε.</li>
+        <li>Ορίστε τον τύπο σε <code>OnlineStore</code>, αποθηκεύστε, εκτελέστε <code>LD /</code>. Έπειτα επαναφέρετέ τον σε <code>Organization</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: η κάρτα εμφανίζει <code>Google needs an address for a local business. Until one is added in Settings → Branding, the site is described as a plain Organization.</code>· ο κόμβος παραμένει <code>"@type":"Organization"</code> χωρίς <code>priceRange</code>.</li>
+        <li>Βήμα 2: <code>"@type":"Restaurant"</code> με <code>PostalAddress</code> (<code>streetAddress</code>, <code>postalCode</code>, <code>addressLocality</code>, <code>addressCountry</code>), <code>telephone</code> <code>+302101234567</code>, <code>priceRange</code> <code>€€</code> και <code>image</code> = το URL του λογοτύπου. Κανένα σφάλμα επικυρωτή.</li>
+        <li>Βήμα 3: <code>"@type":"OnlineStore"</code> χωρίς <code>priceRange</code> ή <code>telephone</code>· το πεδίο Price range είναι κρυφό.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/structured-data/nodes.ts</code> (<code>businessNode</code>) · <code>src/cms/core/structured-data/policy.ts</code> (<code>LOCAL_BUSINESS_TYPES</code>) · <code>src/cms/admin/StructuredDataSettings.tsx</code></p>
+    </article>
+
+    <article class="tc" id="MED-084" data-priority="P3">
+      <h3>Ο προεπιλεγμένος τύπος επιχείρησης ακολουθεί τα modules</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>DELETE FROM site_settings WHERE `key` = 'seo.schema';</code> (βάση δεδομένων δοκιμών) και έπειτα πατήστε <strong>Save settings</strong> στην καρτέλα General ώστε να ανανεωθούν οι αποθηκευμένες στην cache ρυθμίσεις.</li>
+        <li>Με το <strong>Commerce</strong> ενεργό, ανοίξτε την καρτέλα Structured data. Έπειτα με το Commerce ανενεργό και το <strong>Booking</strong> ενεργό. Έπειτα με τα δύο ανενεργά.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ο προεπιλεγμένος τύπος είναι <code>OnlineStore</code> με το Commerce ενεργό· <code>TravelAgency</code> με τις κρατήσεις ενεργές (ή <code>LodgingBusiness</code> όταν η ρύθμιση ειδών κράτησης είναι μόνο διαμονές)· <code>Organization</code> χωρίς κανένα από τα δύο. Κάθε κάρτα κατηγορίας εμφανίζει τον προεπιλεγμένο τύπο της (Pages: <code>WebPage</code>) και όλους τους διακόπτες επιλεγμένους.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/structured-data/policy.ts</code> (<code>defaultBusinessType</code>, <code>readCategory</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-085" data-priority="P1">
+      <h3>Μια σελίδα: WebPage και BreadcrumbList</h3>
+      <ol class="steps">
+        <li>Αδειάστε τον τίτλο SEO και τις FAQ του QA SEO Page (EL) και αποθηκεύστε. Εκτελέστε <code>LD /qa-seo</code> και <code>LD /en/qa-seo</code>.</li>
+        <li>Επικυρώστε το <code>/qa-seo</code> με το Rich Results Test.</li>
+      </ol>
+      <ul class="exp">
+        <li>Ένα δεύτερο μπλοκ περιέχει ένα <code>WebPage</code> (<code>@id</code> <code>http://localhost:3002/qa-seo#webpage</code>, <code>name</code> <code>QA SEO Page</code>, <code>url</code>, <code>isPartOf</code> <code>#website</code>, <code>publisher</code> <code>#organization</code>, <code>inLanguage</code> <code>el</code>) και ένα <code>BreadcrumbList</code> με θέση 1 <code>Αρχική</code> → <code>http://localhost:3002/</code> και θέση 2 <code>QA SEO Page</code> → <code>http://localhost:3002/qa-seo</code>.</li>
+        <li>EN: <code>Home</code> → <code>http://localhost:3002/en</code>, έπειτα <code>QA SEO Page EN</code> → <code>http://localhost:3002/en/qa-seo</code>, <code>inLanguage</code> <code>en</code>.</li>
+        <li>Rich Results Test: τα <strong>Breadcrumbs</strong> ανιχνεύονται ως έγκυρα· κανένα σφάλμα.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/[slug]/page.tsx</code> (<code>documentStructuredData</code>, κατηγορία <code>pages</code>) · <code>src/cms/core/structured-data/nodes.ts</code> (<code>webpage</code>) · <code>src/lib/seo/schemas.ts</code> (<code>breadcrumbSchema</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-086" data-priority="P2">
+      <h3>Τύπος schema ανά κατηγορία και ανά έγγραφο</h3>
+      <ol class="steps">
+        <li>Στην κάρτα <strong>Pages</strong> ορίστε το <strong>Schema type</strong> σε <code>AboutPage</code> και αποθηκεύστε. Εκτελέστε <code>LD /qa-seo</code>.</li>
+        <li>Στο QA SEO Page (EL) ανοίξτε <strong>Advanced</strong> → <strong>Schema type</strong>, επιλέξτε <code>ContactPage</code>, <strong>Save EL</strong>. Εκτελέστε <code>LD /qa-seo</code> και <code>LD /en/qa-seo</code>.</li>
+        <li>Ορίστε τη σελίδα σε <code>None</code> και αποθηκεύστε. Εκτελέστε <code>LD /qa-seo</code>.</li>
+        <li>Επαναφέρετε τη σελίδα σε <code>Site default (Settings → Structured data)</code> και την κάρτα Pages σε <code>WebPage</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η υπόδειξη της κάρτας αλλάζει ανάλογα με τον τύπο (π.χ. <code>The page about the business.</code>). Βήμα 1: <code>"@type":"AboutPage"</code>. Βήμα 2: EL <code>ContactPage</code>, EN ακόμη <code>AboutPage</code> (η επιλογή είναι ανά γλώσσα). Βήμα 3: στο <code>/qa-seo</code> απομένει μόνο το μπλοκ όλου του ιστοτόπου (κανένα WebPage, κανένα BreadcrumbList)· η κάρτα Pages κρύβει τους διακόπτες της όταν επιλέγεται εκεί το <code>None</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/seo/field-overrides.ts</code> (<code>schemaTypeDef</code>) · <code>src/cms/core/structured-data/policy.ts</code> (<code>resolveSchemaChoice</code>, <code>TYPE_HINTS</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-087" data-priority="P2">
+      <h3>Οι FAQ από το πάνελ SEO γίνονται FAQPage</h3>
+      <ol class="steps">
+        <li>Στο QA SEO Page (EL) ανοίξτε <strong>AEO</strong> → <strong>FAQs</strong> και πατήστε δύο φορές <strong>Add question</strong>. Συμπληρώστε δύο ερωτήσεις με απαντήσεις· προσθέστε μια τρίτη μόνο με ερώτηση. <strong>Save EL</strong>.</li>
+        <li>Εκτελέστε <code>LD /qa-seo</code> και επικυρώστε με τον Schema.org validator.</li>
+        <li>Στην κάρτα Pages αποεπιλέξτε το <strong>Add the FAQs from the SEO panel</strong>, αποθηκεύστε και επαναλάβετε το βήμα 2. Επιλέξτε το ξανά.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 2: μετά το WebPage και το BreadcrumbList, ένας κόμβος <code>FAQPage</code> του οποίου το <code>mainEntity</code> έχει ακριβώς δύο στοιχεία <code>Question</code>, το καθένα με <code>acceptedAnswer</code> τύπου <code>Answer</code>· το μισοσυμπληρωμένο ζεύγος παραλείπεται (ή η αποθήκευση το απορρίπτει ως υποχρεωτικό). Κανένα σφάλμα επικυρωτή. Βήμα 3: κανένας κόμβος FAQPage.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/structured-data/nodes.ts</code> (<code>buildDocumentNodes</code>, <code>appendFaq</code>) · <code>src/cms/core/seo/document.ts</code> (τα μισοσυμπληρωμένα ζεύγη απορρίπτονται)</p>
+    </article>
+
+    <article class="tc" id="MED-088" data-priority="P2">
+      <h3>Διακόπτης Breadcrumbs</h3>
+      <ol class="steps">
+        <li>Στην κάρτα Pages αποεπιλέξτε το <strong>Breadcrumbs</strong> και αποθηκεύστε. Εκτελέστε <code>LD /qa-seo</code>. Επιλέξτε το ξανά και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κανένας κόμβος <code>BreadcrumbList</code> όσο είναι αποεπιλεγμένο· το WebPage (και το FAQPage) παραμένουν. Η ορατή σελίδα δεν αλλάζει σε καμία περίπτωση.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/structured-data/policy.ts</code> (<code>breadcrumbs</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-089" data-priority="P2">
+      <h3>Η παράκαμψη δομημένων δεδομένων αντικαθιστά το παραγόμενο γράφημα</h3>
+      <ol class="steps">
+        <li>Στο QA SEO Page (EL) → <strong>Advanced</strong> → <strong>Structured data override</strong> επικολλήστε <code>{"@context":"https://schema.org","@type":"Event","name":"QA &lt;/script&gt;&lt;b&gt;event","startDate":"2026-12-01"}</code>. <strong>Save EL</strong>.</li>
+        <li>Εκτελέστε <code>LD /qa-seo</code> και <code>curl -s -A Googlebot "$BASE/qa-seo" | grep -c '&lt;b&gt;event'</code>.</li>
+        <li>Επικολλήστε αντί γι' αυτό <code>not json</code>, αποθηκεύστε και εκτελέστε <code>LD /qa-seo</code>. Έπειτα αδειάστε το πεδίο και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 2: το μπλοκ της σελίδας είναι ακριβώς το Event που επικολλήθηκε (κανένα WebPage, BreadcrumbList ή FAQPage)· το μπλοκ όλου του ιστοτόπου εξακολουθεί να είναι πρώτο. Οι χαρακτήρες <code>&lt;</code> γράφονται ως <code>\u003c</code>, οπότε η δεύτερη εντολή εμφανίζει <code>0</code> και η διάταξη της σελίδας παραμένει ανέπαφη. Βήμα 3: το μη έγκυρο JSON αγνοείται και το παραγόμενο γράφημα WebPage επιστρέφει (καταγράψτε αν ο επεξεργαστής έδωσε προειδοποίηση).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/structured-data/nodes.ts</code> (<code>structuredDataJson</code>) · <code>src/cms/core/seo/document.ts</code> (<code>parseSchemaOverride</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-090" data-priority="P2">
+      <h3>Άρθρα: BlogPosting με συντάκτη, ημερομηνίες και εικόνα (παραγόμενοι ιστότοποι)</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ένας ιστότοπος που παράχθηκε με blog (βλ. τη σημείωση στη λίστα ελέγχου 03, «Generated editorial collections»)· στη βάση σημειώστε Δεν ισχύει. Ένα δημοσιευμένο άρθρο <code>qa-article</code> με περίληψη, εικόνα και δημοσιευμένο συντάκτη.</p>
+      <ol class="steps">
+        <li>Εκτελέστε <code>LD /blog/qa-article</code> και επικυρώστε με το Rich Results Test.</li>
+        <li>Στην κάρτα <strong>Articles</strong> αποεπιλέξτε τα <strong>Author</strong>, <strong>Publish and update dates</strong> και <strong>Images</strong>, αποθηκεύστε και επαναλάβετε. Επιλέξτε τα ξανά.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: ένα <code>BlogPosting</code> (<code>@id</code> <code>…/blog/qa-article#article</code>, <code>headline</code> έως 110 χαρακτήρες, <code>description</code>, <code>mainEntityOfPage</code>, <code>publisher</code>, <code>image</code> ως λίστα απόλυτων URL, <code>datePublished</code> και <code>dateModified</code> ως ημερομηνίες-ώρες ISO, <code>author</code> ως αναφορά <code>@id</code> με έναν κόμβο <code>Person</code> δίπλα του), και έπειτα ένα BreadcrumbList (Home → blog → κατηγορία, αν υπάρχει → άρθρο). Rich Results Test: τα <strong>Articles</strong> είναι έγκυρα. Βήμα 2: τα <code>author</code>, οι δύο ημερομηνίες και το <code>image</code> έχουν εξαφανιστεί και ο κόμβος Person δεν παράγεται.</p>
+      <p class="ref">Αναφ.: <code>.claude/skills/new-site/templates/content/detail-page.tsx.tpl</code> · <code>src/cms/core/structured-data/nodes.ts</code> (<code>article</code>, <code>HEADLINE_MAX</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-091" data-priority="P2">
+      <h3>Το speakable δείχνει μόνο στα στοιχεία που επισημαίνει το πρότυπο</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Όπως στη MED-090 (παραγόμενος ιστότοπος με blog)· στη βάση σημειώστε Δεν ισχύει.</p>
+      <ol class="steps">
+        <li>Εκτελέστε <code>LD /blog/qa-article | grep -o '"speakable":{[^}]*}'</code>.</li>
+        <li>Στον browser ανοίξτε το άρθρο, εργαλεία προγραμματιστή → Console, και εκτελέστε <code>document.querySelectorAll('[data-speakable]').length</code> και <code>[...document.querySelectorAll('[data-speakable]')].map(e =&gt; e.dataset.speakable + ': ' + e.tagName)</code>.</li>
+        <li>Ανοίξτε το <code>/qa-seo</code> και το <code>/</code> και εκτελέστε την ίδια καταμέτρηση.</li>
+        <li>Αποεπιλέξτε το <strong>Speakable (text for voice assistants)</strong> στην κάρτα Articles, αποθηκεύστε και επαναλάβετε το βήμα 1. Επιλέξτε το ξανά.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>"speakable":{"@type":"SpeakableSpecification","cssSelector":["[data-speakable=\"headline\"]","[data-speakable=\"summary\"]"]}</code>. Βήμα 2: <code>2</code>: <code>headline: H1</code> και <code>summary: P</code> (ένα άρθρο χωρίς περίληψη δίνει 1). Βήμα 3: <code>0</code>, και το JSON-LD καμίας από τις δύο σελίδες δεν περιέχει <code>speakable</code>. Βήμα 4: κανένα κλειδί <code>speakable</code>. Επικυρώστε το βήμα 1 με τον Schema.org validator: κανένα σφάλμα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/structured-data/nodes.ts</code> (<code>SPEAKABLE_SELECTORS</code>) · <code>.claude/skills/new-site/templates/content/detail-page.tsx.tpl</code> (<code>data-speakable</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-092" data-priority="P3">
+      <h3>Απαντήσεις: FAQPage, και speakable μόνο ως Article</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ένας παραγόμενος ιστότοπος με τη συλλογή FAQ και μια δημοσιευμένη απάντηση <code>qa-answer</code>· στη βάση σημειώστε Δεν ισχύει.</p>
+      <ol class="steps">
+        <li>Ανοίξτε την κάρτα <strong>Answers (FAQ)</strong> και σημειώστε ποιοι διακόπτες εμφανίζονται. Εκτελέστε <code>LD /faq/qa-answer</code>.</li>
+        <li>Ορίστε τον τύπο της κάρτας σε <code>Article</code>, αποθηκεύστε, δείτε ξανά τους διακόπτες και επαναλάβετε το <code>LD</code>. Επαναφέρετέ τον σε <code>FAQPage</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: προσφέρονται μόνο τα <strong>Breadcrumbs</strong> και <strong>Include the FAQs from the SEO panel in the same FAQPage</strong>· το JSON-LD έχει ένα <code>FAQPage</code> (<code>@id</code> <code>…#faq</code>) και κανένα <code>speakable</code>. Βήμα 2: εμφανίζονται τα <strong>Publish and update dates</strong> και <strong>Speakable (text for voice assistants)</strong>· ο κόμβος είναι <code>Article</code> με SpeakableSpecification.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/structured-data/policy.ts</code> (κατηγορία <code>answers</code>, <code>partsFor</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-093" data-priority="P2">
+      <h3>JSON-LD προϊόντος και τα τμήματά του</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Το module Commerce είναι ενεργό· ένα δημοσιευμένο προϊόν <code>qa-product</code> με τιμή, τιμή Brand, κατάσταση αποθέματος «σε απόθεμα» και τουλάχιστον μία εγκεκριμένη κριτική (λίστα ελέγχου 08). Διαφορετικά σημειώστε Δεν ισχύει.</p>
+      <ol class="steps">
+        <li>Εκτελέστε <code>LD /shop/qa-product</code> και <code>H /shop/qa-product | grep -E 'og:type|product:'</code>. Επικυρώστε με το Rich Results Test.</li>
+        <li>Στην κάρτα <strong>Products</strong> αποεπιλέξτε τα <strong>Brand</strong>, <strong>Reviews and rating</strong> και <strong>Price and availability</strong> (σημειώστε την υπόδειξή του), αποθηκεύστε και επαναλάβετε το <code>LD</code>. Επιλέξτε τα ξανά.</li>
+        <li>Δώστε στο προϊόν δύο παραλλαγές με διαφορετικές τιμές και επαναλάβετε το <code>LD</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: ένα <code>Product</code> (<code>@id</code> <code>…/shop/qa-product#product</code>, <code>name</code>, <code>image</code>, <code>brand</code> <code>{"@type":"Brand",…}</code>, <code>aggregateRating</code>, <code>review</code>, <code>offers</code> τύπου <code>Offer</code> με <code>price</code> ως συμβολοσειρά με δύο δεκαδικά, <code>priceCurrency</code>, <code>availability</code> <code>https://schema.org/InStock</code>, <code>itemCondition</code> <code>https://schema.org/NewCondition</code>) και ένα BreadcrumbList. Head: <code>product:price:amount</code>, <code>product:price:currency</code>, <code>product:availability</code>· καταγράψτε αν το <code>og:type</code> εμφανίζεται δύο φορές (<code>website</code> και <code>product</code>). Rich Results Test: ανιχνεύονται product snippets / merchant listings, κανένα σφάλμα (προειδοποιήσεις για αποστολή ή επιστροφές είναι αποδεκτές).</li>
+        <li>Βήμα 2: υπόδειξη <code>Without it, Google cannot show the price or stock.</code>· τα <code>brand</code>, <code>aggregateRating</code>, <code>review</code> και <code>offers</code> έχουν εξαφανιστεί· το <code>image</code> παραμένει.</li>
+        <li>Βήμα 3: το <code>offers</code> είναι <code>AggregateOffer</code> με <code>offerCount</code> 2, <code>lowPrice</code> και <code>highPrice</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/lib/seo/commerce-schema.ts</code> (<code>productSchema</code>, <code>offerFragment</code>) · <code>src/app/[locale]/shop/[slug]/page.tsx</code> · <code>src/cms/core/structured-data/nodes.ts</code> (<code>product</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-094" data-priority="P2">
+      <h3>JSON-LD ημερήσιας εκδρομής</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Το module Booking είναι ενεργό· μια δημοσιευμένη εμπειρία <code>qa-trip</code> με <strong>Booking type</strong> Transport, <strong>Base price</strong> 80 και δύο εικόνες γκαλερί. Διαφορετικά σημειώστε Δεν ισχύει.</p>
+      <ol class="steps">
+        <li>Εκτελέστε <code>LD /booking/qa-trip</code> και επικυρώστε με τον Schema.org validator.</li>
+        <li>Στην κάρτα <strong>Day trips</strong> αποεπιλέξτε το <strong>Price and availability</strong>, αποθηκεύστε και επαναλάβετε. Επιλέξτε το ξανά.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: ένα <code>TouristTrip</code> (<code>@id</code> <code>…/booking/qa-trip#trip</code>, <code>name</code>, <code>provider</code> <code>#organization</code>, <code>image</code> με τα δύο απόλυτα URL, <code>offers</code> <code>{"@type":"Offer","price":80,"priceCurrency":…}</code>) και ένα BreadcrumbList που ξεκινά από τη λίστα κρατήσεων. Κανένα σφάλμα επικυρωτή. Βήμα 2: κανένα <code>offers</code>.</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/booking/[slug]/page.tsx</code> (<code>structuredOfferPrice</code>) · <code>src/cms/core/structured-data/nodes.ts</code> (<code>trip</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-095" data-priority="P2">
+      <h3>JSON-LD διαμονής και η τιμή ανά βράδυ</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Το module Booking είναι ενεργό με ενεργοποιημένες τις διαμονές· μια δημοσιευμένη εμπειρία <code>qa-stay</code> με <strong>Booking type</strong> Stay, <strong>Rate per night</strong> 120 και εποχική τιμή 95. Διαφορετικά σημειώστε Δεν ισχύει.</p>
+      <ol class="steps">
+        <li>Ανοίξτε την κάρτα <strong>Stays</strong> και σημειώστε ποιοι διακόπτες εμφανίζονται για τον προεπιλεγμένο τύπο. Εκτελέστε <code>LD /booking/qa-stay</code>.</li>
+        <li>Ορίστε τον τύπο των Stays σε <code>Product</code>, αποθηκεύστε, δείτε τους διακόπτες και επαναλάβετε το <code>LD</code>. Επικυρώστε με τον Schema.org validator.</li>
+        <li>Επαναφέρετέ τον σε <code>Accommodation</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: η κάρτα προσφέρει μόνο <strong>Images</strong>· ο κόμβος είναι <code>Accommodation</code> (<code>…#accommodation</code>) με <code>image</code> και χωρίς <code>offers</code>, παρόλο που η σελίδα προβάλλει τιμή ανά βράδυ. Βήμα 2: εμφανίζεται το <strong>Price and availability</strong>· ο κόμβος είναι <code>Product</code> με <code>offers</code> <code>{"@type":"Offer","price":95,…}</code> (η χαμηλότερη τιμή ανά βράδυ). Καταγράψτε το αποτέλεσμα του βήματος 1 στη λίστα εκκρεμοτήτων: μια διαμονή εμφανίζει την τιμή ανά βράδυ στα δομημένα δεδομένα μόνο όταν ο τύπος της είναι Product.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/data.ts</code> (<code>lowestPrice</code>, <code>structuredOfferPrice</code>) · <code>src/cms/core/structured-data/policy.ts</code> (<code>PARTS_FOR_FAMILY.accommodation</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-096" data-priority="P3">
+      <h3>Η πολιτική αποθηκεύεται ολόκληρη, μαζί με τις κρυφές κάρτες</h3>
+      <ol class="steps">
+        <li>Με το <strong>Commerce</strong> ενεργό, ορίστε τον τύπο των Products σε <code>None</code> και αποθηκεύστε. Απενεργοποιήστε το Commerce, αλλάξτε την κάρτα Pages και αποθηκεύστε. Ενεργοποιήστε ξανά το Commerce και ανοίξτε την καρτέλα.</li>
+        <li>Εκτελέστε <code>SELECT value FROM site_settings WHERE `key` = 'seo.schema';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η κάρτα Products εμφανίζει ακόμη <code>None</code>: η αποθήκευση ενώ η κάρτα ήταν κρυφή δεν την επανέφερε. Το αποθηκευμένο JSON έχει <code>business</code> και μια εγγραφή <code>categories</code> για κάθε κατηγορία. Επαναφέρετε τα Products σε <code>Product</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/StructuredDataSettings.tsx</code> · <code>src/cms/core/structured-data/policy.ts</code> (<code>parseSchemaPolicy</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-pm">
+    <h2>Γέφυρα Product Manager (Praion.ai)</h2>
+    <p class="intro">Ο Product Manager προωθεί τιμές SEO, μεταγλωττισμένα payloads head και αλλαγές slug στο CMS με υπογεγραμμένα αιτήματα. Η σύνδεση κλειδιών, οι έλεγχοι υπογραφής, η επανάληψη (replay) και η ανάκληση είναι οι AUTH-057 έως AUTH-062· αυτή η ενότητα ελέγχει τι κάνουν οι προωθήσεις στον ιστότοπο. Στο βασικό CMS εκτίθενται ως έγγραφα μόνο τα προϊόντα (τύπος <code>product</code>, Commerce ενεργό) και οι εμπειρίες κρατήσεων (τύπος <code>wp_post</code>, Booking ενεργό)· payloads μπορούν επίσης να προωθηθούν για οποιαδήποτε διαδρομή, όπως το <code>/qa-seo</code>.</p>
+
+    <article class="tc" id="MED-097" data-priority="P2">
+      <h3>Ενεργοποίηση της γέφυρας και προετοιμασία βοηθητικής εντολής υπογραφής</h3>
+      <ol class="steps">
+        <li>Στις <strong>Settings</strong> → <strong>Modules</strong> επιλέξτε το <strong>Praion.ai connection</strong>, <strong>Save settings</strong>.</li>
+        <li>Δημιουργήστε και συνδέστε ένα κλειδί όπως στην AUTH-057, με όνομα <code>QA PM full</code>, με επιλεγμένα και τα τέσσερα δικαιώματα (<strong>Read content</strong>, <strong>Write SEO fields</strong>, <strong>Write compiled head payloads</strong>, <strong>Write image alt text</strong>). Κρατήστε τα <code>KEY_ID</code>, <code>SECRET</code>, <code>BASE</code> και <code>HOSTPORT</code> ορισμένα όπως στην AUTH-058.</li>
+        <li>Επικολλήστε αυτή τη βοηθητική εντολή (υπογράφει ακριβώς όπως η AUTH-058, μαζί με το hash του σώματος):
+<pre><code>pm() { # pm METHOD PATH [BODY_FILE]
+  local M=$1 P=$2 F=${3:-/dev/null} TS N H SIG
+  TS=$(date +%s); N=$(openssl rand -hex 16); H=$(sha256sum &lt; "$F" | cut -d' ' -f1)
+  SIG=$(printf 'PM-HMAC-SHA256\n%s\n%s\n%s\n%s\n%s\n%s' "$M" "$HOSTPORT" "$P" "$TS" "$N" "$H" \
+    | openssl dgst -sha256 -hmac "$SECRET" | sed 's/^.*= //')
+  curl -s -X "$M" "$BASE$P" -H 'Content-Type: application/json' -H "X-PM-Key-Id: $KEY_ID" \
+    -H "X-PM-Timestamp: $TS" -H "X-PM-Nonce: $N" -H "X-PM-Signature: $SIG" ${3:+--data-binary @"$F"}; echo
+}
+pm GET /api/cms/pm/v1/ping | jq .capabilities</code></pre></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το ping απαντά με ένα αντικείμενο <code>capabilities</code> που περιλαμβάνει <code>"compiled_payloads": true</code> και <code>"alternates": false</code>, και <code>woocommerce</code> ανάλογα με το αν το Commerce είναι ενεργό. Με το module ανενεργό η ίδια κλήση απαντά <code>404</code> <code>{"ok":false,"error":"no_route"}</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/pm/routes.ts</code> (<code>pmPingRoute</code>, <code>bridgeRoute</code>) · <code>src/cms/core/tokens/signature.ts</code> (<code>canonicalString</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-098" data-priority="P1">
+      <h3>Ένα payload head για ελληνική σελίδα εμφανίζεται</h3>
+      <ol class="steps">
+        <li>Δημιουργήστε το σώμα και προωθήστε το:
+<pre><code>cat &gt; pm-el.json &lt;&lt;'EOF'
+{"path":"/qa-seo","head_meta":{"title":"PM title EL","description":"PM description EL","og_title":"PM OG EL"},
+ "jsonld":{"@context":"https://schema.org","@type":"Service","name":"PM service EL"},"seo_override":false}
+EOF
+pm PATCH /api/cms/pm/v1/payload pm-el.json</code></pre></li>
+        <li>Εκτελέστε <code>H /qa-seo | grep -E '&lt;title&gt;|og:title'</code> και <code>LD /qa-seo</code>.</li>
+        <li>Εκτελέστε <code>SELECT path, locale, seo_override, document_id, payload_hash FROM pm_head_payloads;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Απάντηση <code>{"written":1,"errors":{},"skipped":[]}</code>. Χωρίς τη σημαία override η σελίδα διατηρεί τον δικό της τίτλο και το og:title (το payload συμπληρώνει μόνο κενά). Το JSON-LD έχει τώρα τρία μπλοκ: το γράφημα όλου του ιστοτόπου, το γράφημα της σελίδας και τον κόμβο <code>Service</code> του PM. SQL: μία γραμμή <code>/qa-seo</code>, <code>el</code>, seo_override 0, document_id NULL.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/pm/payload.ts</code> (<code>storePayload</code>) · <code>src/cms/modules/pm/PmStructuredData.tsx</code> · <code>src/lib/seo/metadata.ts</code> (<code>pmWeak</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-099" data-priority="P2">
+      <h3>Με τη σημαία override υπερισχύουν οι τιμές του PM</h3>
+      <ol class="steps">
+        <li>Αλλάξτε το <code>"seo_override":false</code> σε <code>true</code> στο <code>pm-el.json</code> και προωθήστε το ξανά.</li>
+        <li>Εκτελέστε <code>H /qa-seo | grep -E '&lt;title&gt;|description|og:title'</code> και <code>LD /qa-seo</code>.</li>
+        <li>Αποθηκεύστε μια παράκαμψη ανά διαδρομή για <code>/qa-seo</code> <code>el</code> με Title <code>Override wins</code>, επαναλάβετε το βήμα 2 και έπειτα διαγράψτε την παράκαμψη.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 2: <code>&lt;title&gt;PM title EL&lt;/title&gt;</code>, περιγραφή <code>PM description EL</code>, <code>og:title</code> <code>PM OG EL</code>. JSON-LD: μόνο το μπλοκ όλου του ιστοτόπου και το μπλοκ του PM (το γράφημα WebPage της σελίδας αντικαθίσταται). Βήμα 3: ο τίτλος είναι <code>Override wins</code>: μια παράκαμψη ανά διαδρομή εξακολουθεί να υπερισχύει του PM.</p>
+      <p class="ref">Αναφ.: <code>src/lib/seo/metadata.ts</code> (<code>pmStrong</code>) · <code>src/cms/modules/pm/PmStructuredData.tsx</code> (<code>keepFallback</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-100" data-priority="P2">
+      <h3>Ένα payload head για αγγλική σελίδα εμφανίζεται μόνο στην αγγλική σελίδα</h3>
+      <ol class="steps">
+        <li>Προωθήστε ένα payload για τα αγγλικά, με διεύθυνση τη δημόσια αγγλική διαδρομή:
+<pre><code>cat &gt; pm-en.json &lt;&lt;'EOF'
+{"path":"/en/qa-seo","head_meta":{"title":"PM title EN"},
+ "jsonld":{"@context":"https://schema.org","@type":"Service","name":"PM service EN"},"seo_override":true}
+EOF
+pm PATCH '/api/cms/pm/v1/payload?locale=en' pm-en.json</code></pre></li>
+        <li>Εκτελέστε <code>H /en/qa-seo | grep '&lt;title&gt;'</code>, <code>LD /en/qa-seo</code>, <code>H /qa-seo | grep '&lt;title&gt;'</code>.</li>
+        <li>Εκτελέστε το SQL της MED-098.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>{"written":1,…}</code>. <code>/en/qa-seo</code>: <code>&lt;title&gt;PM title EN&lt;/title&gt;</code> και ένα μπλοκ <code>PM service EN</code>. Το <code>/qa-seo</code> εμφανίζει ακόμη <code>PM title EL</code>. SQL: δύο γραμμές, και οι δύο με path <code>/qa-seo</code>, locales <code>el</code> και <code>en</code>· καμία γραμμή με <code>/en/qa-seo</code> (τα payloads αποθηκεύονται με κλειδί τη διαδρομή χωρίς πρόθεμα μαζί με τη γλώσσα).</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/pm/routes.ts</code> (<code>pmPayloadRoute</code>, <code>localeKeyedPath</code>) · <code>src/cms/core/seo/locale-path.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-101" data-priority="P3">
+      <h3>Επαναλαμβανόμενα και μη ασφαλή payloads</h3>
+      <ol class="steps">
+        <li>Προωθήστε ξανά το <code>pm-en.json</code> αμετάβλητο.</li>
+        <li>Προωθήστε ένα payload του οποίου το όνομα jsonld είναι <code>x&lt;/script&gt;&lt;script&gt;alert(1)</code>, και ένα του οποίου το jsonld είναι <code>{"name":"no type"}</code>.</li>
+        <li>Προωθήστε <code>{"path":"qa-seo","head_meta":{"title":"x"}}</code> (χωρίς αρχική κάθετο).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>{"written":0,"errors":{},"skipped":["payload"]}</code> και καμία νέα εγγραφή στο αρχείο ελέγχου. Βήμα 2: HTTP 200 με <code>"written":0</code> και <code>errors.payload</code> <code>Refusing a payload containing "&lt;/script".</code>, και έπειτα <code>Every structured-data node must carry an "@type".</code>· το αποθηκευμένο payload δεν αλλάζει. Βήμα 3: <code>404</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/pm/payload.ts</code> (<code>assertNoScriptBreakout</code>, <code>validateJsonLd</code>, <code>payloadHash</code>)</p>
+    </article>
+
+    <article class="tc" id="MED-102" data-priority="P1">
+      <h3>Μια αλλαγή slug από τον Product Manager γράφει ακριβώς μία ανακατεύθυνση</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Το Commerce είναι ενεργό και υπάρχει ένα δημοσιευμένο προϊόν με slug <code>qa-pm-product</code> σε EL και EN (λίστα ελέγχου 08). Αν έχετε αντί γι' αυτό το Booking, χρησιμοποιήστε μια εμπειρία και τον τύπο <code>wp_post</code>, με διαδρομές <code>/booking/…</code>.</p>
+      <ol class="steps">
+        <li>Εκτελέστε <code>SELECT id, locale FROM documents WHERE type = 'product' AND slug = 'qa-pm-product';</code> και ορίστε <code>ID=&lt;EL id&gt;</code>.</li>
+        <li>Εκτελέστε <code>echo '{"values":{"slug":"qa-pm-renamed"}}' &gt; pm-slug.json; pm PATCH /api/cms/pm/v1/pages/product/$ID pm-slug.json</code>.</li>
+        <li>Εκτελέστε <code>R /shop/qa-pm-product</code>, <code>R /shop/qa-pm-renamed</code> και <code>SELECT source, target, status_code, kind, reason, notes FROM seo_redirects WHERE source LIKE '%qa-pm-%' OR target LIKE '%qa-pm-%';</code></li>
+        <li>Ανοίξτε το προϊόν στο διαχειριστικό και το <strong>Version history</strong> του· ανοίξτε το <strong>Audit log</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Απάντηση <code>{"written":1,"errors":{},"skipped":[]}</code>.</li>
+        <li>Παλιά διεύθυνση <code>301 http://localhost:3002/shop/qa-pm-renamed</code>· νέα διεύθυνση <code>200</code>.</li>
+        <li>SQL: ακριβώς μία γραμμή, <code>/shop/qa-pm-product</code> → <code>/shop/qa-pm-renamed</code>, 301, <code>literal</code>, reason <code>slug_change</code>, notes <code>Auto: the page’s address changed — old links are sent to the new one</code>. Καμία γραμμή με notes <code>PM bridge: slug change</code>.</li>
+        <li>Μία νέα γραμμή έκδοσης· η εγγραφή του αρχείου ελέγχου έχει actor <code>api-token:QA PM full</code>.</li>
+        <li>Εκτελέστε <code>SELECT locale, slug FROM documents WHERE type = 'product' AND slug LIKE 'qa-pm-%';</code> και καταγράψτε το αποτέλεσμα. Η γέφυρα μετονομάζει μόνο τη γραμμή στην οποία απευθύνθηκε, οπότε η EN αναμένεται να διατηρεί το <code>qa-pm-product</code>, σε αντίθεση με μια μετονομασία από τη φόρμα του διαχειριστικού, που κρατά όλες τις γλώσσες στο ίδιο slug. Αν ισχύει αυτό, το alternate <code>en</code> της σελίδας EL (<code>/en/shop/qa-pm-renamed</code>) καταλήγει στη σελίδα «δεν βρέθηκε»: καταγράψτε το ως παρατήρηση.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/pm/write.ts</code> (<code>applyPageValues</code>, <code>slugChange</code>) · <code>src/cms/core/seo/slug-change-redirect.ts</code> · docs/dev-guides/06-media-seo-structured-data.md §10 (“PM slug changes rely on updateDocument”)</p>
+    </article>
+
+    <article class="tc" id="MED-103" data-priority="P3">
+      <h3>Μια δεύτερη μετονομασία διατηρεί ένα μόνο βήμα· τα μη έγκυρα slug και οι συγκρούσεις απορρίπτονται</h3>
+      <ol class="steps">
+        <li>Προωθήστε <code>{"values":{"slug":"qa-pm-final"}}</code> για το ίδιο id. Επαναλάβετε το SQL της MED-102 και εκτελέστε <code>R /shop/qa-pm-product</code>.</li>
+        <li>Προωθήστε <code>{"values":{"slug":"Bad Slug"}}</code> και έπειτα ένα slug που χρησιμοποιείται ήδη από άλλο προϊόν EL.</li>
+        <li>Ορίστε το <code>ID</code> στο id της γραμμής EN και προωθήστε <code>{"values":{"slug":"qa-pm-en"}}</code> με <code>'/api/cms/pm/v1/pages/product/'$ID'?locale=en'</code>. Εκτελέστε <code>R /en/shop/qa-pm-product</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: δύο γραμμές, και οι δύο δείχνουν απευθείας στο <code>/shop/qa-pm-final</code> (η προηγούμενη μεταφέρθηκε μπροστά)· το <code>/shop/qa-pm-product</code> απαντά <code>301</code> απευθείας προς το <code>/shop/qa-pm-final</code>, σε ένα βήμα. Βήμα 2: <code>"written":0</code> με <code>errors.slug</code> <code>A slug may contain only lowercase letters, numbers and dashes.</code>, και έπειτα <code>Another product already uses the slug "…" in this language.</code>· δεν αλλάζει τίποτα. Βήμα 3: <code>301 http://localhost:3002/en/shop/qa-pm-en</code> (μία νέα γραμμή, source <code>/en/shop/qa-pm-product</code>)· οι ελληνικές διευθύνσεις και γραμμές μένουν ανέπαφες.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/pm/write.ts</code> (<code>slugCollision</code>) · <code>src/cms/core/seo/slug-change-redirect.ts</code> (ένα βήμα)</p>
+    </article>
+
+    <article class="tc" id="MED-104" data-priority="P3">
+      <h3>Η απενεργοποίηση της γέφυρας διατηρεί ό,τι έχει προωθηθεί</h3>
+      <ol class="steps">
+        <li>Αποεπιλέξτε το <strong>Praion.ai connection</strong> στα Modules και αποθηκεύστε. Εκτελέστε <code>pm GET /api/cms/pm/v1/ping</code> και <code>H /qa-seo | grep '&lt;title&gt;'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το ping απαντά <code>404</code> <code>{"ok":false,"error":"no_route"}</code>· η καρτέλα Connect to Praion.ai εξαφανίζεται από τις Settings· το <code>/qa-seo</code> εμφανίζει ακόμη <code>PM title EL</code> (η σημείωση απενεργοποίησης του module αναφέρει ότι το SEO που έχει ήδη προωθηθεί παραμένει ενεργό).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/settings/schema.ts</code> (σημείωση απενεργοποίησης <code>pm</code>) · <code>src/cms/modules/pm/gate.ts</code></p>
+    </article>
+
+    <article class="tc" id="MED-105" data-priority="P3">
+      <h3>Καθαρισμός</h3>
+      <ol class="steps">
+        <li>Ενεργοποιήστε τη γέφυρα, προωθήστε κενά payloads και για τις δύο γλώσσες (<code>{"path":"/qa-seo","head_meta":null,"jsonld":null,"seo_override":false}</code>, με και χωρίς <code>?locale=en</code>), ανακαλέστε το <code>QA PM full</code> και απενεργοποιήστε ξανά τη γέφυρα.</li>
+        <li>Διαγράψτε τις ανακατευθύνσεις του QA (<code>/qa-old</code>, <code>/qa-temp</code>, <code>/qa-t307</code>, <code>/qa-docs/*</code>, το regex, <code>/qa-ext</code>, <code>/en/qa-old</code>, <code>/qa-missing</code>, <code>/qa-x…</code>), τις εγγραφές 404 του QA και όσες παρακάμψεις έχουν απομείνει.</li>
+        <li>Επαναφέρετε το Branding και το Structured data στις τιμές που σημειώσατε, διαγράψτε το QA SEO Page και τα αρχεία πολυμέσων του QA.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το <code>/qa-seo</code> απαντά με την ανακατεύθυνση «δεν βρέθηκε» και καταγράφεται άλλη μία φορά στην παρακολούθηση 404 (διαγράψτε και αυτή την εγγραφή). Δεν απομένουν γραμμές του QA στα <code>seo_redirects</code>, <code>seo_meta</code> ή <code>pm_head_payloads</code> πέρα από τις γραμμές των κενών payloads, και ο ιστότοπος εμφανίζεται με την αρχική ταυτότητα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/pm/payload.ts</code> · <code>src/cms/admin/SeoManager.tsx</code></p>
+    </article>
+  </section>
+
+</main>
+<footer class="page">Λίστα ελέγχου 06 από 12. Τα αποτελέσματα αποθηκεύονται μόνο σε αυτόν τον browser· χρησιμοποιήστε την εξαγωγή πριν καθαρίσετε τα δεδομένα του browser. Στο τέλος επαναφέρετε το Branding, το Structured data, τους διακόπτες των modules και τις ρυθμίσεις γλωσσών, και διαγράψτε τη σελίδα, τα αρχεία πολυμέσων, τις ανακατευθύνσεις, τις παρακάμψεις, τις εγγραφές 404 και το κλειδί API του QA (MED-105).</footer>
+</body>
+</html>

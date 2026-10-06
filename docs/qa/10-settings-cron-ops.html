@@ -1,0 +1,992 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings &amp; operations</title>
+<link rel="stylesheet" href="qa.css">
+<script src="qa.js" defer></script>
+</head>
+<body>
+<nav class="crumbs"><a href="index.html">CMS manual QA</a></nav>
+<header class="page">
+  <h1>10 · Settings, scheduled jobs &amp; operations</h1>
+  <p class="scope">Running a site rather than editing it. Covered here: the Settings screen as a whole (its tabs, the one <strong>Save settings</strong> that sends only what changed, changes taking effect without a restart, the settings cache), every settings group and every key in it, server-side validation and the all-or-nothing save, who may view and who may change settings, the language-settings API; the scheduled-job endpoint <code>POST /api/cms/cron/&lt;job&gt;</code> and each of its seven jobs, the cron secret, overlap protection, rate limits and the suggested crontab; the two older per-job endpoints; the CMS updater's rules on what is replaced and what is kept; the environment-variable reference; a post-deploy smoke test; a backup and restore drill; logs, audit and 404-log growth; the documentation builds; and the release gate. Covered elsewhere and referenced by ID: install, env file, migrations and seeds (SET-001 to SET-023), production build and the X-Real-IP rule for sign-in (SET-030, SET-031), module switches (SET-033 to SET-043), language switches on screen (SET-044 to SET-049), the edit-lock relay (SET-059 to SET-065), building an update package and the first updater checks (SET-066 to SET-072), security headers and robots.txt (SET-073 to SET-078), the shipped PDFs (SET-079, SET-080), the <code>site_settings</code> table (DB-020), Settings keyboard use and unsaved-changes guard (ADM-044, ADM-051), “Require two-factor authentication” (AUTH-027, AUTH-028), the audit screen (AUTH-063 to AUTH-067), public rate limits and stored secrets (AUTH-071 to AUTH-078), branding (MED-030 to MED-034), structured data (MED-082 to MED-096), SEO fields (MED-073 to MED-077), sitemap and robots extras (MED-080, MED-081), the 404 log screen (MED-060 to MED-066), GA and cookies (MKT-067, MKT-079), and the per-module settings in checklists 08 and 09. You need: a test environment (a local production build is enough for most cases, a hosted staging box with shell access for the deploy and backup suites), a terminal with <code>curl</code>, <code>openssl</code>, <code>unzip</code> and <code>mysqldump</code>, a database client, permission to edit the environment file and restart the app, and two browsers (or one normal and one private window).</p>
+</header>
+<main>
+
+  <section class="suite" id="suite-prep">
+    <h2>Before you start</h2>
+    <p class="intro">Checklist 01 must be done (migrations, seeds, superadmin <code>qa-admin@example.com</code>). Sign in as <code>qa-admin@example.com</code> unless a case says otherwise. URLs use <code>http://localhost:3002</code> (<code>npm run dev</code>); a production build (<code>npm run build</code> then <code>npm run start</code>, see SET-030) answers on <code>http://localhost:3000</code>; on a hosted environment use its address. Admin paths assume <code>ADMIN_PATH=admin</code>.</p>
+    <div class="callout">
+      <p><strong>Terminal.</strong> In the project folder run <code>BASE=http://localhost:3002</code>, and copy the admin <code>cms_session</code> cookie into <code>S</code> as described in checklist 05 (“Using curl with a session”). Once <code>CMS_CRON_SECRET</code> is set (OPS-025) also run <code>CRON='&lt;value of CMS_CRON_SECRET&gt;'</code>. Give every curl that is rate limited its own <code>-H 'X-Real-IP: 10.10.0.N'</code> (a new N per case) so cases do not use up each other's budget; restarting the app empties all rate-limit buckets.</p>
+      <p><strong>Settings from the terminal.</strong> A settings change by API is:</p>
+<pre><code>curl -s -X PATCH "$BASE/api/cms/settings" -b "cms_session=$S" \
+  -H 'Content-Type: application/json' -H 'X-Real-IP: 10.10.0.1' \
+  -d '{"seo.sitemapExtraUrls":"https://example.com/qa-ops"}' -w '\n%{http_code}\n'</code></pre>
+      <p><strong>Settings in the database.</strong> Values are JSON (strings keep their quotes). The key column is called <code>key</code> and must be back-quoted:</p>
+<pre><code>SELECT `key`, value, updated_by, updated_at FROM site_settings ORDER BY `key`;</code></pre>
+      <p><strong>Caches.</strong> Settings reads are cached until a save purges them; they never expire on a timer. After changing <code>site_settings</code> directly in SQL, restart the app before looking at the result (OPS-005 shows why).</p>
+      <p><strong>Write down</strong> the output of the <code>site_settings</code> query above before you start. OPS-066 puts the site back from it.</p>
+    </div>
+  </section>
+
+  <section class="suite" id="suite-screen">
+    <h2>The Settings screen</h2>
+    <p class="intro">Switch <strong>Commerce</strong> and <strong>Booking</strong> on in <strong>Settings</strong> → <strong>Modules</strong> for this suite (SET-037, SET-038) so every group is visible; set them back in OPS-066.</p>
+
+    <article class="tc" id="OPS-001" data-priority="P1">
+      <h3>Every tab is there, in order, and links to itself</h3>
+      <ol class="steps">
+        <li>Open <code>/admin/settings</code>. Read the tab strip from left to right.</li>
+        <li>Click <strong>SEO</strong> and look at the address bar. Reload the page.</li>
+        <li>Open <code>/admin/settings?tab=Nope</code>.</li>
+        <li>Open the <strong>Ecommerce</strong> tab and click each sub-tab; then open <strong>Fields</strong>, <strong>Branding</strong> and <strong>Structured data</strong>. Note where the <strong>Save settings</strong> button is shown.</li>
+      </ol>
+      <ul class="exp">
+        <li>The heading is <strong>Settings</strong>. Tabs, in this order: <strong>General</strong>, <strong>Analytics</strong>, <strong>Notifications</strong>, <strong>SEO</strong>, <strong>Ecommerce</strong>, <strong>Booking</strong>, <strong>Security</strong>, <strong>Fields</strong>, <strong>Branding</strong>, <strong>Structured data</strong>, then <strong>Connect to Praion.ai</strong> only when the Praion.ai connection module is on and you hold <em>Manage api tokens</em>, then <strong>Modules</strong>, <strong>Languages</strong>.</li>
+        <li>Step 2: the URL gains <code>?tab=SEO</code> and the reload opens SEO again. Step 3: an unknown tab opens <strong>General</strong> without an error.</li>
+        <li>Ecommerce has the sub-tabs <strong>General</strong>, <strong>Shipping</strong>, <strong>Coupons</strong>, <strong>Wishlist</strong>, <strong>Gift cards</strong> (and <code>&amp;sub=…</code> in the URL). <strong>Save settings</strong> is shown on the plain tabs, on Ecommerce → General, on Modules and on Languages; it is not shown on the other Ecommerce sub-tabs, on Fields, Branding or Structured data, which have their own save buttons.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/SettingsForm.tsx</code> (<code>tabs</code>, <code>openTab</code>) · <code>src/app/admin/(shell)/settings/page.tsx</code> · <code>src/cms/admin/shared.ts</code> (<code>PRAION_TAB</code>) · docs/dev-guides/10-settings-cron-operations.md §5</p>
+    </article>
+
+    <article class="tc" id="OPS-002" data-priority="P1">
+      <h3>A saved change is live at once, without a restart</h3>
+      <ol class="steps">
+        <li>Run <code>curl -s "$BASE/sitemap.xml" | grep -c 'qa-ops-live'</code>.</li>
+        <li>In <strong>Settings</strong> → <strong>SEO</strong> add the line <code>https://example.com/qa-ops-live</code> to <strong>Sitemap — extra URLs</strong> and click <strong>Save settings</strong>.</li>
+        <li>Without restarting anything, repeat the curl.</li>
+        <li>Remove the line, save, and repeat the curl once more.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1 prints <code>0</code>. Step 2 shows the green <code>Settings saved.</code> Step 3 prints <code>1</code>. Step 4 prints <code>0</code> again. No restart or rebuild is needed at any point.</p>
+      <p class="ref">Ref: <code>src/cms/core/settings/index.ts</code> (<code>setSetting</code> purges the key) · <code>src/cms/core/routes/settings.ts</code> (<code>revalidateTag(SETTINGS_TAG)</code>) · <code>src/app/sitemap.ts</code></p>
+    </article>
+
+    <article class="tc" id="OPS-003" data-priority="P2">
+      <h3>Save sends only what changed; shown defaults stay unset</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Note the current rows of the keys below first; if any exist, write their values down.</p>
+      <ol class="steps">
+        <li>Run the SQL below to remove four keys that have a default, then restart the app (the cache does not see direct SQL).
+<pre><code>SELECT `key`, value FROM site_settings WHERE `key` IN
+  ('security.require2fa','ecommerce.filters.priceControl','booking.kinds','ecommerce.currency');
+DELETE FROM site_settings WHERE `key` IN
+  ('security.require2fa','ecommerce.filters.priceControl','booking.kinds','ecommerce.currency');</code></pre></li>
+        <li>Open <strong>Settings</strong>. Check what Security, Ecommerce → General and Booking show for those four fields.</li>
+        <li>Open developer tools → Network. On <strong>General</strong> change <strong>Support email</strong> to <code>qa-ops@example.com</code> and click <strong>Save settings</strong>. Open the <code>settings</code> PATCH request and read its request payload.</li>
+        <li>Run the <code>SELECT</code> from step 1 again, and <code>SELECT JSON_UNQUOTE(value) FROM site_settings WHERE `key` = 'site.supportEmail';</code></li>
+      </ol>
+      <ul class="exp">
+        <li>Step 2: the form still shows concrete values: <strong>Require two-factor authentication</strong> <code>Optional — each administrator chooses</code>, <strong>Price filter</strong> <code>Slider with two handles</code>, <strong>Default currency</strong> <code>EUR</code>, both boxes of <strong>What you take bookings for</strong> ticked.</li>
+        <li>Step 3: the payload is exactly <code>{"site.supportEmail":"qa-ops@example.com"}</code>, nothing else.</li>
+        <li>Step 4: the four keys are still absent (no rows); the support email is <code>qa-ops@example.com</code>.</li>
+        <li>Put back any of the four rows you noted in the precondition through the screen.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/settings-patch.ts</code> (<code>buildSettingsPatch</code>) · <code>src/cms/admin/SettingsForm.tsx</code> (<code>snapshot</code>, <code>submit</code>) · docs/dev-guides/10-settings-cron-operations.md §10 (“Unset has meaning”)</p>
+    </article>
+
+    <article class="tc" id="OPS-004" data-priority="P3">
+      <h3>A value changed and changed back is not sent</h3>
+      <ol class="steps">
+        <li>Keep the Network tab open. On <strong>Security</strong> switch <strong>Require two-factor authentication</strong> to <code>Required for all administrators</code>, then back to <code>Optional — each administrator chooses</code>.</li>
+        <li>Click <strong>Save settings</strong>.</li>
+        <li>Open <strong>Audit log</strong>, set <strong>Activity</strong> to <strong>Site configuration</strong>, click <strong>Filter</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>Settings saved.</code> appears, but no PATCH request to <code>/api/cms/settings</code> is made, and no new <em>Changed settings</em> row appears in the audit log.</p>
+      <p class="ref">Ref: <code>src/cms/admin/SettingsForm.tsx</code> (<code>if (Object.keys(body).length &gt; 0)</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-005" data-priority="P3">
+      <h3>A direct database edit is not seen until a save purges the cache</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> A production build or the hosted test environment (the dev server may re-read the value).</p>
+      <ol class="steps">
+        <li>Run <code>curl -s "$BASE/sitemap.xml" | grep -c 'qa-ops-direct'</code> (this also loads the setting into the cache).</li>
+        <li>Run <code>INSERT INTO site_settings (`key`, value) VALUES ('seo.sitemapExtraUrls', JSON_QUOTE('https://example.com/qa-ops-direct')) ON DUPLICATE KEY UPDATE value = VALUES(value);</code></li>
+        <li>Repeat the curl.</li>
+        <li>In the admin change any other setting (for example <strong>Support email</strong>) and click <strong>Save settings</strong>. Repeat the curl.</li>
+        <li>Empty <strong>Sitemap — extra URLs</strong> and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Steps 1 and 3 print <code>0</code>: a value written straight into the table is not visible, because settings are cached with no expiry. Step 4 prints <code>1</code>: any admin save purges every settings reader. (A restart would also show it.) This is documented behaviour, not a defect; ops staff must not edit <code>site_settings</code> by hand on a live site.</p>
+      <p class="ref">Ref: <code>src/cms/core/cache.ts</code> (<code>CMS_CACHE_REVALIDATE = false</code>) · docs/dev-guides/10-settings-cron-operations.md §3.1, “Troubleshooting”</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-groups">
+    <h2>Every settings group</h2>
+    <p class="intro">One case per group. For each key: change it, save, check the effect, then put it back and save. Where another checklist tests the effect in depth, the table names the case; here it is enough that the value is stored and the quick check holds. After each case run <code>SELECT `key`, value FROM site_settings WHERE `key` LIKE '&lt;prefix&gt;%';</code> for that group.</p>
+
+    <article class="tc" id="OPS-006" data-priority="P2">
+      <h3>General: Support email</h3>
+      <ol class="steps">
+        <li>On <strong>General</strong> set <strong>Support email</strong> to <code>qa-support@example.com</code>, click <strong>Save settings</strong>. Hover the “i” next to the label.</li>
+        <li>Run <code>curl -s "$BASE/en/contact" | grep -c 'qa-support@example.com'</code> and the same for <code>$BASE/</code>.</li>
+        <li>Send a contact enquiry from <code>/en/contact</code> and look at the notification email's Reply-To.</li>
+        <li>Put the previous value back and save.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Label</th><th>Type</th><th>Effect described on screen</th></tr></thead>
+          <tbody>
+            <tr><td><code>site.supportEmail</code></td><td>Support email</td><td>email (browser checks the format; API 422 on a bad one)</td><td><code>Shown to visitors as the contact address, and used as the reply-to on notification emails.</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Expected:</span> The value is stored as <code>"qa-support@example.com"</code>. Per the help text the address should appear on the public site and as the Reply-To. Per the current code nothing reads this key (only the seed writes it): both curls print <code>0</code> and the Reply-To is the visitor's address. Record a defect: either wire the setting up or remove it (the public contact address comes from <strong>Branding</strong>, MED-030).</p>
+      <p class="ref">Ref: <code>src/cms/core/settings/schema.ts</code> (<code>site.supportEmail</code>) · <code>src/site-seed/data.ts</code> · docs/user-guides/src/06-rythmiseis-xristes.md (“General”)</p>
+    </article>
+
+    <article class="tc" id="OPS-007" data-priority="P2">
+      <h3>Analytics: GA4 Measurement ID</h3>
+      <ol class="steps">
+        <li>On <strong>Analytics</strong> set <strong>GA4 Measurement ID</strong> to <code>g-qa12345678</code> (lower case), save.</li>
+        <li>Run <code>SELECT value FROM site_settings WHERE `key` = 'analytics.gaMeasurementId';</code></li>
+        <li>Check the effect as in MKT-067 (cookie declaration) and, on a production build, MKT-079 (script loads after consent).</li>
+        <li>Clear the field and save.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Label</th><th>Accepted</th><th>When empty</th><th>Effect tested in</th></tr></thead>
+          <tbody>
+            <tr><td><code>analytics.gaMeasurementId</code></td><td>GA4 Measurement ID</td><td><code>G-</code> + 4 to 20 letters/digits, any case; trimmed</td><td>Falls back to <code>NEXT_PUBLIC_GA_MEASUREMENT_ID</code> (build time)</td><td>MKT-067, MKT-079</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Expected:</span> Saved with <code>Settings saved.</code>; the stored value is <code>"g-qa12345678"</code> (case is accepted as typed). With it set, Google Analytics 4 is declared automatically on the cookie declaration. After clearing, the value is <code>""</code> and GA falls back to the build-time variable (absent on the test site, so no GA).</p>
+      <p class="ref">Ref: <code>src/cms/core/settings/validate.ts</code> (<code>gaId</code>) · <code>src/cms/core/settings/analytics.ts</code> (<code>resolveGaId</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-008" data-priority="P2">
+      <h3>Notifications: Inquiry notification emails</h3>
+      <ol class="steps">
+        <li>On <strong>Notifications</strong> enter two readable addresses in <strong>Inquiry notification emails</strong>, one per line; save.</li>
+        <li>With Commerce on, place a manual order on the shop (as in COM-049) and check both mailboxes.</li>
+        <li>Send a contact enquiry (see MKT-017 for the expected defect).</li>
+        <li>Put the previous value back and save.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Label</th><th>Format</th><th>Read by</th><th>Effect tested in</th></tr></thead>
+          <tbody>
+            <tr><td><code>notifications.inquiryEmails</code></td><td>Inquiry notification emails</td><td>Comma- or newline-separated addresses</td><td>Shop order notification only</td><td>COM-066, MKT-017</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Expected:</span> Each address gets its own copy of the shop's order notification. The contact enquiry does not use this setting (MKT-017). Booking notifications use <strong>Booking</strong> → <strong>Notify these addresses</strong> instead (OPS-011).</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/orders.ts</code> (<code>notifications.inquiryEmails</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-009" data-priority="P2">
+      <h3>SEO: robots.txt extra Disallow and Sitemap extra URLs</h3>
+      <ol class="steps">
+        <li>On <strong>SEO</strong> set <strong>robots.txt — extra Disallow</strong> to <code>/qa-ops-private/</code> and <strong>Sitemap — extra URLs</strong> to <code>https://example.com/qa-ops-extra</code>; save.</li>
+        <li>Run <code>curl -s "$BASE/sitemap.xml" | grep -c qa-ops-extra</code> and <code>curl -s "$BASE/robots.txt"</code>.</li>
+        <li>Empty both fields and save.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Label</th><th>Format</th><th>Effect tested in</th></tr></thead>
+          <tbody>
+            <tr><td><code>seo.robotsExtraDisallow</code></td><td>robots.txt — extra Disallow</td><td>One path per line</td><td>MED-081 (production-origin build only)</td></tr>
+            <tr><td><code>seo.sitemapExtraUrls</code></td><td>Sitemap — extra URLs</td><td>One absolute URL per line; others skipped</td><td>MED-080, OPS-002</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Expected:</span> The sitemap count is <code>1</code>. robots.txt on the test origin still shows only <code>Disallow: /</code> for every agent (SET-076): extras never open up a non-production site. After emptying, both keys are stored as <code>""</code>.</p>
+      <p class="ref">Ref: <code>src/app/robots.ts</code> · <code>src/app/sitemap.ts</code> · <code>src/cms/core/seo/setting-lines.ts</code></p>
+    </article>
+
+    <article class="tc" id="OPS-010" data-priority="P2">
+      <h3>Ecommerce → General: all five keys</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Commerce on; at least one published product (COM-007).</p>
+      <ol class="steps">
+        <li>On <strong>Ecommerce</strong> → <strong>General</strong> change each field to the test value in the table and click <strong>Save settings</strong> once.</li>
+        <li>Run <code>SELECT `key`, value FROM site_settings WHERE `key` LIKE 'ecommerce.%' AND JSON_TYPE(value) = 'STRING';</code></li>
+        <li>Do the quick checks in the table.</li>
+        <li>Put every field back to its previous value and save.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Label</th><th>Key</th><th>Test value</th><th>Quick check</th><th>In depth</th></tr></thead>
+          <tbody>
+            <tr><td>Default currency</td><td><code>ecommerce.currency</code></td><td><code>USD</code></td><td>Product prices on <code>/en/shop</code> show in dollars</td><td>COM-015</td></tr>
+            <tr><td>Payment method</td><td><code>ecommerce.paymentProvider</code></td><td><code>Card (Stripe)</code> (stored <code>stripe</code>)</td><td>Checkout offers card payment (needs Stripe test keys)</td><td>COM-051 to COM-054</td></tr>
+            <tr><td>Gift-wrap fee</td><td><code>ecommerce.giftWrapFee</code></td><td><code>3,50</code></td><td>Stored as <code>"3.50"</code>; gift wrap costs 3.50 at checkout</td><td>COM-042</td></tr>
+            <tr><td>Price filter</td><td><code>ecommerce.filters.priceControl</code></td><td><code>From / to boxes</code> (stored <code>fields</code>)</td><td>Shop sidebar shows only the from/to boxes, no slider</td><td>COM-017</td></tr>
+            <tr><td>Cancel unpaid card orders after (hours)</td><td><code>ecommerce.pendingOrderTtlHours</code></td><td><code>0</code></td><td>OPS-030 returns <code>{"checked":0,"cancelled":[]}</code></td><td>COM-089, COM-090</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Expected:</span> One <code>Settings saved.</code>; the SQL shows the five stored values as in the table (the fee normalised to a dot); every quick check holds. After reverting, the previous values are back.</p>
+      <p class="ref">Ref: <code>src/cms/core/settings/schema.ts</code> (Ecommerce group) · docs/dev-guides/08-commerce.md</p>
+    </article>
+
+    <article class="tc" id="OPS-011" data-priority="P2">
+      <h3>Booking: all sixteen keys are stored</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Booking on.</p>
+      <ol class="steps">
+        <li>On <strong>Booking</strong> set each field to the test value below and click <strong>Save settings</strong> once.</li>
+        <li>Run <code>SELECT `key`, JSON_UNQUOTE(value) AS v FROM site_settings WHERE `key` LIKE 'booking.%' ORDER BY `key`;</code></li>
+        <li>Put every field back to its previous value (empty where it was empty) and save.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Label</th><th>Key</th><th>Test value</th><th>Placeholder / default</th><th>Effect tested in</th></tr></thead>
+          <tbody>
+            <tr><td>What you take bookings for</td><td><code>booking.kinds</code></td><td>only Stays ticked → <code>stay</code></td><td>both</td><td>BKG-003</td></tr>
+            <tr><td>Booking mode</td><td><code>booking.mode</code></td><td>Instant → <code>instant</code></td><td><code>request</code></td><td>BKG-054, BKG-055</td></tr>
+            <tr><td>Booking currency</td><td><code>booking.currency</code></td><td><code>GBP</code></td><td>shop currency, then EUR</td><td>BKG-011</td></tr>
+            <tr><td>Timezone</td><td><code>booking.timezone</code></td><td><code>Europe/London</code></td><td><code>Europe/Athens</code></td><td>BKG-002</td></tr>
+            <tr><td>Notify these addresses</td><td><code>booking.notificationEmails</code></td><td>one address</td><td>none</td><td>BKG-094</td></tr>
+            <tr><td>Requests lapse after (hours)</td><td><code>booking.requestExpiryHours</code></td><td><code>48</code></td><td><code>72</code></td><td>BKG-057</td></tr>
+            <tr><td>Instant payment hold (minutes)</td><td><code>booking.paymentHoldMinutes</code></td><td><code>30</code></td><td><code>20</code></td><td>BKG-056</td></tr>
+            <tr><td>Payment links expire after (days)</td><td><code>booking.paymentLinkExpiryDays</code></td><td><code>3</code></td><td><code>7</code></td><td>checklist 09</td></tr>
+            <tr><td>Deposit (%)</td><td><code>booking.depositPercent</code></td><td><code>30</code></td><td><code>0</code> (full amount)</td><td>checklist 09</td></tr>
+            <tr><td>Default places per day</td><td><code>booking.defaultCapacity</code></td><td><code>4</code></td><td><code>1</code></td><td>checklist 09</td></tr>
+            <tr><td>Payment method</td><td><code>booking.paymentProvider</code></td><td><code>PayPal</code> → <code>paypal</code></td><td><code>manual</code></td><td>BKG-060 onwards</td></tr>
+            <tr><td>Payment instructions</td><td><code>booking.paymentInstructions</code></td><td>any text</td><td>none</td><td>BKG-001</td></tr>
+            <tr><td>Card surcharge (%)</td><td><code>booking.surchargePercent.stripe</code></td><td><code>4</code></td><td><code>0</code></td><td>checklist 09</td></tr>
+            <tr><td>PayPal surcharge (%)</td><td><code>booking.surchargePercent.paypal</code></td><td><code>5.25</code></td><td><code>0</code></td><td>checklist 09</td></tr>
+            <tr><td>Viva.com surcharge (%)</td><td><code>booking.surchargePercent.viva</code></td><td><code>3</code></td><td><code>0</code></td><td>checklist 09</td></tr>
+            <tr><td>Default cut-off (hours before)</td><td><code>booking.leadTimeHours</code></td><td><code>12</code></td><td><code>0</code></td><td>checklist 09</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Expected:</span> Sixteen rows with exactly the test values (kinds re-encoded as a comma list without spaces). Every label in the table is on screen in that order. After reverting, the rows hold the previous values (fields that were unset and are now empty are stored as <code>""</code>, which the readers treat as unset).</p>
+      <p class="ref">Ref: <code>src/cms/core/settings/schema.ts</code> (Booking group) · <code>src/cms/modules/booking/settings-read.ts</code> · docs/dev-guides/09-booking.md</p>
+    </article>
+
+    <article class="tc" id="OPS-012" data-priority="P2">
+      <h3>Security: Require two-factor authentication</h3>
+      <ol class="steps">
+        <li>Run AUTH-027 (switch to <code>Required for all administrators</code>, sign in with an account that has no second factor, then switch back).</li>
+        <li>Run <code>SELECT value FROM site_settings WHERE `key` = 'security.require2fa';</code> after each save.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Label</th><th>Options (stored)</th><th>Unset means</th></tr></thead>
+          <tbody>
+            <tr><td><code>security.require2fa</code></td><td>Require two-factor authentication</td><td><code>Optional — each administrator chooses</code> (<code>off</code>), <code>Required for all administrators</code> (<code>on</code>)</td><td>optional (only exactly <code>on</code> requires it)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Expected:</span> The value is <code>"on"</code> while required and <code>"off"</code> after switching back; AUTH-027 passes.</p>
+      <p class="ref">Ref: <code>src/cms/core/settings/schema.ts</code> (<code>SECURITY_REQUIRE_2FA_KEY</code>) · <code>src/cms/core/routes/auth-mfa.ts</code></p>
+    </article>
+
+    <article class="tc" id="OPS-013" data-priority="P2">
+      <h3>Tabs with their own save: stored keys</h3>
+      <ol class="steps">
+        <li>Make one change and use the tab's own save on: <strong>Branding</strong> (MED-030), <strong>Structured data</strong> (MED-083), <strong>Fields</strong> → <strong>SEO &amp; AEO</strong> (MED-073), <strong>Fields</strong> → Pages (CON-002), and on Ecommerce → <strong>Shipping</strong>, <strong>Coupons</strong>, <strong>Wishlist</strong>, <strong>Gift cards</strong> (COM-002, COM-037, COM-108, COM-043).</li>
+        <li>After each, run <code>SELECT `key`, updated_at FROM site_settings WHERE `key` IN ('brand.identity','brand.palette','seo.schema','cms.seoFields','cms.customFields','ecommerce.shipping','ecommerce.coupons','ecommerce.wishlist','ecommerce.giftCards') ORDER BY updated_at DESC;</code></li>
+        <li>Make a change on one of these tabs and, without saving it, switch to <strong>General</strong> and click <strong>Save settings</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Each own-save updates exactly its own key (the top row of the query changes to that key each time). Step 3: <strong>Save settings</strong> does not store the unsaved change on the other tab, which is what the user guide warns about. Module switches (SET-033) and languages (SET-046) are covered in checklist 01.</p>
+      <p class="ref">Ref: <code>src/cms/core/settings/schema.ts</code> (<code>EXTRA_MANAGED_KEYS</code>) · docs/user-guides/src/06-rythmiseis-xristes.md (“Πώς γίνεται η αποθήκευση”)</p>
+    </article>
+
+    <article class="tc" id="OPS-014" data-priority="P3">
+      <h3>Fields: two saves in a row without reloading</h3>
+      <ol class="steps">
+        <li>Open <strong>Settings</strong> → <strong>Fields</strong> → the Pages sub-tab. Click <strong>Add field</strong>, give it key <code>qa_ops_one</code>, label <code>QA ops one</code>, click <strong>Save fields</strong>.</li>
+        <li>Without reloading, click <strong>Add field</strong> again, key <code>qa_ops_two</code>, label <code>QA ops two</code>, click <strong>Save fields</strong>.</li>
+        <li>Repeat the same pattern on <strong>SEO &amp; AEO</strong> (two small edits, two saves, no reload).</li>
+        <li>Reload, delete both QA fields, save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both saves succeed. Per the code the second save in step 2 (and in step 3) may be refused with <code>The custom fields for "page" were changed by someone else while you were editing. …</code> (or the SEO-fields equivalent), because each editor keeps sending the copy it loaded with as its baseline. If so, mark Fail: a single user conflicts with their own previous save.</p>
+      <p class="ref">Ref: <code>src/cms/admin/CustomFieldsManager.tsx</code> (<code>'cms.customFields.baseline': initial</code>) · <code>src/cms/admin/SeoFieldsManager.tsx</code> · <code>src/cms/core/routes/settings.ts</code> (<code>mergeCustomFields</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-validate">
+    <h2>Validation and the all-or-nothing save</h2>
+    <p class="intro">Every key in a save is checked before anything is written; one bad value refuses the whole save with <code>422</code>. The API cases use curl with the admin session (see “Before you start”).</p>
+
+    <article class="tc" id="OPS-015" data-priority="P1">
+      <h3>An invalid value in the form refuses the whole save</h3>
+      <ol class="steps">
+        <li>On <strong>SEO</strong> put <code>https://example.com/qa-ops-partial</code> in <strong>Sitemap — extra URLs</strong>.</li>
+        <li>On <strong>Analytics</strong> type <code>G-12 34</code> in <strong>GA4 Measurement ID</strong>. Click <strong>Save settings</strong>.</li>
+        <li>Run <code>SELECT `key`, value FROM site_settings WHERE `key` IN ('seo.sitemapExtraUrls','analytics.gaMeasurementId');</code> and <code>curl -s "$BASE/sitemap.xml" | grep -c qa-ops-partial</code>.</li>
+        <li>Clear the GA field, click <strong>Save settings</strong>, then empty the sitemap field and save again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 2 shows a red message <code>GA4 Measurement ID looks like G-XXXXXXXXXX — letters and digits only, no quotes or spaces.</code>, not <code>Settings saved.</code>; the form keeps what you typed. Step 3: neither key changed and the curl prints <code>0</code>: the valid sitemap line was not stored either. Step 4 saves normally.</p>
+      <p class="ref">Ref: <code>src/cms/core/routes/settings.ts</code> (<code>applySettingsUpdate</code>: validate all, then write) · <code>src/cms/core/settings/validate.ts</code></p>
+    </article>
+
+    <article class="tc" id="OPS-016" data-priority="P2">
+      <h3>API: a valid key next to an invalid one is not written</h3>
+      <ol class="steps">
+        <li>Run:
+<pre><code>curl -s -X PATCH "$BASE/api/cms/settings" -b "cms_session=$S" -H 'Content-Type: application/json' \
+  -d '{"seo.sitemapExtraUrls":"https://example.com/qa-ops-api","site.supportEmail":"not-an-email"}' \
+  -w '\n%{http_code}\n'</code></pre></li>
+        <li>Run <code>SELECT `key`, value, updated_at FROM site_settings WHERE `key` IN ('seo.sitemapExtraUrls','site.supportEmail');</code></li>
+        <li>Open <strong>Audit log</strong>, <strong>Activity</strong> <strong>Site configuration</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Status <code>422</code>, body <code>{"ok":false,"error":"invalid_input","message":"Support email must be a valid email address.","issues":{"fieldErrors":{"site.supportEmail":["Support email must be a valid email address."]}}}</code>. Neither row changed (same value and <code>updated_at</code>), and no new <em>Changed settings</em> audit row.</p>
+      <p class="ref">Ref: <code>src/cms/core/routes/settings.ts</code> · <code>src/cms/core/api/handler.ts</code> (<code>renderError</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-017" data-priority="P2">
+      <h3>API: each type rule answers 422 with its message</h3>
+      <ol class="steps">
+        <li>Send each body below with the PATCH command, one at a time, and note status and <code>message</code>. For the long text use <code>-d "{\"seo.robotsExtraDisallow\":\"$(head -c 20001 /dev/zero | tr '\0' a)\"}"</code>.</li>
+        <li>After all of them run the <code>site_settings</code> query from “Before you start” and compare with your notes.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Body</th><th>Message</th></tr></thead>
+          <tbody>
+            <tr><td><code>{"site.supportEmail":5}</code></td><td><code>Support email must be text.</code></td></tr>
+            <tr><td><code>{"analytics.gaMeasurementId":"G-12'); alert(1)//"}</code></td><td><code>GA4 Measurement ID looks like G-XXXXXXXXXX — letters and digits only, no quotes or spaces.</code></td></tr>
+            <tr><td><code>{"ecommerce.giftWrapFee":"3,500"}</code></td><td><code>Gift-wrap fee must be an amount like 3.50 or 3,50 (no thousands separator).</code></td></tr>
+            <tr><td><code>{"ecommerce.currency":"JPY"}</code></td><td><code>Default currency must be one of: EUR, USD, GBP.</code></td></tr>
+            <tr><td><code>{"ecommerce.paymentProvider":"bitcoin"}</code></td><td><code>Payment method must be one of: manual, stripe, paypal, viva.</code></td></tr>
+            <tr><td><code>{"security.require2fa":"yes"}</code></td><td><code>Require two-factor authentication must be one of: off, on.</code></td></tr>
+            <tr><td><code>{"booking.kinds":"transport,boat"}</code></td><td><code>What you take bookings for does not offer: boat.</code></td></tr>
+            <tr><td><code>{"module.popups":"false"}</code></td><td><code>module.popups must be true or false, not the text "false".</code></td></tr>
+            <tr><td>20 001-character <code>seo.robotsExtraDisallow</code></td><td><code>robots.txt — extra Disallow is too long (max 20000 characters).</code></td></tr>
+            <tr><td><code>{"brand.palette":"red"}</code></td><td>a message naming the palette problem</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Expected:</span> Every row answers <code>422</code> with <code>"error":"invalid_input"</code> and the message shown; <code>issues.fieldErrors</code> names the key. Nothing in <code>site_settings</code> changed.</p>
+      <p class="ref">Ref: <code>src/cms/core/settings/validate.ts</code> (<code>validateSettingValue</code>) · <code>src/cms/core/settings/structured.ts</code></p>
+    </article>
+
+    <article class="tc" id="OPS-018" data-priority="P3">
+      <h3>API: accepted values are normalised</h3>
+      <ol class="steps">
+        <li>PATCH <code>{"ecommerce.giftWrapFee":"3,50","booking.kinds":" stay , transport,stay","analytics.gaMeasurementId":" G-QA1234 ","site.supportEmail":null,"module.popups":false}</code>.</li>
+        <li>Read the response's <code>data</code> for those keys and run <code>SELECT `key`, value FROM site_settings WHERE `key` IN ('ecommerce.giftWrapFee','booking.kinds','analytics.gaMeasurementId','site.supportEmail','module.popups');</code></li>
+        <li>Put the five values back through the screen.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>200</code>. Stored: <code>"3.50"</code>, <code>"stay,transport"</code> (trimmed, de-duplicated), <code>"G-QA1234"</code> (trimmed), <code>""</code> for the null email, and JSON <code>false</code> (not a string) for the module flag. The response <code>data</code> lists all managed keys with these values. The ecommerce and booking keys are accepted even when that module is off.</p>
+      <p class="ref">Ref: <code>src/cms/core/settings/validate.ts</code> · <code>src/cms/core/settings/schema.ts</code> (<code>formatMultiValue</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-019" data-priority="P3">
+      <h3>Known gap: unknown keys and a bad language shape are ignored silently</h3>
+      <ol class="steps">
+        <li>PATCH <code>{"qa.unknown":"x","site.supportemail":"typo@example.com","i18n.locales":"en"}</code>.</li>
+        <li>Run <code>SELECT `key`, updated_at FROM site_settings WHERE `key` IN ('qa.unknown','site.supportemail','i18n.locales');</code></li>
+        <li>Check the newest <em>Changed settings</em> row in the audit log.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>200</code> with <code>"ok":true</code>, although nothing was saved: no <code>qa.unknown</code> or misspelt key row, <code>i18n.locales</code> unchanged, and the audit row's Details are <code>{"changed": []}</code>. Documented behaviour; record it as a gap for scripts and integrations (a misspelt key is never reported).</p>
+      <p class="ref">Ref: <code>src/cms/core/routes/settings.ts</code> (<code>managedKeys</code>, <code>normalizeLocaleSettings</code>) · docs/dev-guides/10-settings-cron-operations.md §10</p>
+    </article>
+
+    <article class="tc" id="OPS-020" data-priority="P3">
+      <h3>Known gap: number fields accept any text</h3>
+      <ol class="steps">
+        <li>On Ecommerce → General set <strong>Cancel unpaid card orders after (hours)</strong> to <code>two days</code>; on Booking set <strong>Deposit (%)</strong> to <code>abc</code>. Save.</li>
+        <li>Run the <code>commerce-stale-orders</code> job (OPS-030) and look at a booking quote (checklist 09).</li>
+        <li>Put both back and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The save succeeds (<code>Settings saved.</code>): these are text fields and the server has no number check for them. The readers fall back to their defaults (48 hours; full amount, no deposit), so nothing breaks, but the admin is not told the value was ignored. Record as a UX gap.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/stale-orders.ts</code> (<code>parsePendingOrderTtlHours</code>) · <code>src/cms/modules/booking/settings-read.ts</code> · BKG-002</p>
+    </article>
+
+    <article class="tc" id="OPS-021" data-priority="P3">
+      <h3>Custom and SEO fields cannot be saved without a baseline</h3>
+      <ol class="steps">
+        <li>PATCH <code>{"cms.customFields":{"page":{"groups":[],"fields":[]}}}</code>.</li>
+        <li>PATCH <code>{"cms.seoFields":{}}</code>.</li>
+        <li>Open <strong>Settings</strong> → <strong>Fields</strong> and check the Pages custom fields and the SEO &amp; AEO list.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>422</code>, message <code>Custom fields must be saved against the copy they were edited from.</code> Step 2: <code>422</code>, message <code>SEO fields must be saved against the copy they were edited from.</code> Step 3: nothing was wiped.</p>
+      <p class="ref">Ref: <code>src/cms/core/routes/settings.ts</code> (<code>mergeCustomFields</code>, <code>assertSeoFieldsBaseline</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-perm">
+    <h2>Who can see and change settings</h2>
+
+    <article class="tc" id="OPS-022" data-priority="P2">
+      <h3>View-only role: sees Settings, cannot save</h3>
+      <ol class="steps">
+        <li>Open <strong>Roles</strong>, expand <strong>Add a role</strong>, create <code>QA settings viewer</code> with <strong>Access</strong> and <strong>View settings &amp; cookies</strong> only; click <strong>Add role</strong>. In <strong>Users</strong> create <code>qa-settingsview@example.com</code> with that role.</li>
+        <li>Sign in as that user in the second browser. Open <strong>Settings</strong>, change <strong>Support email</strong>, click <strong>Save settings</strong>.</li>
+        <li>Copy that user's <code>cms_session</code> into <code>V</code> and run <code>curl -s "$BASE/api/cms/settings" -b "cms_session=$V" -w '\n%{http_code}\n'</code> and the PATCH command with <code>-b "cms_session=$V"</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Settings is in the sidebar and every tab opens.</li>
+        <li>The save shows a red message <code>forbidden</code> and nothing is stored. Record as a UX gap: the screen offers <strong>Save settings</strong> to a user who cannot save, and the message does not say why.</li>
+        <li>GET answers <code>200</code> with the settings; PATCH answers <code>403</code> with <code>{"ok":false,"error":"forbidden","missing":"cms.settings.write"}</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/auth/permission-labels.ts</code> · <code>src/cms/modules/auth/guards.ts</code> (<code>requireApiPerm</code>) · <code>src/cms/core/routes/settings.ts</code></p>
+    </article>
+
+    <article class="tc" id="OPS-023" data-priority="P3">
+      <h3>No settings permission, and no session</h3>
+      <ol class="steps">
+        <li>As <code>qa-editor@example.com</code> (editor role, SET-043) copy the session and run the GET and PATCH above with it.</li>
+        <li>Run both again with no cookie at all.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: GET <code>403</code> with <code>"missing":"cms.settings.read"</code>; PATCH <code>403</code> with <code>"missing":"cms.settings.write"</code>. Step 2: both <code>401</code>. The screen itself redirects to <code>/admin/403</code> (SET-043).</p>
+      <p class="ref">Ref: <code>src/cms/core/routes/settings.ts</code> (<code>settingsGetRoute</code>, <code>settingsUpdateRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-024" data-priority="P3">
+      <h3>Language settings are normalised by the API</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> SET-044 to SET-049 passed (the on-screen Editing/Public behaviour). Note the current <code>i18n.locales</code> row, if any.</p>
+      <ol class="steps">
+        <li>PATCH <code>{"i18n.locales":{"editing":["el","en","fr"],"public":["en"]}}</code>, then run <code>SELECT value FROM site_settings WHERE `key` = 'i18n.locales';</code></li>
+        <li>PATCH <code>{"i18n.locales":{"editing":["en"],"public":["el","en"]}}</code> and query again.</li>
+        <li>PATCH <code>{"i18n.locales":{"editing":[],"public":[]}}</code>, query, then open <code>/en</code> and the Languages tab.</li>
+        <li>Restore: PATCH <code>{"i18n.locales":{"editing":["el","en"],"public":["el","en"]}}</code> (or, if there was no row before, delete it and restart the app).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>{"editing": ["el", "en"], "public": ["el", "en"]}</code> (the uninstalled <code>fr</code> is dropped, the main language <code>el</code> is forced into both). Step 2: the same (English is kept in editing and public; Greek is added). Step 3: <code>{"editing": ["el"], "public": ["el"]}</code>; <code>/en</code> shows the not-found page and the Languages tab shows EN with Editing and Public unticked, EL ticked and greyed out.</p>
+      <p class="ref">Ref: <code>src/cms/core/routes/settings.ts</code> (<code>normalizeLocaleSettings</code>) · <code>src/cms/core/settings/schema.ts</code> (<code>resolveLocaleSet</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-cron">
+    <h2>Scheduled jobs: secret and endpoint</h2>
+    <p class="intro">The CMS runs nothing on a timer itself. An external scheduler calls <code>POST /api/cms/cron/&lt;job&gt;</code> with the header <code>x-cron-secret</code>. Jobs: <code>content-publish-scheduled</code> (always), <code>commerce-stale-orders</code>, <code>giftcard-deliver</code>, <code>giftcard-expire</code>, <code>commerce-abandoned-reminders</code> (Commerce), <code>booking-expire</code> (Booking), <code>google-reviews-sync</code> (Google reviews &amp; testimonials).</p>
+
+    <article class="tc" id="OPS-025" data-priority="P1">
+      <h3>Configure the cron secret and run a job</h3>
+      <ol class="steps">
+        <li>Run <code>openssl rand -base64 48</code> and put the output in <code>CMS_CRON_SECRET=</code> in the environment file. Restart the app. Set <code>CRON</code> in the terminal to the same value.</li>
+        <li>Run <code>curl -s -X POST -H "x-cron-secret: $CRON" -H 'X-Real-IP: 10.10.1.1' "$BASE/api/cms/cron/content-publish-scheduled" -w '\n%{http_code}\n'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>200</code> and <code>{"ok":true,"data":{"status":"ran","result":{"published":N,"failed":0}}}</code> (N is 0 unless a scheduled page is due).</p>
+      <p class="ref">Ref: <code>src/app/api/cms/cron/[job]/route.ts</code> · <code>src/cms/core/cron/service.ts</code> (<code>cronRoute</code>) · docs/dev-guides/10-settings-cron-operations.md §3.4</p>
+    </article>
+
+    <article class="tc" id="OPS-026" data-priority="P2">
+      <h3>Missing, empty or wrong secret is refused</h3>
+      <ol class="steps">
+        <li>Run the curl from OPS-025 without the <code>x-cron-secret</code> header.</li>
+        <li>Run it with <code>-H 'x-cron-secret;'</code> (an empty header).</li>
+        <li>Run it with the secret minus its last character, then with the secret plus one extra character.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Every call answers <code>401</code> with <code>{"ok":false,"error":"unauthorized","message":"unauthorized"}</code>, and no <code>cron.run</code> audit row is written.</p>
+      <p class="ref">Ref: <code>src/cms/core/cron/policy.ts</code> (<code>authorizeCronRequest</code>, <code>timingSafeEquals</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-027" data-priority="P3">
+      <h3>A configured secret under 32 characters, or none, refuses everything</h3>
+      <ol class="steps">
+        <li>Set <code>CMS_CRON_SECRET=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</code> (31 characters, check with <code>printf %s "$value" | wc -c</code>). Restart. Call the job with exactly that value as the header.</li>
+        <li>Set it to 32 <code>a</code>s, restart, repeat with 32 <code>a</code>s.</li>
+        <li>Remove the line (or leave it blank), restart, call with an empty header and with <code>-H 'x-cron-secret: undefined'</code>.</li>
+        <li>Put the real secret back and restart.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>401</code> even though header and secret match. Step 2: <code>200</code>, <code>"status":"ran"</code> (32 is the minimum). Step 3: <code>401</code> for both: an unset secret can never be matched.</p>
+      <p class="ref">Ref: <code>src/cms/core/cron/policy.ts</code> (<code>CRON_SECRET_MIN_LENGTH = 32</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-028" data-priority="P3">
+      <h3>Unknown and malformed job names, other methods</h3>
+      <ol class="steps">
+        <li>With the right secret call <code>/api/cms/cron/qa-nope</code>, <code>/api/cms/cron/Content-Publish-Scheduled</code>, <code>/api/cms/cron/constructor</code> and <code>/api/cms/cron/content-publish-scheduled-</code>.</li>
+        <li>With the wrong secret call <code>/api/cms/cron/qa-nope</code>.</li>
+        <li>Run <code>curl -s -o /dev/null -w '%{http_code}\n' -H "x-cron-secret: $CRON" "$BASE/api/cms/cron/content-publish-scheduled"</code> (a GET).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>404</code> <code>{"ok":false,"error":"not_found",…}</code> for all four (the name must be lower-case kebab-case and an own entry of the job list). Step 2: <code>401</code>, not 404: without the secret nobody learns which job names exist. Step 3: <code>405</code>; only POST runs a job.</p>
+      <p class="ref">Ref: <code>src/cms/core/cron/policy.ts</code> (<code>isValidCronJobName</code>, <code>resolveCronJob</code>, <code>Object.hasOwn</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-jobs">
+    <h2>Each registered job</h2>
+    <p class="intro">For each job: trigger it, check the effect, run it again to show it is safe to repeat. The call is always <code>curl -s -X POST -H "x-cron-secret: $CRON" -H 'X-Real-IP: 10.10.2.N' "$BASE/api/cms/cron/&lt;job&gt;"</code>. A job that ran is audited as <code>cron.run</code>.</p>
+
+    <article class="tc" id="OPS-029" data-priority="P1">
+      <h3>content-publish-scheduled: publishes due pages, once</h3>
+      <ol class="steps">
+        <li>Schedule a page <code>QA Ops Scheduled</code> (slug <code>qa-ops-scheduled</code>) for two minutes from now as in CON-024. Wait three minutes without opening the Pages list (opening it also publishes, CON-027).</li>
+        <li>Run the job. Open <code>/qa-ops-scheduled</code> signed out.</li>
+        <li>Run the job again.</li>
+        <li>Run <code>SELECT status FROM documents WHERE slug = 'qa-ops-scheduled';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 2: <code>{"ok":true,"data":{"status":"ran","result":{"published":1,"failed":0}}}</code>; the page is live. Step 3: <code>"published":0</code>. Status is <code>published</code> for every language row that was scheduled. CON-026 covers the audit row of the publish itself.</p>
+      <p class="ref">Ref: <code>src/cms/core/documents/publish-scheduled.ts</code> (<code>publishDueScheduled</code>, 200 per run)</p>
+    </article>
+
+    <article class="tc" id="OPS-030" data-priority="P2">
+      <h3>commerce-stale-orders: cancels old unpaid gateway orders</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Commerce on. COM-089 and COM-090 are the full cases; this one checks the job contract.</p>
+      <ol class="steps">
+        <li>Run the job twice.</li>
+        <li>Set <strong>Cancel unpaid card orders after (hours)</strong> to <code>0</code>, save, run the job. Put the value back.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>"status":"ran","result":{"checked":N,"cancelled":[…]}</code>; the second run's <code>cancelled</code> is <code>[]</code>. Step 2: <code>{"checked":0,"cancelled":[]}</code>: 0 turns the job off. Manual orders and orders with money on them are never cancelled (COM-089).</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/stale-orders.ts</code> (<code>cancelStaleOrders</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-031" data-priority="P2">
+      <h3>giftcard-deliver: sends cards whose day has come, once</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Commerce on, a paid gift card with a future <strong>Send on</strong> date (COM-048 step 3) and outgoing mail working.</p>
+      <ol class="steps">
+        <li>Run <code>UPDATE gift_cards SET send_at = NOW() - INTERVAL 1 MINUTE WHERE status = 'scheduled' AND sent_at IS NULL AND recipient_email LIKE 'qa%';</code></li>
+        <li>Run the job; check the recipient mailbox. Run it again.</li>
+        <li>Run <code>SELECT id, status, send_at, sent_at FROM gift_cards WHERE recipient_email LIKE 'qa%' ORDER BY id DESC LIMIT 3;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> First run <code>"result":{"sent":1}</code> (one per due card) and one gift-card email per card, in the site's default language. Second run <code>{"sent":0}</code> and no second email. The card is now <code>active</code> with <code>sent_at</code> set.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/giftcards/service.ts</code> (<code>deliverDueGiftCards</code>: claims <code>sent_at</code> before sending, 100 per run)</p>
+    </article>
+
+    <article class="tc" id="OPS-032" data-priority="P2">
+      <h3>giftcard-expire: marks past-date cards expired</h3>
+      <ol class="steps">
+        <li>Pick an active QA gift card and run <code>UPDATE gift_cards SET expires_at = NOW() - INTERVAL 1 DAY WHERE id = &lt;id&gt;;</code></li>
+        <li>Run the job twice. Try the card's code at checkout.</li>
+        <li>Run <code>SELECT status FROM gift_cards WHERE id = &lt;id&gt;;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> First run <code>"result":{"expired":1}</code>, second <code>{"expired":0}</code>. Status is <code>expired</code> and the code is refused at checkout.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/giftcards/service.ts</code> (<code>expireGiftCards</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-033" data-priority="P2">
+      <h3>commerce-abandoned-reminders: one reminder per cart</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> A captured cart for a QA address (COM-091).</p>
+      <ol class="steps">
+        <li>Run <code>UPDATE abandoned_carts SET created_at = NOW() - INTERVAL 2 HOUR WHERE email = '&lt;qa address&gt;' AND status = 'pending';</code></li>
+        <li>Run the job, then run it again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> First run <code>"result":{"sent":1,"skippedSuppressed":0,"cappedBy":0}</code> and one reminder email (COM-092 checks its content). Second run <code>"sent":0</code>. The cart's status is <code>reminded</code>. The delay (<code>COMMERCE_ABANDONED_DELAY_MINUTES</code>, 60) and the daily ceiling (<code>COMMERCE_ABANDONED_DAILY_MAX</code>, 200) come from the environment.</p>
+      <p class="ref">Ref: <code>src/cms/modules/commerce/abandoned.ts</code> (<code>processReminders</code>, <code>findDueForReminder</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-034" data-priority="P2">
+      <h3>booking-expire: the sweep, repeated</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Booking on. BKG-057 is the full case.</p>
+      <ol class="steps">
+        <li>Run BKG-057 using this endpoint.</li>
+        <li>Run the job again immediately.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1 as in BKG-057 (<code>"result":{"expired":1}</code>, hold released, customer told). Step 2 <code>{"expired":0}</code> and no second email.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/allocation.ts</code> (<code>expireStaleReservations</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-035" data-priority="P2">
+      <h3>google-reviews-sync: harmless with nothing configured</h3>
+      <ol class="steps">
+        <li>Tick <strong>Google reviews &amp; testimonials</strong> in Modules, save. Run the job.</li>
+        <li>Untick it, save, run the job again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>{"ok":true,"data":{"status":"ran","result":{"results":[]}}}</code> (the integration is not enabled; see MKT-096 to MKT-098 for the unfinished integration). Step 2: <code>404</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/reviews-external/sync.ts</code> (<code>syncAllReviewLocations</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-036" data-priority="P2">
+      <h3>Module off: every gated job answers 404, the content job still runs</h3>
+      <ol class="steps">
+        <li>In Modules untick <strong>Commerce</strong>, <strong>Booking</strong> and <strong>Google reviews &amp; testimonials</strong>; save.</li>
+        <li>Run: <code>for j in content-publish-scheduled commerce-stale-orders giftcard-deliver giftcard-expire commerce-abandoned-reminders booking-expire google-reviews-sync; do printf '%s ' $j; curl -s -o /dev/null -w '%{http_code}\n' -X POST -H "x-cron-secret: $CRON" -H 'X-Real-IP: 10.10.3.1' "$BASE/api/cms/cron/$j"; done</code></li>
+        <li>Switch the modules back and repeat the loop.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 2: <code>content-publish-scheduled 200</code> and <code>404</code> for the six others (the same answer as an unknown job; SET-042 is the short version). Step 3: all seven <code>200</code>. The switch takes effect at once, without a restart.</p>
+      <p class="ref">Ref: <code>src/cms/core/cron/policy.ts</code> (<code>resolveCronJob</code>) · <code>src/cms/core/settings/modules.ts</code></p>
+    </article>
+
+    <article class="tc" id="OPS-037" data-priority="P2">
+      <h3>Job runs appear in the audit log</h3>
+      <ol class="steps">
+        <li>Open <strong>Audit log</strong>. Set <strong>Activity</strong> to <strong>Site configuration</strong> and <strong>Affected</strong> to <strong>Scheduled job</strong>; click <strong>Filter</strong>.</li>
+        <li>Run <code>SELECT actor_label, action, subject_type, subject_id, created_at FROM audit_logs WHERE action = 'cron.run' ORDER BY id DESC LIMIT 10;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> One <em>Ran a scheduled job</em> row per successful run in this suite, actor <code>cron</code>, subject the job name. Refused (401/404/429) and skipped runs (OPS-038) have no row. A missing row for a scheduled job is the monitoring signal (docs/dev-guides/10-settings-cron-operations.md §7.5).</p>
+      <p class="ref">Ref: <code>src/cms/core/cron/service.ts</code> (<code>logAudit</code>) · <code>src/cms/core/audit-labels.ts</code> · <code>src/cms/core/audit-groups.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-cronguard">
+    <h2>Overlap, rate limits and the scheduler</h2>
+
+    <article class="tc" id="OPS-038" data-priority="P2">
+      <h3>A job that is already running is skipped</h3>
+      <ol class="steps">
+        <li>In a database client connected to the site's database (keep this session open) run <code>SELECT GET_LOCK('cms-cron:content-publish-scheduled', 0);</code></li>
+        <li>Run the <code>content-publish-scheduled</code> job with curl.</li>
+        <li>Run <code>giftcard-expire</code> (or any other enabled job).</li>
+        <li>In the database session run <code>SELECT RELEASE_LOCK('cms-cron:content-publish-scheduled');</code> then run the first job again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1 returns <code>1</code>. Step 2: <code>200</code> and <code>{"ok":true,"data":{"status":"skipped","reason":"already_running"}}</code>, with no audit row. Step 3: <code>"status":"ran"</code> (the lock is per job name). Step 4: <code>"status":"ran"</code>.</p>
+      <p class="ref">Ref: <code>src/cms/core/cron/service.ts</code> (<code>runCronJob</code>, <code>GET_LOCK('cms-cron:&lt;job&gt;', 0)</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-039" data-priority="P3">
+      <h3>A dropped connection releases the lock; a run releases its own</h3>
+      <ol class="steps">
+        <li>Take the lock again as in OPS-038, then close the database client (or kill the session) without releasing it.</li>
+        <li>Run the job.</li>
+        <li>Run <code>SELECT IS_USED_LOCK('cms-cron:content-publish-scheduled');</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 2: <code>"status":"ran"</code> (the server freed the lock with the connection, as a crashed app would). Step 3: <code>NULL</code>: the job released its lock when it finished.</p>
+      <p class="ref">Ref: <code>src/cms/core/cron/service.ts</code> (<code>RELEASE_LOCK</code> in <code>finally</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-040" data-priority="P3">
+      <h3>30 calls a minute per address; wrong secrets spend the budget</h3>
+      <ol class="steps">
+        <li>Restart the app. Run <code>for i in $(seq 1 31); do curl -s -o /dev/null -w '%{http_code} ' -X POST -H 'x-cron-secret: wrong' -H 'X-Real-IP: 10.10.4.1' "$BASE/api/cms/cron/content-publish-scheduled"; done; echo</code></li>
+        <li>Immediately run the job with the right secret and the same <code>X-Real-IP: 10.10.4.1</code>, with <code>-D -</code> to see headers.</li>
+        <li>Run it with the right secret and <code>X-Real-IP: 10.10.4.2</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: thirty <code>401</code> then <code>429</code>. Step 2: <code>429</code>, body <code>{"ok":false,"error":"rate_limited","message":"Too many requests."}</code> and a <code>Retry-After</code> header (seconds, at most 60). Step 3: <code>200</code>. After a minute address 10.10.4.1 works again.</p>
+      <p class="ref">Ref: <code>src/cms/core/cron/service.ts</code> (<code>rateLimit: { scope: 'cms-cron', max: 30 }</code>) · <code>src/cms/core/rate-limit.ts</code></p>
+    </article>
+
+    <article class="tc" id="OPS-041" data-priority="P2">
+      <h3>Production: a direct call without X-Real-IP passes only with the secret</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> A production build (SET-030), or a shell on the hosted server calling the Node port directly (<code>http://127.0.0.1:3000</code>), not through Nginx.</p>
+      <ol class="steps">
+        <li>Run <code>curl -s -X POST -H "x-cron-secret: $CRON" http://127.0.0.1:3000/api/cms/cron/content-publish-scheduled -w '\n%{http_code}\n'</code> (no <code>X-Real-IP</code>).</li>
+        <li>Run the same with <code>x-cron-secret: wrong</code>.</li>
+        <li>Look at the app log.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>200</code>, <code>"status":"ran"</code>. Step 2: <code>429</code> (not 401): without an address and without the secret the request is refused before the secret is even checked. Step 3: once per process, <code>[cms] No X-Real-IP on an incoming request — rate limiting cannot bucket by origin.</code> Calls through the proxy (which sets <code>X-Real-IP</code>) behave as in OPS-025.</p>
+      <p class="ref">Ref: <code>src/cms/core/api/handler.ts</code> (<code>trustedWithoutIp</code>) · docs/dev-guides/10-settings-cron-operations.md §7.2, §10 (“Cron without X-Real-IP”)</p>
+    </article>
+
+    <article class="tc" id="OPS-042" data-priority="P2">
+      <h3>The documented scheduler wrapper and crontab work</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Shell on the staging server as the site user. Commerce off, Booking off (the site's usual state).</p>
+      <ol class="steps">
+        <li>Create <code>~/private/cron.env</code> with <code>CMS_CRON_SECRET=&lt;secret&gt;</code> and <code>SITE=&lt;staging origin&gt;</code>; <code>chmod 600</code> it.</li>
+        <li>Create <code>~/bin/cms-cron</code> exactly as in docs/dev-guides/10-settings-cron-operations.md §7.2, changing only the path of <code>cron.env</code>; <code>chmod 700</code> it.
+<pre><code>#!/bin/sh
+set -eu
+. "$HOME/private/cron.env"
+curl -fsS -m 300 -X POST -H "x-cron-secret: $CMS_CRON_SECRET" "$SITE/api/cms/cron/$1"</code></pre></li>
+        <li>Run <code>~/bin/cms-cron content-publish-scheduled; echo " exit=$?"</code> and <code>~/bin/cms-cron commerce-stale-orders; echo " exit=$?"</code>.</li>
+        <li>Add <code>*/10 * * * * $HOME/bin/cms-cron content-publish-scheduled &gt;&gt; $HOME/cms-cron.log 2&gt;&amp;1</code> with <code>crontab -e</code>. After 25 minutes check <code>~/cms-cron.log</code> and the audit log (OPS-037). Remove the line afterwards unless it is meant to stay.</li>
+        <li>Run <code>crontab -l | grep -c x-cron-secret</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 3: the first prints the JSON with <code>"status":"ran"</code> and <code>exit=0</code>; the second prints <code>curl: (22) The requested URL returned error: 404</code> and a non-zero exit (a job for a disabled module: remove that crontab line rather than ignore it). Step 4: two or three <code>"status":"ran"</code> lines and matching <em>Ran a scheduled job</em> rows. Step 5: <code>0</code>: the secret is not in the crontab.</p>
+      <p class="ref">Ref: docs/dev-guides/10-settings-cron-operations.md §7.2 · <code>.env.example</code> (cron comments)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-legacy">
+    <h2>Older per-job endpoints</h2>
+    <p class="intro">Two endpoints predate the unified one and still work, each with its own secret or an admin session: <code>POST /api/cms/reservations/expire</code> (<code>BOOKING_CRON_SECRET</code> or <em>Edit bookings</em>) and <code>POST /api/cms/abandoned-carts/remind</code> (<code>COMMERCE_CRON_SECRET</code> or <em>Edit orders</em>). Both allow 5 calls a minute. BKG-059 covers the booking secret.</p>
+
+    <article class="tc" id="OPS-043" data-priority="P2">
+      <h3>abandoned-carts/remind: secret, session and limits</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Commerce on.</p>
+      <ol class="steps">
+        <li>Set <code>COMMERCE_CRON_SECRET=short</code>, restart, run <code>curl -s -X POST -H 'x-cron-secret: short' -H 'X-Real-IP: 10.10.5.1' "$BASE/api/cms/abandoned-carts/remind" -w '\n%{http_code}\n'</code>.</li>
+        <li>Set a 40+ character value, restart, repeat with it (<code>X-Real-IP: 10.10.5.2</code>).</li>
+        <li>Without a secret, with the admin cookie: add <code>-b "cms_session=$S"</code> (<code>X-Real-IP: 10.10.5.3</code>). Also click <strong>Send reminders</strong> on the <strong>Abandoned carts</strong> screen.</li>
+        <li>Call six times in a row with the right secret and <code>X-Real-IP: 10.10.5.4</code>.</li>
+        <li>Switch Commerce off, call with the right secret; switch it back. Remove <code>COMMERCE_CRON_SECRET</code> and restart.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>401</code>: a secret under 32 characters authorises nothing and there is no session. Steps 2 and 3: <code>{"ok":true,"data":{"sent":N,"skippedSuppressed":N,"cappedBy":N}}</code> (not wrapped in <code>status</code>). Step 4: five answers then <code>429</code>. Step 5: <code>404</code> <code>{"ok":false,"error":"not_found"}</code>.</p>
+      <p class="ref">Ref: <code>src/app/api/cms/abandoned-carts/remind/route.ts</code> · <code>src/cms/modules/commerce/abandoned.ts</code> (<code>abandonedRemindRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-044" data-priority="P3">
+      <h3>reservations/expire: no secret and no session, module off</h3>
+      <ol class="steps">
+        <li>With Booking on and no <code>BOOKING_CRON_SECRET</code> set, run <code>curl -s -X POST -H 'X-Real-IP: 10.10.6.1' "$BASE/api/cms/reservations/expire" -w '\n%{http_code}\n'</code>.</li>
+        <li>Run it with <code>-b "cms_session=$S"</code> as a user whose role lacks <em>Edit bookings</em> (for example <code>qa-editor@example.com</code>).</li>
+        <li>Switch Booking off and call it with the superadmin cookie; switch Booking back on.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>401</code>. Step 2: <code>403</code> with <code>"missing":"cms.booking.reservations.write"</code>. Step 3: <code>404</code>. Schedule either this endpoint or <code>booking-expire</code>, never both.</p>
+      <p class="ref">Ref: <code>src/app/api/cms/reservations/expire/route.ts</code> · <code>src/cms/modules/booking/payments.ts</code> (<code>bookingExpireRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-045" data-priority="P3">
+      <h3>Older endpoints refuse direct calls without X-Real-IP in production</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> As OPS-041, with Booking on and a 40+ character <code>BOOKING_CRON_SECRET</code>.</p>
+      <ol class="steps">
+        <li>Run <code>curl -s -X POST -H "x-cron-secret: $BOOKING_SECRET" http://127.0.0.1:3000/api/cms/reservations/expire -w '\n%{http_code}\n'</code> (no <code>X-Real-IP</code>).</li>
+        <li>Run the same through the proxy (the public URL).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>429</code> even with the correct secret: unlike the unified endpoint (OPS-041), the older ones have no exception for a scheduler on the same host. Step 2: <code>200</code>. Record as a reason to move schedulers to <code>/api/cms/cron/booking-expire</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/payments.ts</code> (<code>rateLimit</code> without <code>trustedWithoutIp</code>) · <code>src/cms/core/rate-limit.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-update">
+    <h2>CMS updater: what is replaced and what is kept</h2>
+    <p class="intro">SET-066 to SET-072 build a package and run the first dry runs; do them first and keep <code>/tmp/cms-qa/cms-update-1.0.0.zip</code>. Use a throw-away worktree for anything that modifies files (<code>git worktree add /tmp/cms-qa-wt CMS</code>) and delete it afterwards (<code>git worktree remove --force /tmp/cms-qa-wt</code>). Never add <code>--apply</code> on a shared checkout and never use <code>--bump</code>.</p>
+
+    <article class="tc" id="OPS-046" data-priority="P2">
+      <h3>The package holds the core and the contract files, nothing else</h3>
+      <ol class="steps">
+        <li>Run <code>unzip -l /tmp/cms-qa/cms-update-1.0.0.zip | awk '{print $4}' | cut -d/ -f1-2 | sort | uniq -c</code>.</li>
+        <li>Run <code>unzip -l /tmp/cms-qa/cms-update-1.0.0.zip | grep -E ' (files|glue)/(docs|\.claude|releases|qa|test/tools|test/studio)/' | head</code>.</li>
+        <li>Run <code>unzip -p /tmp/cms-qa/cms-update-1.0.0.zip manifest.json | head -c 400; echo</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: only <code>manifest.json</code>, <code>files/src</code>, <code>files/test</code> and <code>glue/…</code> entries. Under <code>files/src</code> only <code>src/cms</code>, <code>src/app/api/cms</code>, <code>src/app/admin</code> and the storefront scaffolds; <code>glue/</code> holds <code>src/site.config.ts</code>, <code>.env.example</code>, <code>package.json</code> and the other contract files.</li>
+        <li>Step 2: no output: base-only paths (docs, skills, releases, QA tools) are never packed.</li>
+        <li>Step 3: starts <code>{"format":1,"version":"1.0.0","commit":"…","branch":"CMS",…</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/update/plan.mjs</code> (<code>classifyPath</code>) · <code>src/cms/update/manifest.mjs</code> · docs/dev-guides/10-settings-cron-operations.md §3.5</p>
+    </article>
+
+    <article class="tc" id="OPS-047" data-priority="P2">
+      <h3>Dry run on a copy: an edited core file would be overwritten, an edited contract file is left alone</h3>
+      <ol class="steps">
+        <li>In the worktree run <code>echo '// qa-ops' &gt;&gt; src/cms/core/cache.ts</code>, <code>echo '// qa-ops' &gt;&gt; src/site.config.ts</code> and <code>echo '// qa-ops' &gt;&gt; src/components/layout/Footer.tsx</code> (a site file; use any file under <code>src/components/layout/</code>).</li>
+        <li>From the worktree run <code>npm run cms:update -- /tmp/cms-qa/cms-update-1.0.0.zip --reinstall</code>.</li>
+        <li>Run <code>git -C /tmp/cms-qa-wt status --short</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>The plan says <code>Core            1 file(s) to write, 0 to delete</code> (the edited <code>cache.ts</code> would be put back to the package's version).</li>
+        <li>Under <code>Contract files — never written. Compare with …</code> it lists <code>src/site.config.ts</code>. The site file is not mentioned at all (class <code>site</code>, untouched).</li>
+        <li>It ends <code>Dry run — nothing was written. Add --apply to install.</code>; <code>git status</code> shows exactly the three edited files and nothing else.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/update/install.mjs</code> (<code>report</code>) · <code>src/cms/update/plan.mjs</code> · docs/dev-guides/10-settings-cron-operations.md §10 (“Updater invariants”)</p>
+    </article>
+
+    <article class="tc" id="OPS-048" data-priority="P3">
+      <h3>An older package is refused</h3>
+      <ol class="steps">
+        <li>In the worktree set <code>src/cms/version.json</code> to <code>{"version": "9.9.9"}</code>.</li>
+        <li>Run <code>npm run cms:update -- /tmp/cms-qa/cms-update-1.0.0.zip; echo "exit=$?"</code>.</li>
+        <li>Delete the worktree.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>This site runs 9.9.9.</code>, then <code>This update is 1.0.0, older than the 9.9.9 this site runs. Pass --allow-downgrade to install it anyway.</code>, a non-zero exit, and no plan counts.</p>
+      <p class="ref">Ref: <code>src/cms/update/plan.mjs</code> (<code>planInstall</code>) · <code>src/cms/update/cli.mjs</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-env">
+    <h2>Environment variables</h2>
+
+    <article class="tc" id="OPS-049" data-priority="P3">
+      <h3>.env.example and the code agree</h3>
+      <ol class="steps">
+        <li>Run:
+<pre><code>grep -oE '^#? ?[A-Z][A-Z0-9_]+=' .env.example | sed -E 's/^# ?//; s/=$//' | sort -u &gt; /tmp/env-example.txt
+grep -rhoE 'process\.env\.[A-Z][A-Z0-9_]+' src scripts next.config.ts drizzle.config.ts \
+  | sed 's/process\.env\.//' | sort -u &gt; /tmp/env-code.txt
+wc -l &lt; /tmp/env-example.txt; comm -3 /tmp/env-example.txt /tmp/env-code.txt</code></pre></li>
+        <li>Open docs/dev-guides/10-settings-cron-operations.md §6.1 and tick off every name in <code>/tmp/env-example.txt</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li><code>51</code> names (50 set plus the commented <code>DATABASE_URL</code>).</li>
+        <li><code>comm</code> prints only: in the first column <code>RECAPTCHA_SECRET_KEY</code>, <code>RECAPTCHA_SITE_KEY</code> (read through a helper, not <code>process.env.X</code>); in the second <code>AUTH_SECRET</code> (comments only), <code>NEXT_DIST_DIR</code>, <code>NEXT_PUBLIC_</code> (a comment), <code>NODE_ENV</code>, <code>PORT</code> (dev-all only). Any other name is a Fail: a variable the code reads that <code>.env.example</code> does not declare, or the reverse.</li>
+        <li>Every name has a row in §6.1.</li>
+      </ul>
+      <p class="ref">Ref: <code>.env.example</code> · docs/dev-guides/10-settings-cron-operations.md §6.1</p>
+    </article>
+
+    <article class="tc" id="OPS-050" data-priority="P3">
+      <h3>A misspelt variable is silently ignored</h3>
+      <ol class="steps">
+        <li>In the environment file rename <code>CMS_CRON_SECRET=</code> to <code>CMS_CRON_SECRT=</code> (same value). Restart and watch the start-up log.</li>
+        <li>Run the job from OPS-025.</li>
+        <li>Put the name right and restart.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The app starts without any warning about the unknown name, and the job answers <code>401</code> (the real secret is now unset). There is no start-up validation of the environment; document this in the deploy runbook: after editing the environment, run OPS-025 and OPS-051.</p>
+      <p class="ref">Ref: <code>src/cms/core/cron/service.ts</code> · docs/dev-guides/10-settings-cron-operations.md “Troubleshooting” (“Cron returns 401 with the right secret”)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-deploy">
+    <h2>Deployment smoke</h2>
+    <p class="intro">Run after every deploy to staging. A release is: <code>npm ci --include=dev</code>, <code>npm run db:migrate</code> before the new build serves traffic, <code>NEXT_PUBLIC_SITE_URL=&lt;origin&gt; npm run build</code>, restart the app (and <code>npm run locks</code> if edit locks are used). On the Praion box the processes run under PM2 (see docs/STAGING-SETUP.md); no systemd unit is shipped.</p>
+
+    <article class="tc" id="OPS-051" data-priority="P1">
+      <h3>After a deploy: the site, the admin and the API answer</h3>
+      <ol class="steps">
+        <li>Set <code>BASE</code> to the staging origin and run:
+<pre><code>for p in /api/cms/auth/me / /en /admin/login /robots.txt /sitemap.xml /api/health; do
+  printf '%-18s ' "$p"; curl -s -o /dev/null -w '%{http_code}\n' "$BASE$p"; done</code></pre></li>
+        <li>Sign in to the admin and open <strong>Settings</strong> and one content list.</li>
+        <li>Run <code>SELECT COUNT(*) FROM __drizzle_migrations;</code> and compare with the number of files in <code>src/cms/db/adapters/mysql/migrations/</code> ending <code>.sql</code>.</li>
+        <li>Run the cron job from OPS-025 against staging.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>/api/cms/auth/me 401</code> (the liveness check: app and auth stack up), <code>/ 200</code>, <code>/en 200</code> (if English is public), <code>/admin/login 200</code>, <code>/robots.txt 200</code> with <code>Disallow: /</code> on staging (SET-076), <code>/sitemap.xml 200</code>. <code>/api/health</code> is not 200: there is no health endpoint, so monitors must use <code>/api/cms/auth/me</code> expecting 401. Sign-in works, migrations match the files, and the cron job runs.</p>
+      <p class="ref">Ref: docs/dev-guides/10-settings-cron-operations.md §7.1, §7.5 · docs/LOCAL_SETUP.md</p>
+    </article>
+
+    <article class="tc" id="OPS-052" data-priority="P2">
+      <h3>Processes and logs on the server</h3>
+      <ol class="steps">
+        <li>On the server run <code>pm2 status</code>.</li>
+        <li>Run <code>pm2 logs &lt;frontend process&gt; --lines 100 --nostream</code> and <code>pm2 logs &lt;locks process&gt; --lines 50 --nostream</code>.</li>
+        <li>Run <code>ls -la ~/.pm2/logs/</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The frontend (and the lock relay, if used) are <code>online</code> with a restart count that did not climb since the deploy. The frontend log shows a normal start and no <code>[cms/api] unhandled error</code>, <code>ConfigError</code> or <code>[cms] No X-Real-IP</code> lines (the last one means Nginx is not setting <code>X-Real-IP</code>, AUTH-073). The relay log shows its <code>[locks]</code> start line. Log files are under <code>~/.pm2/logs/</code> as <code>&lt;name&gt;-out.log</code> and <code>&lt;name&gt;-error.log</code>; note whether log rotation (for example <code>pm2-logrotate</code>) is installed, since the app does not rotate anything itself.</p>
+      <p class="ref">Ref: docs/dev-guides/10-settings-cron-operations.md §7.1, §7.5 · docs/STAGING-SETUP.md (“Troubleshooting”)</p>
+    </article>
+
+    <article class="tc" id="OPS-053" data-priority="P2">
+      <h3>Uploads survive a redeploy</h3>
+      <ol class="steps">
+        <li>On the server print the app's <code>CMS_UPLOAD_DIR</code> (from the environment file).</li>
+        <li>Upload an image in <strong>Media</strong> and open its public URL (MED-026).</li>
+        <li>Redeploy the same commit. Open the URL again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>CMS_UPLOAD_DIR</code> is set to an absolute path outside the release (document root) directory. The image still loads after the redeploy. If the variable is unset, uploads go to <code>&lt;release&gt;/.data/uploads</code> and are lost when the release directory is replaced: mark Fail for the environment.</p>
+      <p class="ref">Ref: <code>src/cms/core/media/storage.ts</code> · docs/dev-guides/10-settings-cron-operations.md §7.4</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-backup">
+    <h2>Backup and restore drill</h2>
+    <p class="intro">Staging only. The repository ships no backup tooling; these steps use the database client tools and <code>tar</code> directly. Keep the backup files outside the release directory.</p>
+
+    <article class="tc" id="OPS-054" data-priority="P2">
+      <h3>Take a backup: database, uploads, environment</h3>
+      <ol class="steps">
+        <li>Run <code>mysqldump --single-transaction --default-character-set=utf8mb4 -h 127.0.0.1 -P "$DB_PORT" -u "$DB_USER" -p "$DB_NAME" &gt; ~/qa-backup.sql</code> (add <code>--no-tablespaces</code> if MySQL 8 asks for the PROCESS privilege).</li>
+        <li>Run <code>tar -czf ~/qa-uploads.tgz -C "$CMS_UPLOAD_DIR" .</code></li>
+        <li>Copy the server environment file to <code>~/qa-env.bak</code> and <code>chmod 600</code> it.</li>
+        <li>Run <code>grep -c 'CREATE TABLE' ~/qa-backup.sql</code> and <code>tar -tzf ~/qa-uploads.tgz | wc -l</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The dump finishes without error and the table count equals <code>SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE();</code>. The archive lists the uploaded files. The environment copy holds <code>CMS_TOKEN_ENCRYPTION_KEY</code> and <code>CMS_GIFTCARD_PEPPER</code>: without the same values a restore cannot read stored integration secrets or gift cards (AUTH-077).</p>
+      <p class="ref">Ref: docs/dev-guides/10-settings-cron-operations.md §7.4</p>
+    </article>
+
+    <article class="tc" id="OPS-055" data-priority="P2">
+      <h3>Restore on staging and verify the site</h3>
+      <ol class="steps">
+        <li>After the backup, change things: create and publish a page <code>QA After Backup</code>, delete a published QA page, upload an image, change <strong>Support email</strong>.</li>
+        <li>Stop the app. Run <code>mysql -h 127.0.0.1 -P "$DB_PORT" -u "$DB_USER" -p "$DB_NAME" &lt; ~/qa-backup.sql</code>.</li>
+        <li>Empty the uploads folder and run <code>tar -xzf ~/qa-uploads.tgz -C "$CMS_UPLOAD_DIR"</code>.</li>
+        <li>Start the app. Sign in; open the site, the deleted page, the new page's URL, the Media library and Settings.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The deleted page is back and live; <code>/qa-after-backup</code> shows the not-found page; the new image is gone from Media and the old images load; Support email has its old value; the migration count is unchanged; sign-in works with the old passwords. The app must be restarted after a restore: settings and content caches never expire on their own (OPS-005), so a running app would keep serving pre-restore values.</p>
+      <p class="ref">Ref: docs/dev-guides/10-settings-cron-operations.md §7.4, §10</p>
+    </article>
+
+    <article class="tc" id="OPS-056" data-priority="P3">
+      <h3>Known gap: no backup tooling or schedule</h3>
+      <ol class="steps">
+        <li>Search the repository: <code>git ls-files | grep -iE 'backup|dump|restore'</code>.</li>
+        <li>Ask the hosting owner how the database and <code>CMS_UPLOAD_DIR</code> are backed up, how often, and where.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1 finds no backup script (only unrelated names, if any; <code>backups/</code> is git-ignored). Record the hosting answer. If nobody backs up the uploads folder, record it as an operational risk: media files are not in the database.</p>
+      <p class="ref">Ref: <code>.gitignore</code> (<code>backups/</code>, <code>.data/</code>) · docs/dev-guides/10-settings-cron-operations.md §7.4</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-logs">
+    <h2>Logs, audit and error pages</h2>
+
+    <article class="tc" id="OPS-057" data-priority="P3">
+      <h3>Known gap: the audit log is kept forever</h3>
+      <ol class="steps">
+        <li>Run <code>SELECT COUNT(*), MIN(created_at), MAX(created_at) FROM audit_logs;</code></li>
+        <li>Run <code>SELECT action, COUNT(*) FROM audit_logs GROUP BY action ORDER BY 2 DESC LIMIT 10;</code></li>
+        <li>Search the code: <code>grep -rn "delete(schema.auditLogs" src</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The oldest row dates from the first use of the site; nothing deletes audit rows (step 3 finds nothing). With a job scheduled every 5 to 15 minutes, <code>cron.run</code> alone adds hundreds of rows a day. Record the growth rate and raise a retention decision (period, and whether <code>cron.run</code> rows need keeping).</p>
+      <p class="ref">Ref: <code>src/cms/core/audit.ts</code> · <code>src/cms/core/cron/service.ts</code></p>
+    </article>
+
+    <article class="tc" id="OPS-058" data-priority="P3">
+      <h3>The 404 log grows with every distinct address</h3>
+      <ol class="steps">
+        <li>Run <code>for i in $(seq 1 50); do curl -s -o /dev/null "$BASE/qa-ops-404-$i"; done</code>.</li>
+        <li>Run <code>SELECT COUNT(*) FROM seo_404_log WHERE path LIKE '/qa-ops-404-%';</code></li>
+        <li>Run <code>curl -s -o /dev/null -w '%{http_code}\n' "$BASE/$(head -c 600 /dev/zero | tr '\0' a)"</code> and <code>SELECT COUNT(*) FROM seo_404_log WHERE path LIKE '/aaaa%';</code></li>
+        <li>Delete the QA rows: <code>DELETE FROM seo_404_log WHERE path LIKE '/qa-ops-404-%' OR path LIKE '/aaaa%';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 2: <code>50</code>: one row per distinct address, with no cap, rate limit or automatic clean-up, so a scanner can grow the table without bound. Step 3: the visitor still gets the normal not-found redirect; the over-long address is either not logged or stored truncated (paths are at most 512 characters), with no error. Record the unbounded growth as an operational gap; the screen is tested in MED-060 to MED-066.</p>
+      <p class="ref">Ref: <code>src/cms/core/seo/resolve.ts</code> (<code>log404</code>) · <code>src/cms/db/adapters/mysql/schema/seo.ts</code> (<code>seo_404_log</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-059" data-priority="P3">
+      <h3>Error pages: not found is branded, a server error is not</h3>
+      <ol class="steps">
+        <li>Open <code>$BASE/qa-ops-missing</code> and <code>$BASE/en/qa-ops-missing</code> (MED-062 covers status codes).</li>
+        <li>Run <code>find src/app -name 'error.tsx' -o -name 'global-error.tsx'</code>.</li>
+        <li>On staging only: stop the database for a moment, open the home page and a content page, then start the database again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: the site's own not-found page in the right language, with header and footer. Step 2: no output: there is no custom error boundary. Step 3: record what visitors see (a bare framework error page, or a page that degrades with missing settings); anything showing a stack trace or database details is a Fail. The server log has the matching error line.</p>
+      <p class="ref">Ref: <code>src/app/[locale]/not-found.tsx</code> · <code>src/app/[locale]/[...rest]/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="OPS-060" data-priority="P3">
+      <h3>Log prefixes an operator can search for</h3>
+      <ol class="steps">
+        <li>After running this checklist, search the app log for <code>[cms]</code>, <code>[cms/api]</code>, <code>[cms/settings]</code>, <code>[commerce/abandoned]</code> and <code>[locks]</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Each message found is on one line starting with its prefix, and none contains a secret value (cron, session or encryption secrets, passwords). <code>[cms] No X-Real-IP</code> appears at most once per process (OPS-041).</p>
+      <p class="ref">Ref: docs/dev-guides/10-settings-cron-operations.md §7.5</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-docs">
+    <h2>Documentation builds</h2>
+
+    <article class="tc" id="OPS-061" data-priority="P3">
+      <h3>Rebuild the six user-guide PDFs</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> A Chromium: either <code>CHROME=/path/to/chrome</code> exported, or Playwright's cached <code>~/.cache/ms-playwright/chromium-1243/</code>.</p>
+      <ol class="steps">
+        <li>Run <code>cd docs/user-guides/_build &amp;&amp; npm install &amp;&amp; node build.mjs</code>.</li>
+        <li>Run <code>node build.mjs 06-rythmiseis-xristes</code>.</li>
+        <li>From the project root run <code>git status --short docs/user-guides</code>. Open two of the new PDFs.</li>
+        <li>If the rebuild is not meant to be committed, run <code>git checkout -- docs/user-guides/*.pdf</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1 prints six lines <code>built …/docs/user-guides/01-vasika.pdf</code> through <code>…/06-rythmiseis-xristes.pdf</code> and exits 0. Step 2 prints only the <code>06</code> line. Step 3 shows at most the six PDFs as modified (the <code>_build/out/</code> HTML and <code>node_modules/</code> are ignored); the PDFs open with a table of contents with page numbers and readable Greek text (SET-079).</p>
+      <p class="ref">Ref: <code>docs/user-guides/_build/build.mjs</code> · docs/dev-guides/10-settings-cron-operations.md §10 (“User-guide PDFs”)</p>
+    </article>
+
+    <article class="tc" id="OPS-062" data-priority="P3">
+      <h3>The developer guides are present and agree with this checklist</h3>
+      <ol class="steps">
+        <li>Run <code>git ls-files docs/dev-guides</code>.</li>
+        <li>Open docs/dev-guides/10-settings-cron-operations.md and compare §5 (“The main Save sends every …”) with §10 (“The main Save sends only the keys whose value differs …”) and with the result of OPS-003.</li>
+        <li>Compare the job table in §3.4 with <code>src/app/api/cms/cron/[job]/route.ts</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Eleven files: <code>README.md</code> and <code>01-architecture.md</code> to <code>10-settings-cron-operations.md</code>, each listed in the README table. The job table lists the same seven jobs with the same module gates. §5 still says the Save sends every key, which contradicts §10 and the code (OPS-003): record a documentation defect.</p>
+      <p class="ref">Ref: docs/dev-guides/README.md · docs/dev-guides/10-settings-cron-operations.md §3.4, §5, §10</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-gate">
+    <h2>Release gate</h2>
+    <p class="intro">Run on the exact commit being released, in a clean checkout of the <code>CMS</code> branch (<code>git status</code> clean). All must pass before <code>npm run cms:release</code> or a deploy.</p>
+
+    <article class="tc" id="OPS-063" data-priority="P1">
+      <h3>New-site skill parity check passes</h3>
+      <ol class="steps">
+        <li>Run <code>node .claude/skills/new-site/scripts/check-base.mjs; echo "exit=$?"</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>✓ base parity: no Praion references, imports resolve, templates and generators match the base</code> and <code>exit=0</code>. Any <code>✗ base parity: N problem(s)</code> line with a list is a Fail; the list names each file that differs from what the skill generates.</p>
+      <p class="ref">Ref: <code>.claude/skills/new-site/scripts/check-base.mjs</code></p>
+    </article>
+
+    <article class="tc" id="OPS-064" data-priority="P1">
+      <h3>Tests, types, lint and a production build pass</h3>
+      <ol class="steps">
+        <li>Run <code>npm test</code>, then <code>npx tsc --noEmit</code>, then <code>npm run lint</code>, checking <code>echo $?</code> after each.</li>
+        <li>Run <code>NEXT_PUBLIC_SITE_URL=&lt;staging origin&gt; npm run build</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> All exit 0. <code>npm test</code> needs no database and ends with <code># fail 0</code> (about 2 980 tests on the current branch; a large drop in the count means test files are no longer picked up). <code>tsc</code> and <code>lint</code> print no errors. The build finishes without type or <code>ConfigError</code> failures. SET-032 runs the same commands on an install; this case is the gate on the release commit.</p>
+      <p class="ref">Ref: <code>package.json</code> (<code>test</code>, <code>type-check</code>, <code>lint</code>, <code>build</code>) · docs/dev-guides/10-settings-cron-operations.md §8 (“Recipe: release a new CMS version”)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-cleanup">
+    <h2>Clean up</h2>
+
+    <article class="tc" id="OPS-065" data-priority="P3">
+      <h3>Remove QA users, pages and scheduler entries</h3>
+      <ol class="steps">
+        <li>Delete the user <code>qa-settingsview@example.com</code> and the role <code>QA settings viewer</code>. Delete the pages <code>QA Ops Scheduled</code> and <code>QA After Backup</code> if they still exist.</li>
+        <li>Remove the QA crontab line, <code>~/bin/cms-cron</code> and <code>~/private/cron.env</code> unless they are meant to stay; delete <code>~/qa-backup.sql</code>, <code>~/qa-uploads.tgz</code>, <code>~/qa-env.bak</code>, <code>/tmp/env-*.txt</code>.</li>
+        <li>Make sure the worktree is gone: <code>git worktree list</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> None of the QA objects remain; <code>git worktree list</code> shows only the main checkout.</p>
+      <p class="ref">Ref: this checklist</p>
+    </article>
+
+    <article class="tc" id="OPS-066" data-priority="P3">
+      <h3>Put settings and the environment back</h3>
+      <ol class="steps">
+        <li>Run the <code>site_settings</code> query from “Before you start” and compare with the copy you took. Put every changed value back through the Settings screen; for keys that were absent before and now exist, delete the row and restart the app.</li>
+        <li>Restore the Modules as the site had them. Restore <code>CMS_CRON_SECRET</code>, remove <code>COMMERCE_CRON_SECRET</code> and <code>BOOKING_CRON_SECRET</code> if they were added, restart.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The <code>site_settings</code> query matches the copy taken at the start (apart from <code>updated_at</code>). OPS-025 still returns <code>200</code>.</p>
+      <p class="ref">Ref: this checklist</p>
+    </article>
+  </section>
+
+</main>
+<footer class="page">Checklist 10 of 12. Results are saved in this browser only; use Export before clearing browser data. Afterwards restore the settings you changed, the module switches and the environment file (OPS-066), and remove the QA scheduler entries and backup files (OPS-065).</footer>
+</body>
+</html>

@@ -1,0 +1,1 @@
+ALTER TABLE `form_submissions` ADD `attachment` json;

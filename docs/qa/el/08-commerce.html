@@ -1,0 +1,1455 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ηλεκτρονικό κατάστημα: παραγγελίες &amp; πληρωμές</title>
+<link rel="stylesheet" href="../qa.css">
+<script src="../qa.js" defer></script>
+</head>
+<body>
+<nav class="crumbs"><a href="index.html">Χειροκίνητος έλεγχος CMS</a></nav>
+<header class="page">
+  <h1>08 · Ηλεκτρονικό κατάστημα: κατάστημα, ολοκλήρωση αγοράς, παραγγελίες, πληρωμές &amp; πελάτες</h1>
+  <p class="scope">Το κατάστημα από άκρη σε άκρη: κατηγορίες (με υποκατηγορίες), ετικέτες, πίνακες μεγεθών και προϊόντα (απλό, με παραλλαγές, εξωτερικό, ψηφιακό και δωροκάρτα) στο διαχειριστικό· οι σελίδες καταστήματος, κατηγορίας, ετικέτας και προϊόντος και στις δύο γλώσσες, τα φίλτρα και η αναζήτηση· το καλάθι του browser· η ολοκλήρωση αγοράς (checkout) με διευθύνσεις, τους δύο μηχανισμούς υπολογισμού αποστολής, αντικαταβολή, κουπόνια, περιτύλιγμα δώρου και δωροκάρτες· Stripe, PayPal και Viva σε sandbox (επιτυχία, απόρριψη, ακύρωση, webhooks, επαναλήψεις)· οι απορρίψεις του checkout· η οθόνη επιβεβαίωσης και τα email της παραγγελίας· η οθόνη Orders (λίστα, λεπτομέρειες, κύκλος ζωής της κατάστασης, συγκρούσεις, επιστροφές χρημάτων, η ειδοποίηση ότι απαιτείται επιστροφή χρημάτων, απόθεμα)· οι αποστολές, τα στοιχεία σύνδεσης εταιρειών courier και τα voucher αποστολής BoxNow στο stage API της BoxNow· οι εργασίες για τις ληξιπρόθεσμες παραγγελίες, τις δωροκάρτες και τα εγκαταλελειμμένα καλάθια· οι λογαριασμοί πελατών, η οθόνη Customers, οι αξιολογήσεις, η λίστα επιθυμιών και τα feeds για τις πλατφόρμες σύγκρισης τιμών. Καλύπτονται αλλού και αναφέρονται με το ID τους: οι διακόπτες Commerce και Customer accounts και τα 404 τους (SET-034 έως SET-037, SET-040, SET-042), η γραμμή διαχείρισης στις σελίδες του καταστήματος και με συνδεδεμένο πελάτη (ADM-024, ADM-026, ADM-060), το Customer accounts ενεργό ενώ το Commerce είναι ανενεργό (ADM-012), η καταχώριση Gift cards (ADM-037), οι πίνακες του καταστήματος και οι αναλλοίωτες ιδιότητες των χρηματικών ποσών (DB-037 έως DB-050, DB-090, DB-094, DB-095), το cookie πελάτη που απορρίπτεται από το API του διαχειριστικού (AUTH-015), ο πίνακας δικαιωμάτων (AUTH-055), οι διευθύνσεις του καταστήματος στο sitemap (MED-079), το JSON-LD των προϊόντων (MED-093), οι ανακατευθύνσεις slug του Product Manager (MED-102) και η ίδια η σελίδα διαγραφής από τη λίστα (MKT-048). Χρειάζεστε: ένα περιβάλλον δοκιμών προσβάσιμο από το διαδίκτυο (για τα webhooks του PayPal και της Viva), λογαριασμούς sandbox σε Stripe, PayPal και Viva, στοιχεία σύνδεσης stage της BoxNow, ένα γραμματοκιβώτιο που μπορείτε να διαβάσετε ως πελάτης και ένα ως κατάστημα, πρόσβαση στη βάση δεδομένων μέσω client, τερματικό με <code>curl</code> και δύο browsers (ή ένα κανονικό και ένα ιδιωτικό παράθυρο).</p>
+</header>
+<main>
+
+  <section class="suite" id="suite-prep">
+    <h2>Πριν ξεκινήσετε</h2>
+    <p class="intro">Οι λίστες ελέγχου 01 (migrations, seeds, superadmin <code>qa-admin@example.com</code>) και 07 (MKT-001: ρυθμισμένη εξερχόμενη αλληλογραφία) πρέπει να έχουν ολοκληρωθεί. Συνδεθείτε ως <code>qa-admin@example.com</code>, εκτός αν μια περίπτωση ελέγχου ορίζει διαφορετικά. Τα URL χρησιμοποιούν το <code>http://localhost:3002</code>· στο φιλοξενούμενο περιβάλλον δοκιμών χρησιμοποιήστε τη διεύθυνσή του. Τα ελληνικά είναι η προεπιλεγμένη γλώσσα και δεν έχουν πρόθεμα: το <code>/shop</code> είναι ελληνικά, το <code>/en/shop</code> αγγλικά. Τα περισσότερα βήματα χρησιμοποιούν τις αγγλικές σελίδες, ώστε το κείμενο που παρατίθεται να συγκρίνεται απευθείας· η ελληνική διατύπωση δίνεται όπου μια περίπτωση αφορά τη γλώσσα.</p>
+    <div class="callout">
+      <p><strong>Μη χρησιμοποιείτε ποτέ πραγματικά (live) κλειδιά.</strong> Κάθε μεταβλητή πληρωμών και courier παρακάτω πρέπει να έχει τιμή sandbox ή δοκιμών: κλειδιά Stripe που ξεκινούν με <code>sk_test_</code> / <code>pk_test_</code>, <code>PAYPAL_ENV=sandbox</code>, <code>VIVA_ENV=demo</code>, και <code>BOXNOW_API_URL</code> κενό ή με τιμή <code>https://api-stage.boxnow.gr/api/v1</code>. Χρησιμοποιήστε τις δοκιμαστικές κάρτες και τους λογαριασμούς sandbox που τεκμηριώνει κάθε πάροχος πληρωμών· αυτή η σελίδα τις αναφέρει γενικά («η επιτυχής δοκιμαστική κάρτα του παρόχου»).</p>
+      <p><strong>Τερματικό.</strong> Στον φάκελο του έργου εκτελέστε <code>BASE=http://localhost:3002</code>, <code>CRON='&lt;value of CMS_CRON_SECRET&gt;'</code>, και αντιγράψτε το cookie <code>cms_session</code> του διαχειριστικού στο <code>S</code> όπως στη λίστα ελέγχου 05 («Χρήση του curl με συνεδρία»)· προσθέστε το <code>-b "cms_session=$S"</code> στις κλήσεις του διαχειριστικού. Τα δημόσια endpoints έχουν όριο ρυθμού ανά διεύθυνση: δώστε σε κάθε curl το δικό του <code>-H 'X-Real-IP: 10.80.0.N'</code> (νέο N ανά περίπτωση).</p>
+      <p><strong>Η παραγγελία με μια ματιά.</strong> Πολλές περιπτώσεις τελειώνουν με αυτό το ερώτημα· αντικαταστήστε τον κωδικό αναφοράς:</p>
+<pre><code>SELECT o.id, o.reference, o.status, o.subtotal, o.total,
+       JSON_EXTRACT(o.metadata,'$.costs') AS costs, JSON_EXTRACT(o.metadata,'$.coupon') AS coupon,
+       JSON_EXTRACT(o.metadata,'$.codAmount') AS cod, JSON_EXTRACT(o.metadata,'$.stockTaken') AS stock_taken,
+       p.id AS pay_id, p.provider, p.status AS pay_status, p.amount, p.provider_ref
+FROM orders o LEFT JOIN payments p ON p.order_id = o.id
+WHERE o.reference = 'ORD-2026-XXXXXXXXXX';</code></pre>
+      <p><strong>Το απόθεμα με μια ματιά.</strong> <code>SELECT locale, JSON_EXTRACT(data,'$.stock') AS stock, JSON_EXTRACT(data,'$.variations[*].stock') AS var_stock FROM documents WHERE type = 'product' AND slug = '&lt;slug&gt;';</code> Το απόθεμα είναι κοινό: κάθε γραμμή γλώσσας πρέπει να δείχνει τους ίδιους αριθμούς.</p>
+      <p><strong>Captcha.</strong> Το <code>.env.example</code> περιέχει τα δοκιμαστικά κλειδιά reCAPTCHA της Google, τα οποία ενεργοποιούν τον έλεγχο captcha. Ο έλεγχος υπολοίπου δωροκάρτας, η εγγραφή πελάτη και το «ξέχασα τον κωδικό» απαιτούν όλα token captcha (οι COM-045, COM-095 και COM-098 το ελέγχουν πρώτα). Αν αυτές οι περιπτώσεις αποτυγχάνουν με <code>Captcha check failed. Please try again.</code>, αδειάστε τα <code>RECAPTCHA_SITE_KEY=</code> και <code>RECAPTCHA_SECRET_KEY=</code> στο <code>.env.local</code>, κάντε επανεκκίνηση και εκτελέστε τις εξαρτώμενες περιπτώσεις· επαναφέρετε τα κλειδιά στο τέλος.</p>
+    </div>
+
+    <article class="tc" id="COM-001" data-priority="P1">
+      <h3>Ενεργοποίηση του καταστήματος και βασικές ρυθμίσεις</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/admin/settings?tab=Modules</code>, τσεκάρετε τα <strong>Commerce</strong>, <strong>Customer accounts</strong> και <strong>Newsletter</strong> και πατήστε <strong>Save settings</strong>.</li>
+        <li>Ανοίξτε το <code>/admin/settings?tab=Ecommerce</code> (υποκαρτέλα <strong>General</strong>). Ορίστε <strong>Default currency</strong> <code>EUR</code>, <strong>Payment method</strong> <code>Manual / bank transfer</code>, <strong>Gift-wrap fee</strong> <code>2.50</code>, <strong>Price filter</strong> <code>Slider with two handles</code>, <strong>Cancel unpaid card orders after (hours)</strong> <code>48</code>. Πατήστε <strong>Save settings</strong>.</li>
+        <li>Στην καρτέλα <strong>Notifications</strong> ορίστε στο <strong>Inquiry notification emails</strong> το γραμματοκιβώτιο του καταστήματος και αποθηκεύστε.</li>
+        <li>Στο <code>.env.local</code> ορίστε στα <code>CMS_CRON_SECRET</code> και <code>CMS_GIFTCARD_PEPPER</code> δύο διαφορετικές τιμές από το <code>openssl rand -base64 48</code>· κάντε επανεκκίνηση.</li>
+      </ol>
+      <ul class="exp">
+        <li><code>Settings saved.</code> κάθε φορά. Στο πλευρικό μενού προστίθεται η ομάδα ECOMMERCE: Categories, Size charts, Tags, Products, Orders, Customers, Gift cards, Reviews, Abandoned carts.</li>
+        <li>Η καρτέλα Ecommerce έχει τις υποκαρτέλες <strong>General</strong>, <strong>Shipping</strong>, <strong>Coupons</strong>, <strong>Wishlist</strong>, <strong>Gift cards</strong>· η λίστα <strong>Payment method</strong> προσφέρει τα <code>Manual / bank transfer</code>, <code>Card (Stripe)</code>, <code>PayPal</code>, <code>Viva.com (card)</code>.</li>
+        <li>Το <code>SELECT `key`, value FROM site_settings WHERE `key` LIKE 'ecommerce.%';</code> δείχνει <code>ecommerce.paymentProvider</code> = <code>manual</code> και <code>ecommerce.giftWrapFee</code> = <code>2.50</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/settings/schema.ts</code> (<code>PAYMENT_PROVIDER_OPTIONS</code>, ομάδα Ecommerce) · <code>src/app/admin/(shell)/settings/page.tsx</code> · docs/dev-guides/08-commerce.md §7</p>
+    </article>
+
+    <article class="tc" id="COM-002" data-priority="P2">
+      <h3>Παλαιός μηχανισμός αποστολής: σταθερή χρέωση, όριο δωρεάν αποστολής και χρέωση αντικαταβολής</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/admin/settings?tab=Ecommerce&amp;sub=Shipping</code>. Στο <strong>Method</strong> επιλέξτε <strong>Shipping method</strong> <code>Flat rate</code>, <strong>Standard charge (EUR)</strong> <code>4.00</code>, <strong>Free shipping over (EUR)</strong> <code>50.00</code>.</li>
+        <li>Στο <strong>Payment surcharges</strong> πατήστε <strong>Add surcharge</strong>, επιλέξτε <strong>Payment method</strong> <code>manual</code>, <strong>Fee (EUR)</strong> <code>2.00</code>.</li>
+        <li>Αφήστε το <strong>Offer store pickup at checkout</strong> ατσέκαρτο. Πατήστε <strong>Save shipping settings</strong>.</li>
+        <li>Εκτελέστε <code>SELECT value FROM site_settings WHERE `key` = 'ecommerce.shipping';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η αποθήκευση επιβεβαιώνεται χωρίς σφάλμα· το JSON περιέχει <code>"method":"flat"</code>, <code>"baseCharge":4</code>, <code>"freeThreshold":50</code> και μια καταχώριση <code>paymentSurcharges</code> για το <code>manual</code> με χρέωση <code>2</code>. Κάτω από τη φόρμα η ενότητα <strong>Shipping methods</strong> γράφει <code>Add zone</code> χωρίς ζώνες και ακολουθεί η ενότητα <strong>Couriers</strong>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/ShippingSettings.tsx</code> · <code>src/cms/modules/commerce/shipping.ts</code> · docs/dev-guides/08-commerce.md §4.9</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-taxonomy">
+    <h2>Διαχείριση καταλόγου: κατηγορίες, ετικέτες, πίνακες μεγεθών</h2>
+    <p class="intro">Κάθε στοιχείο δημιουργείται πρώτα στα ελληνικά (καρτέλα EL) και στη συνέχεια μεταφράζεται στην καρτέλα EN με <strong>Copy from EL</strong> και <strong>Create EN</strong>, όπως στη λίστα ελέγχου 03.</p>
+
+    <article class="tc" id="COM-003" data-priority="P2">
+      <h3>Δημιουργία γονικής κατηγορίας και υποκατηγορίας και στις δύο γλώσσες</h3>
+      <ol class="steps">
+        <li>Ανοίξτε <strong>Categories</strong> → <strong>+ New</strong>. <strong>Category name</strong> <code>QA Ρούχα</code>, slug <code>qa-apparel</code>, <strong>Status — EL</strong> <code>published</code>, πατήστε <strong>Create Category</strong>. Στην καρτέλα <strong>EN</strong>: <strong>Copy from EL</strong>, όνομα <code>QA Apparel</code>, κατάσταση <code>published</code>, <strong>Create EN</strong>.</li>
+        <li>Δημιουργήστε την <code>QA Μπλουζάκια</code> / <code>QA T-shirts</code>, slug <code>qa-tshirts</code>, με <strong>Parent category</strong> <code>QA Ρούχα</code>, δημοσιευμένη και στις δύο γλώσσες.</li>
+        <li>Εκτελέστε <code>SELECT id, locale, status, slug FROM documents WHERE type = 'category' AND slug LIKE 'qa-%';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τέσσερις γραμμές (δύο slugs × <code>el</code>/<code>en</code>), όλες <code>published</code>. Η λίστα Categories εμφανίζει και τις δύο καταχωρίσεις· ο επεξεργαστής της υποκατηγορίας δείχνει τη γονική της στο <strong>Parent category</strong>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/category.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-004" data-priority="P3">
+      <h3>Υποκατηγορίες στη βιτρίνα του καταστήματος</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Έχουν ολοκληρωθεί οι COM-003 και COM-008 (το QA T-shirt βρίσκεται μόνο στην <code>qa-tshirts</code>).</p>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/en/shop/category/qa-apparel</code> και μετά το <code>/en/shop/category/qa-tshirts</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο (γνωστό κενό):</span> Και οι δύο κατηγορίες εμφανίζονται ως επίπεδα κουμπιά (pills) μετά το <strong>All products</strong>, χωρίς εσοχή. Η σελίδα της γονικής δεν εμφανίζει τα προϊόντα της υποκατηγορίας (<code>No products match.</code> αν δεν υπάρχει τίποτε απευθείας στη γονική). Το breadcrumb στη σελίδα της υποκατηγορίας είναι <strong>Shop</strong> › <strong>QA T-shirts</strong>, χωρίς το βήμα της γονικής. Καταγράψτε το: η σχέση γονικής κατηγορίας αποθηκεύεται, αλλά η βιτρίνα δεν τη χρησιμοποιεί.</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/shop/category/[slug]/page.tsx</code> (crumbs) · <code>src/components/shop/CategoryNav.tsx</code> · <code>src/cms/modules/commerce/read.ts</code> (<code>readProductsByCategory</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-005" data-priority="P2">
+      <h3>Δημιουργία ετικέτας και πίνακα μεγεθών</h3>
+      <ol class="steps">
+        <li>Ανοίξτε <strong>Tags</strong> → <strong>+ New</strong>: <strong>Tag name</strong> <code>QA Καλοκαίρι</code>, slug <code>qa-summer</code>, δημοσιευμένη· EN <code>QA Summer</code>, δημοσιευμένη.</li>
+        <li>Ανοίξτε <strong>Size charts</strong> → <strong>+ New</strong>: <strong>Chart title</strong> <code>QA Μεγέθη</code>, slug <code>qa-tops-chart</code>, στο <strong>Columns</strong> ένα <strong>Measurement</strong> <code>Στήθος</code>· στο <strong>Rows</strong> <code>S</code> με τιμή <code>92</code> και <code>M</code> με τιμή <code>98</code>· <strong>Note</strong> <code>Μετρήστε κάτω από τις μασχάλες.</code>· δημοσιευμένος. EN: τίτλος <code>QA Sizes</code>, μέτρηση <code>Chest</code>, σημείωση <code>Measure under the arms.</code>, δημοσιευμένος.</li>
+        <li>Ανοίξτε την κατηγορία <code>QA T-shirts</code> και ορίστε στο <strong>Size chart</strong> τον <code>QA Μεγέθη</code>· αποθηκεύστε το EL.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Όλες οι αποθηκεύσεις πετυχαίνουν. Το <code>SELECT locale, status FROM documents WHERE type IN ('tag','sizechart') AND slug IN ('qa-summer','qa-tops-chart');</code> επιστρέφει τέσσερις δημοσιευμένες γραμμές.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/tag.ts</code> · <code>src/cms/modules/commerce/sizechart.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-006" data-priority="P3">
+      <h3>Η σελίδα μιας πρόχειρης κατηγορίας</h3>
+      <ol class="steps">
+        <li>Δημιουργήστε μια κατηγορία <code>QA Draft Cat</code>, slug <code>qa-draft-cat</code>, και αφήστε την <code>draft</code>.</li>
+        <li>Ανοίξτε το <code>/shop/category/qa-draft-cat</code> σε ιδιωτικό παράθυρο (χωρίς σύνδεση).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η σελίδα «δεν βρέθηκε» του ιστότοπου, όπως για κάθε μη δημοσιευμένο περιεχόμενο. Καταγράψτε Αποτυχία αν η σελίδα εμφανίζεται με την επικεφαλίδα <code>QA Draft Cat</code> (η ανάγνωση της κατηγορίας επιλέγει τη γραμμή του όρου χωρίς να ελέγχει την κατάστασή της).</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/read.ts</code> (<code>readProductsByCategory</code>, <code>pickTermRow</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-products">
+    <h2>Διαχείριση καταλόγου: προϊόντα</h2>
+    <p class="intro">Οι τιμές καταχωρίζονται σε ευρώ με ΦΠΑ· δεν υπάρχει πουθενά πεδίο φόρου. Τα πεδία που χαρακτηρίζονται κοινά (τιμή, απόθεμα, SKU, παραλλαγές, όρια) είναι ίδια σε κάθε γλώσσα.</p>
+
+    <article class="tc" id="COM-007" data-priority="P1">
+      <h3>Δημιουργία απλού προϊόντος με παρακολούθηση αποθέματος</h3>
+      <ol class="steps">
+        <li>Ανοίξτε <strong>Products</strong> → <strong>+ New</strong>. <strong>Product name</strong> <code>QA Κούπα</code>, slug <code>qa-mug</code>, <strong>Short tagline</strong> <code>Κεραμική κούπα</code>, μια εικόνα στο <strong>Gallery</strong> με εναλλακτικό κείμενο, <strong>Categories</strong> <code>QA Ρούχα</code>, <strong>Tags</strong> <code>QA Καλοκαίρι</code>.</li>
+        <li><strong>Price</strong> <code>12</code>, <strong>SKU</strong> <code>QA-MUG</code>, <strong>Availability</strong> <code>in-stock</code>, <strong>Stock</strong> <code>5</code>, <strong>Weight</strong> <code>0.4</code>. Κατάσταση <code>published</code>, <strong>Create Product</strong>.</li>
+        <li>EN: <strong>Copy from EL</strong>, όνομα <code>QA Mug</code>, tagline <code>Ceramic mug</code>, δημοσιευμένο, <strong>Create EN</strong>.</li>
+        <li>Εκτελέστε το ερώτημα αποθέματος από την ενότητα «Πριν ξεκινήσετε» για το <code>qa-mug</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Δύο γραμμές (<code>el</code>, <code>en</code>), και οι δύο με απόθεμα <code>5</code>. Το <code>/en/shop/qa-mug</code> εμφανίζει <code>QA Mug</code>, <code>€12.00</code>, <code>In stock</code> και <strong>Add to cart</strong> (η γραμμή SKU εμφανίζεται μόνο για επιλεγμένη παραλλαγή). Το <code>/shop/qa-mug</code> εμφανίζει <code>QA Κούπα</code>, <code>12,00 €</code>, <code>Διαθέσιμο</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/collection.ts</code> · <code>src/components/shop/ProductShowcase.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-008" data-priority="P1">
+      <h3>Δημιουργία προϊόντος με χαρακτηριστικά και παραλλαγές</h3>
+      <ol class="steps">
+        <li>Νέο προϊόν <code>QA Μπλουζάκι</code> / EN <code>QA T-shirt</code>, slug <code>qa-tee</code>, <strong>Price</strong> <code>20</code>, <strong>Categories</strong> <code>QA Μπλουζάκια</code>, χωρίς απόθεμα.</li>
+        <li>Στο <strong>Attributes</strong> προσθέστε <strong>Attribute name</strong> <code>Χρώμα</code> (<strong>Shown as</strong> χρωματικό δείγμα) με <strong>Values</strong> <code>Κόκκινο</code> και <code>Μπλε</code>, και <code>Μέγεθος</code> με <code>S</code> και <code>M</code>.</li>
+        <li>Στο <strong>Variations</strong> πατήστε <strong>Generate variations</strong>. Συμπληρώστε: Red/S τιμή κενή, απόθεμα <code>3</code>, SKU <code>QA-TEE-RS</code>· Red/M τιμή <code>22</code>, απόθεμα <code>0</code>· Blue/S ξετσεκάρετε το <strong>On</strong>· Blue/M απόθεμα <code>2</code>. Δημοσιεύστε το EL και δημιουργήστε το EN (ονόματα χαρακτηριστικών <code>Colour</code>/<code>Size</code>, τιμές <code>Red</code>/<code>Blue</code>).</li>
+      </ol>
+      <ul class="exp">
+        <li>Πριν από τη δημιουργία, ο μετρητής γράφει <code>4 to add</code>· μετά, <code>4 variations, in sync with attributes</code> και εμφανίζεται πίνακας με τις στήλες Χρώμα, Μέγεθος, On, SKU, Price, Stock, Weight, Image. Η κενή τιμή και το κενό βάρος δείχνουν το placeholder <code>base</code>.</li>
+        <li>Το ερώτημα αποθέματος για το <code>qa-tee</code> δείχνει απόθεμα προϊόντος NULL και αποθέματα παραλλαγών <code>[3, 0, 2]</code> (Red/S, Red/M, Blue/M· η Blue/S δεν έχει) και στις δύο γραμμές.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/fields/VariationsEditor.tsx</code> · <code>src/cms/modules/commerce/collection.ts</code> (<code>attributes</code>, <code>variations</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-009" data-priority="P3">
+      <h3>Οι παραλλαγές αποσυγχρονίζονται από τα χαρακτηριστικά</h3>
+      <ol class="steps">
+        <li>Στο <code>qa-tee</code> προσθέστε μια τρίτη τιμή μεγέθους <code>L</code> (μην αποθηκεύσετε ακόμη) και διαβάστε τον μετρητή.</li>
+        <li>Αφαιρέστε ξανά το <code>L</code>, στη συνέχεια αφαιρέστε την τιμή <code>M</code> και διαβάστε τον μετρητή και τον πίνακα.</li>
+        <li>Φύγετε χωρίς αποθήκευση (απορρίψτε τις αλλαγές).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>2 to add</code>. Βήμα 2: <code>2 to remove</code>, και οι γραμμές M δείχνουν την ετικέτα της τιμής με κόκκινο. Τίποτε δεν αποθηκεύεται.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/fields/VariationsEditor.tsx</code> (<code>missing</code>, <code>orphaned</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-010" data-priority="P2">
+      <h3>Τιμή προσφοράς και η σήμανση Sale</h3>
+      <ol class="steps">
+        <li>Στο <code>qa-mug</code> ορίστε <strong>Original price ("was")</strong> <code>15</code> και αποθηκεύστε το EL. Ανοίξτε το <code>/en/shop</code> και το <code>/en/shop/qa-mug</code>.</li>
+        <li>Ορίστε την αρχική τιμή σε <code>10</code> (κάτω από την τιμή), αποθηκεύστε και ανανεώστε και τις δύο σελίδες.</li>
+        <li>Αδειάστε την αρχική τιμή και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: η κάρτα και η σελίδα προϊόντος δείχνουν <code>€12.00</code> με το <code>€15.00</code> διαγραμμένο και σήμανση <code>Sale</code>. Βήμα 2: καμία διαγραμμένη τιμή και καμία σήμανση. Βήμα 3: επιστροφή στην απλή τιμή. Η γραμμή EN δείχνει την ίδια αλλαγή χωρίς να την επεξεργαστείτε (κοινό πεδίο).</p>
+      <p class="ref">Αναφ.: <code>src/components/shop/ProductShowcase.tsx</code> (<code>showCompare</code>) · <code>src/components/shop/ProductBadges.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-011" data-priority="P2">
+      <h3>Απόθεμα χωρίς παρακολούθηση, διαθεσιμότητα και άλλοι τύποι προϊόντος</h3>
+      <ol class="steps">
+        <li>Δημιουργήστε το <code>qa-candle</code> (<code>QA Candle</code>), τιμή <code>8</code>, <strong>Stock</strong> κενό, διαθεσιμότητα <code>in-stock</code>, δημοσιευμένο και στις δύο γλώσσες.</li>
+        <li>Δημιουργήστε το <code>qa-soldout</code> (<code>QA Sold out</code>), τιμή <code>9</code>, απόθεμα κενό, διαθεσιμότητα <code>out-of-stock</code>, δημοσιευμένο.</li>
+        <li>Δημιουργήστε το <code>qa-ext</code> (<code>QA External</code>), τιμή <code>30</code>, <strong>Product type</strong> <code>External / affiliate</code>, <strong>External buy link</strong> <code>https://example.com/buy</code>, <strong>Buy button text</strong> <code>Buy at partner</code>, δημοσιευμένο.</li>
+        <li>Δημιουργήστε το <code>qa-ebook</code> (<code>QA E-book</code>), τιμή <code>5</code>, τύπος <code>Digital download / virtual</code>, δημοσιευμένο.</li>
+        <li>Ανοίξτε το καθένα στο <code>/en/shop/&lt;slug&gt;</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li><code>qa-candle</code>: <code>In stock</code>, <strong>Add to cart</strong> ενεργό.</li>
+        <li><code>qa-soldout</code>: <code>Out of stock</code>, <strong>Add to cart</strong> ανενεργό.</li>
+        <li><code>qa-ext</code>: σύνδεσμος <strong>Buy at partner</strong> προς το <code>https://example.com/buy</code> αντί για Add to cart.</li>
+        <li><code>qa-ebook</code>: <code>Digital product — no shipping. Delivered after purchase.</code> Σημειώστε ότι κανένα αρχείο δεν παραδίδεται ποτέ: τα πεδία λήψης αποθηκεύονται αλλά δεν χρησιμοποιούνται (docs/dev-guides/08-commerce.md §3.1).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/collection.ts</code> (<code>PRODUCT_TYPE_LABELS</code>) · <code>src/components/shop/ProductShowcase.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-012" data-priority="P3">
+      <h3>Προπαραγγελία, κατασκευή κατόπιν παραγγελίας και προϊόν με παρακολούθηση αποθέματος στο μηδέν</h3>
+      <ol class="steps">
+        <li>Ορίστε τη διαθεσιμότητα του <code>qa-candle</code> σε <code>preorder</code>, αποθηκεύστε, ανοίξτε το <code>/en/shop/qa-candle</code>· στη συνέχεια <code>made-to-order</code>· και μετά ξανά <code>in-stock</code>.</li>
+        <li>Ορίστε το απόθεμα του <code>qa-mug</code> σε <code>0</code> (η διαθεσιμότητα μένει <code>in-stock</code>), αποθηκεύστε, ανοίξτε το <code>/en/shop/qa-mug</code>. Επαναφέρετε το απόθεμα σε <code>5</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 1 δείχνει <code>Pre-order</code> και μετά <code>Made to order</code>, με το Add to cart ενεργό. Βήμα 2: καταγράψτε τι εμφανίζεται. Ο κώδικας δείχνει <code>In stock</code> με το Add to cart ενεργό (η διαθεσιμότητα δεν προκύπτει από τον αριθμό του αποθέματος) και αργότερα το checkout απορρίπτει με <code>Not enough stock for "QA Mug" (0 left).</code>· ένας αγοραστής θα περίμενε <code>Out of stock</code>. Αναφέρετέ το ως ζήτημα UX.</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/shop/[slug]/page.tsx</code> (<code>availability</code>) · <code>src/components/shop/ProductShowcase.tsx</code> (<code>soldOut</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-013" data-priority="P2">
+      <h3>Προβολή: μόνο στο κατάστημα, μόνο στην αναζήτηση, κρυφό</h3>
+      <ol class="steps">
+        <li>Στο <code>qa-candle</code> ορίστε το <strong>Visibility</strong> σε <code>Search only</code> και αποθηκεύστε. Ανοίξτε το <code>/en/shop</code> και το <code>/en/shop?q=candle</code>.</li>
+        <li>Ορίστε το σε <code>Shop only</code>· επαναλάβετε. Στη συνέχεια <code>Hidden (direct link only)</code>· επαναλάβετε και ανοίξτε το <code>/en/shop/qa-candle</code>.</li>
+        <li>Επαναφέρετέ το σε <code>Shop and search</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Search only: απουσιάζει από τη λίστα, εμφανίζεται στα αποτελέσματα αναζήτησης. Shop only: το αντίστροφο. Hidden: απουσιάζει και από τα δύο, αλλά η σελίδα του προϊόντος εξακολουθεί να ανοίγει και το προϊόν μπορεί να αγοραστεί.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/read.ts</code> (<code>filterByVisibility</code>) · docs/dev-guides/08-commerce.md §4.1</p>
+    </article>
+
+    <article class="tc" id="COM-014" data-priority="P3">
+      <h3>Όρια αγοράς στο πλαίσιο αγοράς και στο καλάθι</h3>
+      <ol class="steps">
+        <li>Στο <code>qa-candle</code> ορίστε <strong>Minimum quantity</strong> <code>2</code>, <strong>Maximum quantity</strong> <code>6</code>, <strong>Sold in multiples of</strong> <code>2</code>· αποθηκεύστε.</li>
+        <li>Ανοίξτε το <code>/en/shop/qa-candle</code>, χρησιμοποιήστε τα <strong>Increase</strong> και <strong>Decrease</strong>, προσθέστε στο καλάθι και μετά χρησιμοποιήστε τα κουμπιά του συρταριού του καλαθιού.</li>
+        <li>Αδειάστε τα τρία όρια και αποθηκεύστε· αδειάστε το καλάθι.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η ποσότητα ξεκινά από 2, αλλάζει 2 → 4 → 6, το <strong>Increase</strong> απενεργοποιείται στο 6 και το <strong>Decrease</strong> στο 2, και εμφανίζεται το <code>in steps of 2</code>. Το συρτάρι τηρεί τα ίδια όρια.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/quantity.ts</code> · <code>src/components/shop/cart/CartDrawer.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-storefront">
+    <h2>Βιτρίνα: λίστα, φίλτρα, σελίδες κατηγορίας και ετικέτας, σελίδα προϊόντος, αναζήτηση</h2>
+
+    <article class="tc" id="COM-015" data-priority="P1">
+      <h3>Η λίστα του καταστήματος και στις δύο γλώσσες</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/shop</code> και το <code>/en/shop</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ελληνικά: επικεφαλίδα <code>Κατάστημα</code>· αγγλικά: υπέρτιτλος <code>Store</code>, επικεφαλίδα <code>Shop</code>, <code>Browse our products.</code> Κάθε δημοσιευμένο, ορατό προϊόν QA εμφανίζεται μία φορά ως κάρτα με το όνομα και την τιμή της αντίστοιχης γλώσσας· τα κουμπιά κατηγοριών ξεκινούν με το <strong>All products</strong>· η γραμμή εργαλείων έχει <code>Search products…</code> και <strong>Sort</strong>. Κανένα πρόχειρο προϊόν δεν εμφανίζεται.</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/shop/page.tsx</code> · <code>messages/en.json</code> (<code>shop</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-016" data-priority="P2">
+      <h3>Ταξινόμηση και σελίδες</h3>
+      <ol class="steps">
+        <li>Στο <code>/en/shop</code> επιλέξτε διαδοχικά κάθε επιλογή του <strong>Sort</strong>: <code>Newest</code>, <code>Manual</code>, <code>Price: low to high</code>, <code>Price: high to low</code>, <code>Name</code>. Παρακολουθήστε τη γραμμή διευθύνσεων.</li>
+        <li>Ανοίξτε το <code>/en/shop?page=999</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η σειρά αλλάζει όπως λέει η επιλογή και η διεύθυνση αποκτά <code>sort=price-asc</code>, <code>sort=price-desc</code>, <code>sort=name</code> ή <code>sort=manual</code> (το <code>Newest</code> αφαιρεί την παράμετρο). Ένα προϊόν με παραλλαγές ταξινομείται βάσει του εύρους τιμών του. Η σελίδα 999 δεν εμφανίζει σφάλμα (κενή σελίδα ή την τελευταία σελίδα), ποτέ σφάλμα διακομιστή.</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/shop/shop-params.ts</code> · <code>src/components/shop/ShopToolbar.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-017" data-priority="P2">
+      <h3>Φίλτρα: τιμή, χαρακτηριστικό, ετικέτα, καθαρισμός</h3>
+      <ol class="steps">
+        <li>Στο <code>/en/shop</code> ανοίξτε τα <strong>Filters</strong>. Ορίστε <strong>Min</strong> <code>10</code>, <strong>Max</strong> <code>21</code> και πατήστε <strong>Apply</strong>.</li>
+        <li>Τσεκάρετε το χρωματικό δείγμα <code>Red</code> και μετά, στα <strong>Tags</strong>, την καταχώριση <code>QA Summer</code>.</li>
+        <li>Πατήστε <strong>Clear all</strong>.</li>
+        <li>Στο Settings → Ecommerce → General ορίστε το <strong>Price filter</strong> σε <code>From / to boxes</code>, αποθηκεύστε και ανανεώστε το κατάστημα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>price_min=10&amp;price_max=21</code> στη διεύθυνση· το QA Mug (12) και το QA T-shirt (20–22, επικαλύπτεται) παραμένουν, το QA Candle (8) φεύγει. Βήμα 2: προστίθενται τα <code>attr_…=…</code> και <code>tag=qa-summer</code> και μένουν μόνο τα προϊόντα που ταιριάζουν· αν δεν ταιριάζει κανένα, <code>No products match.</code> Οι μετρητές των φίλτρων αντιστοιχούν σε ολόκληρο το φιλτραρισμένο σύνολο. Βήμα 3: όλες οι παράμετροι αφαιρούνται. Βήμα 4: καμία μπάρα, μόνο τα δύο κουτιά. Στη συνέχεια επαναφέρετε τη μπάρα.</p>
+      <p class="ref">Αναφ.: <code>src/components/shop/ShopFilters.tsx</code> · <code>src/cms/modules/commerce/filters.ts</code> · <code>src/cms/modules/commerce/read.ts</code> (<code>buildFacetCounts</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-018" data-priority="P2">
+      <h3>Οι σελίδες κατηγορίας και ετικέτας χρησιμοποιούν τον όρο της δικής τους γλώσσας</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/shop/category/qa-tshirts</code> και το <code>/en/shop/category/qa-tshirts</code>.</li>
+        <li>Ανοίξτε το <code>/shop/tag/qa-summer</code> και το <code>/en/shop/tag/qa-summer</code>.</li>
+        <li>Ανοίξτε το <code>/en/shop/category/qa-nothing</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Η επικεφαλίδα της κατηγορίας είναι <code>QA Μπλουζάκια</code> στην ελληνική σελίδα και <code>QA T-shirts</code> στην αγγλική, ποτέ το όνομα της άλλης γλώσσας· η αγγλική σελίδα εμφανίζει το <code>QA T-shirt</code> (αγγλικά ονόματα).</li>
+        <li>Οι σελίδες ετικέτας δείχνουν υπέρτιτλο <code>Ετικέτα</code> / <code>Tag</code> με <code>QA Καλοκαίρι</code> / <code>QA Summer</code> και εμφανίζουν το <code>qa-mug</code> στην αντίστοιχη γλώσσα.</li>
+        <li>Ένα άγνωστο slug εμφανίζει τη σελίδα «δεν βρέθηκε».</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/read.ts</code> (<code>pickTermRow</code>) · <code>src/app/[locale]/shop/category/[slug]/page.tsx</code> · <code>src/app/[locale]/shop/tag/[slug]/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-019" data-priority="P1">
+      <h3>Επιλογή παραλλαγής στη σελίδα προϊόντος</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/en/shop/qa-tee</code>. Διαβάστε την τιμή και τη διαθεσιμότητα πριν επιλέξετε.</li>
+        <li>Επιλέξτε <code>Red</code> + <code>S</code>, μετά <code>Red</code> + <code>M</code>, μετά <code>Blue</code> + <code>M</code>, και μετά δοκιμάστε <code>Blue</code> + <code>S</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Πριν από την επιλογή: <code>€20.00</code> (ή το εύρος), <code>Select options</code>, <strong>Add to cart</strong> ανενεργό.</li>
+        <li>Red/S: <code>€20.00</code>, <code>In stock</code>, <code>SKU: QA-TEE-RS</code>, Add to cart ενεργό.</li>
+        <li>Red/M: <code>€22.00</code>, <code>Out of stock</code> (απόθεμα 0), Add to cart ανενεργό.</li>
+        <li>Blue/M: <code>In stock</code>, ενεργό.</li>
+        <li>Blue/S: το κουμπί <code>S</code> είναι ανενεργό όσο είναι επιλεγμένο το Blue (η παραλλαγή είναι απενεργοποιημένη)· αν επιβάλετε τον συνδυασμό, εμφανίζεται <code>This combination is unavailable</code>.</li>
+        <li>Ελληνική σελίδα: <code>Επιλέξτε επιλογές</code>, <code>Εξαντλημένο</code>, <code>Αυτός ο συνδυασμός δεν είναι διαθέσιμος</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/shop/ProductShowcase.tsx</code> · <code>messages/en.json</code> (<code>shop</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-020" data-priority="P2">
+      <h3>Οδηγός μεγεθών από την κατηγορία</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/en/shop/qa-tee</code> και πατήστε <strong>Size guide</strong> δίπλα στο <strong>Options</strong>. Επαναλάβετε στο <code>/shop/qa-tee</code>.</li>
+        <li>Ανοίξτε το <code>/en/shop/qa-mug</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ο σύνδεσμος μεταφέρει σε μια ενότητα <code>Size guide</code> με τίτλο <code>QA Sizes</code>, στήλες <code>Size</code> και <code>Chest</code>, γραμμές S 92 και M 98, και τη σημείωση. Στα ελληνικά εμφανίζεται <code>Οδηγός μεγεθών</code>, <code>QA Μεγέθη</code>, <code>Στήθος</code>. Ο πίνακας προέρχεται από την κατηγορία, επειδή το προϊόν δεν έχει δικό του. Το <code>qa-mug</code> δεν έχει οδηγό μεγεθών.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/sizechart-read.ts</code> (<code>getSizeChartForProduct</code>) · <code>src/components/shop/SizeChart.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-021" data-priority="P2">
+      <h3>Αναζήτηση στη λίστα και οι προτάσεις της κεφαλίδας</h3>
+      <ol class="steps">
+        <li>Πληκτρολογήστε <code>mug</code> στο <code>Search products…</code> στο <code>/en/shop</code> και παρακολουθήστε τις προτάσεις· πατήστε Enter.</li>
+        <li>Αναζητήστε <code>zzqq</code>.</li>
+        <li>Εκτελέστε <code>curl -s "$BASE/api/cms/commerce/search?q=mug&amp;locale=en" -H 'X-Real-IP: 10.80.0.1'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Οι προτάσεις εμφανίζουν το QA Mug καθώς πληκτρολογείτε· το Enter οδηγεί στο <code>/en/shop?q=mug</code> με το QA Mug. Το <code>zzqq</code> δίνει <code>No products match.</code> Το API απαντά <code>{"ok":true,…}</code> με την καταχώριση του QA Mug στα αγγλικά.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/search.ts</code> · <code>src/components/shop/ShopToolbar.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-022" data-priority="P3">
+      <h3>Η διεύθυνση ενός μη δημοσιευμένου προϊόντος ανακατευθύνει</h3>
+      <ol class="steps">
+        <li>Ορίστε το <code>qa-candle</code> σε <code>draft</code> και στις δύο γλώσσες και αποθηκεύστε.</li>
+        <li>Εκτελέστε <code>curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$BASE/en/shop/qa-candle"</code>.</li>
+        <li>Δημοσιεύστε το ξανά και επαναλάβετε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Όσο είναι πρόχειρο: <code>302</code> προς την πρώτη ενεργή σελίδα κατηγορίας του (ή προς το <code>/en/shop</code> αν δεν έχει). Μετά την εκ νέου δημοσίευση: <code>200</code> και η γραμμή ανακατεύθυνσης έχει φύγει (το <code>SELECT COUNT(*) FROM seo_redirects WHERE source LIKE '%qa-candle%';</code> είναι 0).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/seo/unpublish-redirect.ts</code> · <code>src/cms/modules/commerce/collection.ts</code> (<code>unpublishRedirect</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-cart">
+    <h2>Καλάθι</h2>
+    <p class="intro">Το καλάθι υπάρχει μόνο στον browser (κλειδί Local Storage <code>site-cart</code>). Οι τιμές που εμφανίζει είναι μόνο για προβολή· το checkout τα υπολογίζει όλα από την αρχή.</p>
+
+    <article class="tc" id="COM-023" data-priority="P1">
+      <h3>Το Add to cart ανοίγει το συρτάρι του καλαθιού</h3>
+      <ol class="steps">
+        <li>Σε ιδιωτικό παράθυρο ανοίξτε το <code>/en/shop/qa-mug</code> και πατήστε <strong>Add to cart</strong>.</li>
+        <li>Ανοίξτε το <code>/en/shop/qa-tee</code>, επιλέξτε Red/S και πατήστε <strong>Add to cart</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ανοίγει ένα συρτάρι με τίτλο <code>Cart</code> με <code>QA Mug × 1 €12.00</code>, και στη συνέχεια και το <code>QA T-shirt</code> με <code>Colour: Red, Size: S</code> στα <code>€20.00</code>· <code>Subtotal</code> <code>€32.00</code>· ένα κουμπί <strong>Checkout</strong>. Το κουμπί καλαθιού στην κεφαλίδα δείχνει το πλήθος των ειδών.</p>
+      <p class="ref">Αναφ.: <code>src/components/shop/cart/CartProvider.tsx</code> · <code>src/components/shop/cart/CartDrawer.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-024" data-priority="P2">
+      <h3>Αλλαγή ποσότητας, συγχώνευση γραμμών, αφαίρεση, άδειασμα</h3>
+      <ol class="steps">
+        <li>Στο συρτάρι πατήστε δύο φορές <strong>Increase quantity</strong> στο QA Mug και μία φορά <strong>Decrease quantity</strong>.</li>
+        <li>Προσθέστε ξανά το QA T-shirt Red/S από τη σελίδα του και μετά προσθέστε το Blue/M.</li>
+        <li>Πατήστε <strong>Remove</strong> σε κάθε γραμμή.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η γραμμή της κούπας πηγαίνει στο 3 και μετά στο 2 και το μερικό σύνολο ακολουθεί. Η εκ νέου προσθήκη του Red/S αυξάνει τη γραμμή του σε 2 αντί να προσθέσει γραμμή· το Blue/M γίνεται ξεχωριστή γραμμή. Μετά την αφαίρεση όλων εμφανίζεται <code>Your cart is empty.</code> και <strong>Continue shopping</strong>.</p>
+      <p class="ref">Αναφ.: <code>src/components/shop/cart/CartProvider.tsx</code> (κλειδί γραμμής)</p>
+    </article>
+
+    <article class="tc" id="COM-025" data-priority="P2">
+      <h3>Το καλάθι διατηρείται μετά από ανανέωση και είναι κοινό μεταξύ καρτελών</h3>
+      <ol class="steps">
+        <li>Προσθέστε το QA Mug και ανανεώστε τη σελίδα· κλείστε και ανοίξτε ξανά την καρτέλα.</li>
+        <li>Ανοίξτε μια δεύτερη καρτέλα του ιστότοπου στο ίδιο παράθυρο και ανοίξτε το καλάθι.</li>
+        <li>Στα εργαλεία προγραμματιστή κοιτάξτε το Local Storage.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το καλάθι εξακολουθεί να περιέχει το QA Mug μετά την ανανέωση και στη νέα καρτέλα. Το Local Storage έχει το <code>site-cart</code> με έναν πίνακα JSON που περιέχει <code>slug":"qa-mug"</code>. Ένας άλλος browser έχει το δικό του, άδειο καλάθι (τίποτε δεν αποθηκεύεται στον διακομιστή πριν από το checkout).</p>
+      <p class="ref">Αναφ.: <code>src/components/shop/cart/CartProvider.tsx</code> · <code>src/lib/storage-keys.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-026" data-priority="P2">
+      <h3>Το καλάθι επιτρέπει περισσότερα από το απόθεμα· το checkout το απορρίπτει</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Απόθεμα <code>qa-mug</code> 5.</p>
+      <ol class="steps">
+        <li>Προσθέστε το QA Mug και αυξήστε την ποσότητα σε 6 στο συρτάρι.</li>
+        <li>Πατήστε <strong>Checkout</strong>, συμπληρώστε κάθε υποχρεωτικό πεδίο (χώρα <code>GR</code>), τσεκάρετε τους όρους και πατήστε <strong>Place order</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το συρτάρι επιτρέπει το 6 (δεν γνωρίζει το απόθεμα). Το checkout εμφανίζει με κόκκινο <code>Not enough stock for "QA Mug" (5 left).</code> Δεν δημιουργείται παραγγελία (το <code>SELECT COUNT(*) FROM orders WHERE created_at &gt; NOW() - INTERVAL 5 MINUTE;</code> δεν αλλάζει) και το απόθεμα παραμένει 5.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/orders.ts</code> (<code>ensureStock</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-checkout">
+    <h2>Checkout: διευθύνσεις, αποστολή και σύνολα</h2>
+    <p class="intro">Σε αυτή την ενότητα ο τρόπος πληρωμής είναι <code>Manual / bank transfer</code>, οπότε κάθε παραγγελία με αποστολή αντιμετωπίζεται ως αντικαταβολή και φέρει τη χρέωση 2.00 από τη COM-002. Χρησιμοποιήστε ως email το γραμματοκιβώτιο του πελάτη.</p>
+
+    <article class="tc" id="COM-027" data-priority="P1">
+      <h3>Η φόρμα του checkout</h3>
+      <ol class="steps">
+        <li>Αδειάστε το καλάθι και ανοίξτε το <code>/en/checkout</code>.</li>
+        <li>Προσθέστε το QA Mug και ανοίξτε ξανά το <code>/en/checkout</code>. Πατήστε <strong>Place order</strong> χωρίς να τσεκάρετε τίποτε.</li>
+      </ol>
+      <ul class="exp">
+        <li>Άδειο: <code>Your cart is empty.</code> και <strong>Back to shop</strong>.</li>
+        <li>Με ένα είδος: <strong>Contact details</strong> (<code>Full name *</code>, <code>Email *</code>, <code>Phone</code>), <strong>Shipping</strong> (<code>Address *</code>, <code>City *</code>, <code>Postal code *</code>, <code>Country *</code>, <code>Order notes</code>), <strong>Gift card</strong>, <strong>Account</strong> με <code>Create an account so I can see my orders</code>, <strong>Gift options</strong> με <code>Gift wrap (+€2.50)</code>, και το <strong>Order summary</strong> με <code>Discount code</code>, <strong>Apply</strong>, <code>I accept the terms.</code> (με σύνδεσμο προς το <code>/legal/terms</code>) και <code>Send me updates and offers.</code></li>
+        <li>Το <strong>Place order</strong> είναι ανενεργό μέχρι να τσεκαριστεί το κουτί των όρων.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/checkout/CheckoutClient.tsx</code> · <code>messages/en.json</code> (<code>checkout</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-028" data-priority="P1">
+      <h3>Η εκτίμηση μεταφορικών είναι αυτό που χρεώνει η παραγγελία</h3>
+      <ol class="steps">
+        <li>Με QA Mug × 1 στο καλάθι, κοιτάξτε τη σύνοψη πριν πληκτρολογήσετε χώρα.</li>
+        <li>Πληκτρολογήστε χώρα <code>GR</code> και περιμένετε λίγο.</li>
+        <li>Συμπληρώστε όνομα <code>QA Shopper</code>, το email του πελάτη, τηλέφωνο <code>2100000000</code>, διεύθυνση <code>Odos 1</code>, πόλη <code>Athina</code>, ταχυδρομικό κώδικα <code>10558</code>. Τσεκάρετε τους όρους και πατήστε <strong>Place order</strong>. Σημειώστε τον κωδικό αναφοράς.</li>
+        <li>Εκτελέστε το ερώτημα παραγγελίας.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: <code>Shipping —</code> και <code>Enter your country to calculate shipping.</code></li>
+        <li>Βήμα 2: <code>Shipping €4.00</code>, <code>Surcharge €2.00</code>, <code>Total €18.00</code>, <code>Prices include VAT.</code> Δεν υπάρχει γραμμή ΦΠΑ.</li>
+        <li>Βήμα 3: <code>Thank you! Your order has been placed.</code>, <code>Order reference: ORD-2026-…</code> (10 χαρακτήρες μετά το έτος), <strong>Track your order</strong> και <strong>Back to shop</strong>. Το καλάθι είναι πλέον άδειο.</li>
+        <li>SQL: <code>status</code> pending, <code>subtotal</code> 1200, <code>total</code> 1800, costs <code>{"shipping":400,"surcharge":200,"discount":0,"giftWrap":0}</code>, μία πληρωμή <code>manual</code> <code>pending</code> για 1800.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/shipping.ts</code> (<code>quoteShipping</code>, <code>computeShipping</code>) · <code>src/cms/modules/commerce/totals.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-029" data-priority="P2">
+      <h3>Η δωρεάν αποστολή πάνω από το όριο δεν καταργεί τη χρέωση</h3>
+      <ol class="steps">
+        <li>Βάλτε QA Mug × 5 (60.00) στο καλάθι, ανοίξτε το checkout, χώρα <code>GR</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>Shipping €0.00</code>, <code>Surcharge €2.00</code>, <code>Total €62.00</code>. Το όριο μηδενίζει μόνο τα μεταφορικά, ποτέ τη χρέωση του τρόπου πληρωμής. Αδειάστε το καλάθι χωρίς να παραγγείλετε.</p>
+      <p class="ref">Αναφ.: docs/dev-guides/08-commerce.md §4.4</p>
+    </article>
+
+    <article class="tc" id="COM-030" data-priority="P3">
+      <h3>Παλαιός μηχανισμός αποστολής ανά χώρα</h3>
+      <ol class="steps">
+        <li>Στις ρυθμίσεις Shipping επιλέξτε <code>By country / zone</code>, κρατήστε το <strong>Standard charge</strong> <code>4.00</code>, προσθέστε μια ζώνη <code>Cyprus</code> με <strong>Charge (EUR)</strong> <code>9.00</code> και <strong>Countries</strong> <code>CY</code>. Αποθηκεύστε.</li>
+        <li>Με το QA Mug στο καλάθι ανοίξτε το checkout και πληκτρολογήστε χώρα <code>CY</code> και μετά <code>DE</code>.</li>
+        <li>Επαναφέρετε τον τρόπο σε <code>Flat rate</code> και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> CY: <code>Shipping €9.00</code>. DE: <code>Shipping €4.00</code> (η βασική χρέωση). Η επιπλέον χρέωση μένει <code>€2.00</code> και στις δύο.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/shipping.ts</code> (<code>computeShipping</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-031" data-priority="P2">
+      <h3>Παραλαβή από το κατάστημα</h3>
+      <ol class="steps">
+        <li>Στις ρυθμίσεις Shipping τσεκάρετε το <strong>Offer store pickup at checkout</strong>, <strong>Pickup charge (EUR)</strong> <code>0</code>, <strong>Add location</strong>: <strong>Store name</strong> <code>QA Store</code>, <strong>Address</strong> <code>Ermou 10, Athina</code>, <strong>Opening hours</strong> <code>Mon–Fri 09:00–17:00</code>. Αποθηκεύστε.</li>
+        <li>Ανοίξτε το checkout με το QA Mug, επιλέξτε <code>Collect in store</code>, συμπληρώστε τα στοιχεία επικοινωνίας και υποβάλετε την παραγγελία.</li>
+        <li>Ανοίξτε την παραγγελία στο διαχειριστικό και διαβάστε τα email επιβεβαίωσης.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η ενότητα έχει τίτλο <strong>Delivery method</strong> με <code>Ship to my address</code> και <code>Collect in store</code>· η επιλογή του δεύτερου κρύβει τα πεδία διεύθυνσης και εμφανίζει το QA Store με τη διεύθυνση και το ωράριό του· η γραμμή της σύνοψης γράφει <code>Store pickup €0.00</code> με την επιπλέον χρέωση <code>€2.00</code>. Το πλαίσιο της παραγγελίας εμφανίζει μια πορτοκαλί λωρίδα <strong>Store pickup</strong> — QA Store, Ermou 10, Athina· τα email γράφουν <code>Collect in store: QA Store — Ermou 10, Athina</code>. Το <code>codAmount</code> δεν ορίζεται (οι παραγγελίες με παραλαβή δεν είναι αντικαταβολή μέσω courier). Στη συνέχεια ξετσεκάρετε την παραλαβή από το κατάστημα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/shipping.ts</code> (pickup) · <code>src/cms/modules/commerce/orders.ts</code> (<code>codAmountFor</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-032" data-priority="P2">
+      <h3>Μια παραγγελία μόνο με ψηφιακά προϊόντα δεν χρειάζεται διεύθυνση</h3>
+      <ol class="steps">
+        <li>Βάλτε μόνο το QA E-book στο καλάθι και ανοίξτε το <code>/en/checkout</code>. Υποβάλετε την παραγγελία μόνο με όνομα και email.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ο τίτλος της ενότητας είναι <code>Order notes</code> με <code>Digital order — no delivery address needed.</code>· η σύνοψη δεν έχει γραμμή Shipping ούτε επιπλέον χρέωση· σύνολο <code>€5.00</code>. SQL: costs shipping 0, surcharge 0, <code>JSON_EXTRACT(metadata,'$.shipping.virtual')</code> true, χωρίς <code>codAmount</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/orders.ts</code> (<code>allVirtual</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-033" data-priority="P2">
+      <h3>Ορισμός ζωνών και τρόπων αποστολής</h3>
+      <ol class="steps">
+        <li>Στο Settings → Ecommerce → Shipping, στο <strong>Shipping methods</strong> πατήστε <strong>Add zone</strong>: <strong>Zone name</strong> <code>QA Greece</code>, <strong>Countries</strong> <code>GR</code>, <strong>Save zone</strong>.</li>
+        <li>Στη ζώνη πατήστε <strong>Add method</strong> τρεις φορές και αποθηκεύστε τον καθένα με <strong>Save method</strong>:
+          <code>QA ACS</code>, <strong>Courier</strong> <code>ACS</code>, <strong>Type</strong> <code>Delivery to an address</code>, <strong>Cost (EUR)</strong> <code>3.50</code>, <strong>Free over (EUR)</strong> <code>40</code>, <strong>Delivery days (from)</strong> <code>1</code>, <strong>(to)</strong> <code>2</code>, <strong>Cash on delivery allowed</strong> τσεκαρισμένο·
+          <code>QA Speedex no COD</code>, <code>Speedex</code>, διεύθυνση, <code>5.00</code>, <strong>Cash on delivery allowed</strong> ατσέκαρτο·
+          <code>QA BoxNow</code>, <code>BoxNow (locker)</code>, <code>Parcel locker</code>, <code>2.00</code>, με αντικαταβολή.</li>
+        <li>Δοκιμάστε έναν τέταρτο τρόπο <code>QA bad locker</code> με courier <code>ACS</code> και τύπο <code>Parcel locker</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ο πίνακας της ζώνης εμφανίζει τους τρεις τρόπους με Method, Courier, Cost, Delivery (<code>1–2</code> ημέρες για την ACS), Active τσεκαρισμένο, και βέλη πάνω/κάτω. Ο τέταρτος απορρίπτεται με μήνυμα ότι ένας τρόπος με θυρίδα χρειάζεται BoxNow και τίποτε δεν αποθηκεύεται. Το <code>SELECT name, courier, kind, cost, free_threshold, cod_allowed FROM shipping_methods;</code> δείχνει κόστη 350, 500, 200 και free_threshold 4000 για την ACS.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/ShippingMethodsManager.tsx</code> · <code>src/cms/modules/commerce/shipping-methods.ts</code> (<code>checkShippingMethod</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-034" data-priority="P2">
+      <h3>Οι τρόποι αποστολής που προσφέρονται στο checkout</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> COM-033. Τρόπος πληρωμής Manual.</p>
+      <ol class="steps">
+        <li>Με το QA Mug στο καλάθι ανοίξτε το <code>/en/checkout</code>, ανοίξτε εργαλεία προγραμματιστή → Network και πληκτρολογήστε χώρα <code>GR</code>.</li>
+        <li>Αν εμφανιστεί λίστα <strong>Delivery</strong>, επιλέξτε <code>QA ACS</code> και διαβάστε τη σύνοψη.</li>
+      </ol>
+      <ul class="exp">
+        <li>Ένα πεδίο <strong>Delivery</strong> εμφανίζει τα <code>QA ACS</code> (<code>Arrives in 1–2 working days</code>, <code>€3.50</code>) και <code>QA BoxNow</code>· το <code>QA Speedex no COD</code> απουσιάζει, επειδή το κατάστημα δέχεται αντικαταβολή.</li>
+        <li>Μετά την επιλογή του QA ACS, η γραμμή Shipping της σύνοψης δείχνει <code>€3.50</code> και το σύνολο ακολουθεί.</li>
+      </ul>
+      <p class="exp"><span class="exp-label">Σημείωση:</span> Με βάση την ανάγνωση του κώδικα, αναμένεται αυτό να αποτύχει. Ο επιλογέας στέλνει μόνο <code>{"country":"GR","subtotalCents":1200}</code> στο <code>/api/cms/commerce/shipping-quote</code>, το οποίο απαιτεί <code>locale</code> και <code>items</code>, οπότε το αίτημα απαντά <code>400</code> <code>invalid_input</code> (ορατό στο Network) και δεν εμφανίζεται λίστα Delivery. Ακόμη και με λίστα, το σύνολο της σύνοψης χρησιμοποιεί την εκτίμηση του παλαιού μηχανισμού, όχι το κόστος του επιλεγμένου τρόπου. Καταγράψτε τι βλέπετε και συνεχίστε με τη COM-035.</p>
+      <p class="ref">Αναφ.: <code>src/components/checkout/ShippingMethodPicker.tsx</code> · <code>src/cms/modules/commerce/shipping.ts</code> (<code>quoteBody</code>) · <code>src/app/[locale]/checkout/CheckoutClient.tsx</code> (<code>shippingMajor</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-035" data-priority="P2">
+      <h3>Η λίστα τρόπων αποστολής και η αντικαταβολή, μέσω του API</h3>
+      <ol class="steps">
+        <li>Εκτελέστε:
+<pre><code>curl -s -X POST "$BASE/api/cms/commerce/shipping-quote" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.80.0.2' \
+  -d '{"locale":"en","country":"GR","subtotalCents":1200,"items":[{"slug":"qa-mug","quantity":1}]}'</code></pre></li>
+        <li>Επαναλάβετε με <code>"subtotalCents":4500</code>, μετά με <code>"country":"Greece"</code> και μετά με <code>"country":"DE"</code>.</li>
+        <li>Αλλάξτε το <strong>Payment method</strong> σε <code>Card (Stripe)</code> (για αυτή την ανάγνωση αρκεί οποιαδήποτε τιμή) και επαναλάβετε το βήμα 1· επαναφέρετε σε Manual.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: <code>shipping</code> 400 και <code>surcharge</code> 200 (εκτίμηση παλαιού μηχανισμού) συν <code>methods</code> με QA ACS κόστος 350 και QA BoxNow κόστος 200, το καθένα με surcharge 200· το QA Speedex no COD λείπει.</li>
+        <li>4500: QA ACS κόστος 0 (δωρεάν πάνω από 40). Το <code>Greece</code> δίνει την ίδια λίστα με το <code>GR</code>. <code>DE</code>: το <code>methods</code> είναι <code>[]</code>.</li>
+        <li>Με Stripe: εμφανίζεται το QA Speedex no COD και οι επιπλέον χρεώσεις είναι 0.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/shipping-service.ts</code> (<code>resolveShippingChoices</code>) · <code>src/cms/modules/commerce/shipping-methods.ts</code> (<code>normalizeCountry</code>) · docs/dev-guides/08-commerce.md §4.9</p>
+    </article>
+
+    <article class="tc" id="COM-036" data-priority="P2">
+      <h3>Μια παραγγελία με τρόπο αποστολής καταγράφει τον τρόπο και το ποσό αντικαταβολής</h3>
+      <ol class="steps">
+        <li>Βρείτε το id: <code>SELECT id FROM shipping_methods WHERE name = 'QA ACS';</code> Στη συνέχεια εκτελέστε (αντικαταστήστε το <code>&lt;id&gt;</code> και το email):
+<pre><code>curl -s -X POST "$BASE/api/cms/commerce/checkout" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.80.0.3' \
+  -d '{"customer":{"name":"QA Method","email":"&lt;customer&gt;","phone":"2100000000","address1":"Odos 1","city":"Athina","postal":"10558","country":"GR"},
+       "locale":"en","acceptTerms":true,"shippingMethodId":&lt;id&gt;,"items":[{"slug":"qa-mug","quantity":1}]}'</code></pre></li>
+        <li>Εκτελέστε το ερώτημα παραγγελίας και το <code>SELECT JSON_EXTRACT(metadata,'$.shipping.shippingMethod') FROM orders WHERE reference = '&lt;ref&gt;';</code></li>
+        <li>Επαναλάβετε το βήμα 1 με το id του <code>QA Speedex no COD</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 1 απαντά <code>{"ok":true,"data":{"reference":"ORD-…","redirectUrl":null,"clientSecret":null}}</code>. SQL: costs shipping 350, surcharge 200, total 1750, <code>cod</code> 1750, και το στιγμιότυπο <code>{"id":…,"name":"QA ACS","courier":"acs","kind":"address","cost":350}</code>. Το βήμα 3 απαντά <code>400</code> με <code>That delivery option is no longer available.</code></p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/orders.ts</code> (<code>chosenMethod</code>, <code>codAmountFor</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-coupons">
+    <h2>Κουπόνια</h2>
+
+    <article class="tc" id="COM-037" data-priority="P2">
+      <h3>Δημιουργία των δοκιμαστικών κουπονιών</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/admin/settings?tab=Ecommerce&amp;sub=Coupons</code>. Με το <strong>Add coupon</strong> δημιουργήστε:
+          <code>QA10</code> <strong>Type</strong> <code>% off</code>, <strong>Amount</strong> <code>10</code>·
+          <code>QA5OFF</code> <code>EUR off</code>, <code>5</code>, <strong>Minimum order (EUR)</strong> <code>30</code>·
+          <code>QABIG</code> <code>EUR off</code>, <code>500</code>·
+          <code>QAOLD</code> <code>% off</code>, <code>10</code>, <strong>Expires</strong> την ημερομηνία πριν από δύο ημέρες·
+          <code>QAONCE</code> <code>% off</code>, <code>10</code>, <strong>Max uses</strong> <code>1</code>·
+          <code>QAPERC</code> <code>% off</code>, <code>10</code>, <strong>Per customer</strong> <code>1</code>·
+          <code>QAOFF</code> <code>% off</code>, <code>10</code>, <strong>Active</strong> ατσέκαρτο.</li>
+        <li>Πατήστε <strong>Save coupons</strong> και ανανεώστε την καρτέλα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και τα επτά παραμένουν μετά την ανανέωση με τις τιμές τους· τα κενά όρια δείχνουν <code>∞</code>, το κενό ελάχιστο <code>None</code>. Το <code>SELECT value FROM site_settings WHERE `key` = 'ecommerce.coupons';</code> περιέχει επτά καταχωρίσεις.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/CouponsManager.tsx</code> · <code>src/cms/modules/commerce/coupons.ts</code> (<code>normaliseCoupon</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-038" data-priority="P1">
+      <h3>Κουπόνι ποσοστού σε παραγγελία</h3>
+      <ol class="steps">
+        <li>Βάλτε QA Mug × 2 (24.00) στο καλάθι, ανοίξτε το checkout, χώρα <code>GR</code>. Πληκτρολογήστε <code>qa10</code> (πεζά) και πατήστε <strong>Apply</strong>.</li>
+        <li>Υποβάλετε την παραγγελία (manual) και εκτελέστε το ερώτημα παραγγελίας.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ο κωδικός εμφανίζεται ως <code>QA10</code> με <strong>Remove</strong>· η σύνοψη δείχνει <code>Discount −€2.40</code>, <code>Shipping €4.00</code>, <code>Surcharge €2.00</code>, <code>Total €27.60</code>. SQL: subtotal 2400, total 2760, costs discount 240, coupon <code>"QA10"</code>. Τα email δείχνουν γραμμή <code>Discount</code> <code>-€2.40</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/coupons.ts</code> (<code>validateCoupon</code>, <code>computeDiscount</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-039" data-priority="P2">
+      <h3>Σταθερό ποσό, ελάχιστη αξία παραγγελίας και ανώτατο όριο το μερικό σύνολο</h3>
+      <ol class="steps">
+        <li>Με QA Mug × 2 (24.00) εφαρμόστε το <code>QA5OFF</code>.</li>
+        <li>Αυξήστε σε × 3 (36.00) και εφαρμόστε το ξανά.</li>
+        <li>Αφαιρέστε το και εφαρμόστε το <code>QABIG</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>Your order doesn't meet this code's minimum.</code> Βήμα 2: <code>Discount −€5.00</code>. Βήμα 3: <code>Discount −€36.00</code>, με ανώτατο όριο το μερικό σύνολο των προϊόντων· τα μεταφορικά και η επιπλέον χρέωση εξακολουθούν να χρεώνονται (<code>Total €6.00</code>). Μην υποβάλετε την παραγγελία.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/coupons.ts</code> (<code>computeDiscount</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-040" data-priority="P2">
+      <h3>Ληγμένοι, ανενεργοί και άγνωστοι κωδικοί</h3>
+      <ol class="steps">
+        <li>Στο checkout εφαρμόστε το <code>QAOLD</code>, μετά το <code>QAOFF</code> και μετά το <code>NOPE</code>.</li>
+        <li>Στην καρτέλα Coupons ορίστε για το <code>QAOLD</code> το <strong>Expires</strong> στη σημερινή ημερομηνία, αποθηκεύστε και εφαρμόστε το ξανά.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: το καθένα εμφανίζει <code>Invalid or expired code.</code> Βήμα 2: εφαρμόζεται (ένας κωδικός ισχύει μέχρι και την ημέρα λήξης του· υπάρχει μία ημέρα περιθωρίου).</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/coupons.ts</code> (<code>validateCoupon</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-041" data-priority="P2">
+      <h3>Όρια χρήσης, και οι ακυρωμένες παραγγελίες επιστρέφουν τη χρήση</h3>
+      <ol class="steps">
+        <li>Υποβάλετε μια παραγγελία manual με το <code>QAONCE</code>. Ξεκινήστε νέο checkout (οποιοδήποτε email) και εφαρμόστε το <code>QAONCE</code>.</li>
+        <li>Υποβάλετε μια παραγγελία με το <code>QAPERC</code> χρησιμοποιώντας το email του πελάτη. Ξεκινήστε άλλο checkout με το ίδιο email και εφαρμόστε το· στη συνέχεια αλλάξτε το email σε <code>qa.other@example.com</code> και εφαρμόστε το ξανά.</li>
+        <li>Στο διαχειριστικό ακυρώστε την παραγγελία με το <code>QAONCE</code> (όπως στη COM-071) και εφαρμόστε ξανά το <code>QAONCE</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>This code has reached its usage limit.</code> Βήμα 2: με το ίδιο email <code>You've already used this code.</code>· με το άλλο email εφαρμόζεται. Βήμα 3: εφαρμόζεται ξανά. Αν ένα όριο παρακαμφθεί στην προεπισκόπηση, η υποβολή της παραγγελίας εξακολουθεί να απορρίπτεται με <code>This coupon has reached its usage limit.</code> / <code>You have already used this coupon.</code></p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/coupons.ts</code> (<code>countCouponRedemptions</code>) · <code>src/cms/modules/commerce/orders.ts</code> (<code>couponUsageErrorLocked</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-giftwrap">
+    <h2>Περιτύλιγμα δώρου</h2>
+
+    <article class="tc" id="COM-042" data-priority="P2">
+      <h3>Το περιτύλιγμα δώρου εμφανίζεται στα σύνολα, στην παραγγελία και στα δύο email</h3>
+      <ol class="steps">
+        <li>Βάλτε το QA Mug στο καλάθι, ανοίξτε το checkout, χώρα <code>GR</code>, τσεκάρετε το <code>Gift wrap (+€2.50)</code> και πληκτρολογήστε <code>Χρόνια πολλά</code> στο <code>Gift message</code>.</li>
+        <li>Υποβάλετε την παραγγελία, ανοίξτε την στο διαχειριστικό και ανοίξτε και τα δύο email.</li>
+      </ol>
+      <ul class="exp">
+        <li>Σύνοψη: <code>Gift wrap €2.50</code> και <code>Total €20.50</code> (12.00 + 4.00 + 2.00 + 2.50).</li>
+        <li>SQL: costs giftWrap 250, total 2050, <code>JSON_EXTRACT(metadata,'$.gift')</code> <code>{"wrap":true,"message":"Χρόνια πολλά"}</code>.</li>
+        <li>Πλαίσιο διαχειριστικού: <strong>Gift wrap (EUR)</strong> 2.5 με <code>This order is marked as a gift.</code>, και μια γραμμή <code>Gift wrap</code> ανάμεσα στο Payment surcharge και στο Discount· Subtotal + γραμμές = Total.</li>
+        <li>Email πελάτη και διαχειριστή: γραμμές <code>Subtotal</code>, <code>Shipping</code>, <code>Surcharge</code>, <code>Gift wrap</code> €2.50, <code>Total</code> €20.50· οι γραμμές αθροίζονται σωστά. Το μήνυμα δώρου δεν τυπώνεται στο email (καταγράψτε αν αυτό είναι αποδεκτό).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/totals.ts</code> (<code>orderSummaryLines</code>) · <code>src/cms/admin/OrdersTable.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-giftcards">
+    <h2>Δωροκάρτες</h2>
+
+    <article class="tc" id="COM-043" data-priority="P2">
+      <h3>Ρυθμίσεις δωροκαρτών και οι έλεγχοί τους</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/admin/settings?tab=Ecommerce&amp;sub=Gift%20cards</code>. Τσεκάρετε το <strong>Sell gift cards</strong>, <strong>Preset amounts (EUR)</strong> <code>25, 50</code>, τσεκάρετε το <strong>Allow a custom amount</strong>, <strong>Smallest custom amount</strong> <code>10</code>, <strong>Largest</strong> <code>5</code>, <strong>Expires after (months)</strong> <code>24</code>. Πατήστε <strong>Save</strong>.</li>
+        <li>Διορθώστε το μεγαλύτερο σε <code>200</code> και αποθηκεύστε. Στη συνέχεια δοκιμάστε <strong>Expires after</strong> <code>121</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>The largest custom amount cannot be below the smallest.</code>· μετά τη διόρθωση <code>Saved.</code>· οι 121 μήνες δίνουν <code>Expiry has to be a whole number of months from 0 (never) to 120.</code> Επαναφέρετε σε 24 και αποθηκεύστε.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/GiftCardSettings.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-044" data-priority="P2">
+      <h3>Αγορά δωροκάρτας και παραλαβή της</h3>
+      <ol class="steps">
+        <li>Δημιουργήστε το προϊόν <code>qa-gift</code> (<code>QA Gift card</code>), τιμή <code>0</code>, τύπος <code>Gift card</code>, δημοσιευμένο και στις δύο γλώσσες. Ανοίξτε το <code>/en/shop/qa-gift</code>.</li>
+        <li>Επιλέξτε <code>€25.00</code>, <strong>Recipient name</strong> <code>QA Friend</code>, <strong>Recipient email</strong> το γραμματοκιβώτιο του πελάτη, ένα μήνυμα, αφήστε το <strong>Send on</strong> κενό και πατήστε <strong>Add to cart</strong>. Υποβάλετε την παραγγελία (δεν ζητείται διεύθυνση).</li>
+        <li>Σημειώστε την παραγγελία ως <strong>paid</strong> στο διαχειριστικό. Εκτελέστε <code>SELECT status, balance, send_at, sent_at, code_last4 FROM gift_cards ORDER BY id DESC LIMIT 1;</code></li>
+        <li>Εκτελέστε <code>curl -s -X POST -H "x-cron-secret: $CRON" "$BASE/api/cms/cron/giftcard-deliver"</code> και επαναλάβετε το ερώτημα.</li>
+      </ol>
+      <ul class="exp">
+        <li>Η γραμμή του καλαθιού γράφει <code>For QA Friend</code>· η παραλλαγή της γραμμής της παραγγελίας είναι <code>→ QA Friend</code>· σύνολο <code>€25.00</code>, χωρίς μεταφορικά.</li>
+        <li>Μετά το paid: μία κάρτα, κατάσταση <code>scheduled</code>, υπόλοιπο 2500, send_at περίπου τώρα, sent_at NULL.</li>
+        <li>Μετά την εργασία: <code>{"ok":true,"data":{"status":"ran","result":{"sent":1}}}</code>· η κάρτα είναι <code>active</code> με ορισμένο sent_at· το γραμματοκιβώτιο λαμβάνει <code>You have a gift card!</code> με τον κωδικό ως <code>XXXX-XXXX-XXXX-XXXX</code>, την αξία και το μήνυμα. Κρατήστε τον κωδικό για τη COM-045.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/shop/GiftCardBuyBox.tsx</code> · <code>src/cms/modules/commerce/giftcards/service.ts</code> (<code>issueGiftCardsForOrder</code>, <code>deliverDueGiftCards</code>) · <code>src/cms/modules/commerce/giftcards/emails.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-045" data-priority="P2">
+      <h3>Μερική πληρωμή με δωροκάρτα</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Μια κάρτα 25.00 από τη COM-044 ή τη COM-046. Εκτελέστε την πρώτα με ορισμένα τα κλειδιά reCAPTCHA (βλ. «Πριν ξεκινήσετε»).</p>
+      <ol class="steps">
+        <li>Βάλτε QA Mug × 3 (36.00) στο καλάθι, ανοίξτε το checkout, χώρα <code>GR</code>. Πληκτρολογήστε τον κωδικό στο <strong>Gift card</strong> και πατήστε <strong>Apply</strong>.</li>
+        <li>Αν απορριφθεί με το μήνυμα του captcha, αδειάστε τα κλειδιά, κάντε επανεκκίνηση και επαναλάβετε το βήμα 1.</li>
+        <li>Υποβάλετε την παραγγελία. Εκτελέστε το ερώτημα παραγγελίας και το <code>SELECT type, amount, balance_after FROM gift_card_transactions WHERE gift_card_id = &lt;id&gt; ORDER BY id;</code></li>
+      </ol>
+      <ul class="exp">
+        <li>Με ορισμένα τα κλειδιά ο κωδικός θα έπρεπε να εφαρμόζεται· καταγράψτε Αποτυχία αν εμφανίζεται <code>Captcha check failed. Please try again.</code> (το πεδίο δεν στέλνει token captcha).</li>
+        <li>Εφαρμοσμένο: <code>1 gift card(s) — covering €25.00.</code> Το σύνολο της σύνοψης μένει <code>€42.00</code> (οι δωροκάρτες είναι τρόπος πληρωμής, όχι έκπτωση).</li>
+        <li>SQL: total 4200· πληρωμές: <code>giftcard</code> <code>captured</code> 2500 με provider_ref <code>giftcard:&lt;id&gt;</code>, και <code>manual</code> <code>pending</code> 1700· <code>cod</code> 1700. Καθολικό κινήσεων: <code>issue</code> 2500, <code>redeem</code> −2500 balance_after 0.</li>
+        <li>Η ενότητα <strong>Delivery</strong> του πλαισίου του διαχειριστικού δείχνει <code>Gift cards used €25.00</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/checkout/GiftCardField.tsx</code> · <code>src/cms/modules/commerce/giftcards/routes.ts</code> (<code>giftCardCheckRoute</code>) · <code>src/cms/modules/commerce/giftcards/service.ts</code> (<code>redeemGiftCards</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-046" data-priority="P2">
+      <h3>Έκδοση κάρτας χειροκίνητα· κάρτα που καλύπτει ολόκληρη την παραγγελία</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <strong>Gift cards</strong> (<code>/admin/gift-cards</code>). <strong>Amount</strong> <code>100</code>, <strong>Send to (optional)</strong> το γραμματοκιβώτιο του πελάτη, πατήστε <strong>Issue a card</strong>. Αντιγράψτε τον κωδικό.</li>
+        <li>Ανανεώστε την οθόνη.</li>
+        <li>Βάλτε το QA Mug στο καλάθι και πληρώστε με αυτή την κάρτα στο checkout (οφειλόμενο 18.00). Εκτελέστε το ερώτημα παραγγελίας.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Μια πράσινη σημείωση <code>Card created: XXXX-…. Copy it now — it is stored encrypted and cannot be shown again. It has been emailed to …</code>. Μετά την ανανέωση η γραμμή δείχνει <code>••••</code> συν τα τέσσερα τελευταία ψηφία, Value €100.00, κατάσταση <code>Active</code>. Η παραγγελία γίνεται αμέσως <code>paid</code> (χωρίς βήμα πύλης πληρωμής), με μία μόνο πληρωμή <code>giftcard</code> 1800· το απόθεμα του <code>qa-mug</code> μειώνεται κατά 1· το υπόλοιπο της κάρτας είναι 8200.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/GiftCardsTable.tsx</code> · <code>src/cms/modules/commerce/giftcards/settle.ts</code> (<code>settleFullyCoveredOrder</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-047" data-priority="P2">
+      <h3>Η ακύρωση μιας παραγγελίας επιστρέφει το υπόλοιπο της κάρτας</h3>
+      <ol class="steps">
+        <li>Ακυρώστε την παραγγελία της COM-045 στο διαχειριστικό (επιβεβαιώστε με <strong>Cancel order</strong>).</li>
+        <li>Στην οθόνη Gift cards πατήστε <strong>History</strong> σε εκείνη την κάρτα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το υπόλοιπο επανέρχεται σε €25.00· το History εμφανίζει issue, redeem και ένα <code>reversal</code> +25.00. Δεύτερη ακύρωση δεν είναι δυνατή (το cancelled είναι οριστικό), επομένως δεν υπάρχει δεύτερο reversal.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/giftcards/service.ts</code> (<code>reverseGiftCardRedemptions</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-048" data-priority="P3">
+      <h3>Ακύρωση κάρτας (Void), επαναφορά, λάθος κωδικός και μελλοντική ημερομηνία αποστολής</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>Void</strong> στην κάρτα της COM-046 και δοκιμάστε την στο checkout. Πατήστε <strong>Restore</strong> και δοκιμάστε ξανά.</li>
+        <li>Στο checkout εισαγάγετε <code>AAAA-BBBB-CCCC-DDDD</code>.</li>
+        <li>Αγοράστε μια δωροκάρτα με <strong>Send on</strong> μία εβδομάδα αργότερα· σημειώστε την ως paid· εκτελέστε το <code>giftcard-deliver</code>.</li>
+        <li>Εκτελέστε <code>curl -s -X POST -H "x-cron-secret: $CRON" "$BASE/api/cms/cron/giftcard-expire"</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Void: <code>That code cannot be used.</code> (η ίδια απάντηση με έναν άγνωστο κωδικό)· μετά το Restore λειτουργεί. Βήμα 3: η κάρτα μένει <code>Scheduled</code> με <code>due &lt;date&gt;</code> στη στήλη Sent και χωρίς email. Βήμα 4: <code>{"ok":true,"data":{"status":"ran","result":{"expired":0}}}</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/giftcards/routes.ts</code> · <code>src/cms/modules/commerce/giftcards/service.ts</code> (<code>expireGiftCards</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-cod">
+    <h2>Αντικαταβολή (πάροχος manual)</h2>
+
+    <article class="tc" id="COM-049" data-priority="P1">
+      <h3>Μια παραγγελία manual δεσμεύει αμέσως το απόθεμα και περιμένει την πληρωμή</h3>
+      <ol class="steps">
+        <li>Σημειώστε το απόθεμα του <code>qa-tee</code>. Παραγγείλτε QA T-shirt Red/S × 2 (manual), χώρα <code>GR</code>.</li>
+        <li>Εκτελέστε το ερώτημα παραγγελίας και το ερώτημα αποθέματος.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Παραγγελία <code>pending</code>, <code>stock_taken</code> true, <code>cod</code> ίσο με το σύνολο (4600: 40.00 + 4.00 + 2.00), μία πληρωμή <code>manual</code> <code>pending</code>. Το απόθεμα της Red/S πήγε από 3 σε 1 και στις δύο γραμμές γλώσσας. Το <code>order_items.variation_id</code> περιέχει το id της παραλλαγής Red/S και το <code>variant_label</code> <code>Colour: Red, Size: S</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/orders.ts</code> (<code>decrementStockForOrder</code> για παρόχους εκτός σύνδεσης) · <code>src/cms/modules/commerce/stock.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-050" data-priority="P2">
+      <h3>Η σήμανση μιας παραγγελίας manual ως πληρωμένης καταχωρίζει την πληρωμή της</h3>
+      <ol class="steps">
+        <li>Ανοίξτε την παραγγελία της COM-049 και πατήστε το κουμπί <strong>paid</strong>.</li>
+        <li>Εκτελέστε το ερώτημα παραγγελίας και ελέγξτε το γραμματοκιβώτιο του πελάτη.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κατάσταση <code>paid</code>· η γραμμή της πληρωμής manual είναι <code>captured</code>· το απόθεμα δεν αλλάζει (δεσμεύτηκε στο checkout). Δεν στέλνεται email για το <code>paid</code>. Η λίστα Payments δείχνει <code>Manual / bank transfer</code> χωρίς κουμπί <strong>Refund</strong>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/payments.ts</code> (<code>syncPaymentsForOrderStatus</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-payments">
+    <h2>Ηλεκτρονικές πληρωμές σε sandbox</h2>
+    <p class="intro">Ένας πάροχος πληρωμών είναι ενεργός σε όλο τον ιστότοπο (Settings → Ecommerce → General → <strong>Payment method</strong>). Αφού τον αλλάξετε, αδειάστε το καλάθι. URL των webhooks: <code>&lt;site&gt;/api/cms/payments/webhooks/stripe</code>, <code>…/paypal</code>, <code>…/viva</code>. Το PayPal και η Viva πρέπει να φτάνουν στο περιβάλλον δοκιμών μέσω διαδικτύου· το Stripe μπορεί να χρησιμοποιήσει τοπικά τον μηχανισμό προώθησης του CLI του.</p>
+
+    <article class="tc" id="COM-051" data-priority="P2">
+      <h3>Ρύθμιση του Stripe σε λειτουργία δοκιμών</h3>
+      <ol class="steps">
+        <li>Στο <code>.env.local</code> ορίστε τα <code>STRIPE_SECRET_KEY</code> (<code>sk_test_…</code>), <code>NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY</code> (<code>pk_test_…</code>). Καταχωρίστε το URL του webhook για τα <code>payment_intent.succeeded</code>, <code>payment_intent.payment_failed</code> και <code>charge.refunded</code> στον πίνακα δοκιμών του Stripe (ή εκτελέστε το <code>listen --forward-to</code> του Stripe CLI προς το URL) και βάλτε το signing secret του στο <code>STRIPE_WEBHOOK_SECRET</code>. Κάντε επανεκκίνηση (νέο build για build παραγωγής: το publishable key ενσωματώνεται κατά τη μεταγλώττιση).</li>
+        <li>Ορίστε το <strong>Payment method</strong> σε <code>Card (Stripe)</code> και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η ρύθμιση αποθηκεύεται. Το <code>curl -s -o /dev/null -w '%{http_code}\n' -X POST "$BASE/api/cms/payments/webhooks/stripe" -d '{}'</code> απαντά <code>400</code> (χωρίς έγκυρη υπογραφή), κάτι που αποδεικνύει ότι η διαδρομή είναι ενεργή.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/payments/stripe.ts</code> · <code>src/cms/core/payments/webhooks.ts</code> · docs/dev-guides/08-commerce.md §7.3</p>
+    </article>
+
+    <article class="tc" id="COM-052" data-priority="P1">
+      <h3>Stripe: επιτυχής πληρωμή με κάρτα</h3>
+      <ol class="steps">
+        <li>Σημειώστε το απόθεμα του <code>qa-mug</code>. Παραγγείλτε QA Mug × 1 στο <code>/en/checkout</code>, χώρα <code>GR</code>, και πατήστε <strong>Place order</strong>.</li>
+        <li>Στο πλαίσιο <strong>Card details</strong> πληρώστε με την επιτυχή δοκιμαστική κάρτα του παρόχου· πατήστε <strong>Pay now</strong>.</li>
+        <li>Περιμένετε το webhook και στη συνέχεια εκτελέστε το ερώτημα παραγγελίας και το ερώτημα αποθέματος.</li>
+      </ol>
+      <ul class="exp">
+        <li>Μετά το Place order η σελίδα δείχνει <code>Order reference: ORD-…</code> και τη φόρμα κάρτας· η παραγγελία υπάρχει ήδη ως <code>pending</code> με πληρωμή <code>stripe</code> <code>pending</code> (provider_ref <code>pi_…</code>) και το απόθεμα δεν έχει αλλάξει. Τα email της παραγγελίας έχουν ήδη σταλεί.</li>
+        <li>Μετά την πληρωμή: <code>Thank you! Your order has been placed.</code> και το καλάθι είναι άδειο.</li>
+        <li>Μετά το webhook: παραγγελία <code>paid</code>, πληρωμή <code>captured</code> για 1600 (12.00 + 4.00, χωρίς επιπλέον χρέωση για το Stripe), απόθεμα μειωμένο κατά 1, <code>stock_taken</code> true, χωρίς <code>cod</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/shop/StripeCardPanel.tsx</code> · <code>src/cms/core/payments/webhooks.ts</code> (<code>settleCapturedOrder</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-053" data-priority="P2">
+      <h3>Stripe: απόρριψη κάρτας και νέα προσπάθεια</h3>
+      <ol class="steps">
+        <li>Υποβάλετε μια παραγγελία και πληρώστε με τη δοκιμαστική κάρτα γενικής απόρριψης του παρόχου.</li>
+        <li>Στο ίδιο πλαίσιο πληρώστε ξανά με την επιτυχή δοκιμαστική κάρτα.</li>
+        <li>Εκτελέστε το ερώτημα παραγγελίας μετά από κάθε βήμα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: το πλαίσιο εμφανίζει με κόκκινο το μήνυμα απόρριψης του παρόχου και μένει ανοιχτό· μετά το webhook η πληρωμή είναι <code>failed</code>, η παραγγελία <code>pending</code>, το απόθεμα ανέγγιχτο. Βήμα 2: οθόνη επιτυχίας· η ίδια γραμμή πληρωμής (ίδιο <code>pi_…</code>) γίνεται <code>captured</code> και η παραγγελία <code>paid</code>. Εξακολουθεί να υπάρχει ακριβώς μία γραμμή stripe.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/payments/events.ts</code> (<code>payment_intent.payment_failed</code>) · <code>src/cms/modules/commerce/payments.ts</code> (<code>capturePaymentByRef</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-054" data-priority="P2">
+      <h3>Stripe: 3-D Secure και εγκαταλελειμμένη πληρωμή</h3>
+      <ol class="steps">
+        <li>Υποβάλετε μια παραγγελία και πληρώστε με τη δοκιμαστική κάρτα του παρόχου που απαιτεί ταυτοποίηση· ολοκληρώστε την επαλήθευση.</li>
+        <li>Υποβάλετε άλλη μια παραγγελία και κλείστε την καρτέλα στη φόρμα κάρτας. Σημειώστε τον κωδικό αναφοράς της.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: μετά την επαλήθευση η παραγγελία καταλήγει <code>paid</code> όπως στη COM-052. Αν το Stripe κάνει ανακατεύθυνση αντί να μείνει στη σελίδα, η διεύθυνση επιστροφής είναι <code>/order?ref=…</code> χωρίς το πρόθεμα <code>/en</code> (καταγράψτε το). Βήμα 2: η παραγγελία μένει <code>pending</code> με πληρωμή stripe <code>pending</code> και απόθεμα ανέγγιχτο· η COM-089 την ακυρώνει.</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/checkout/CheckoutClient.tsx</code> (<code>returnUrl</code>) · docs/dev-guides/08-commerce.md §10</p>
+    </article>
+
+    <article class="tc" id="COM-055" data-priority="P2">
+      <h3>Ρύθμιση του PayPal sandbox</h3>
+      <ol class="steps">
+        <li>Ορίστε τα <code>PAYPAL_CLIENT_ID</code>, <code>PAYPAL_CLIENT_SECRET</code> από μια εφαρμογή sandbox και <code>PAYPAL_ENV=sandbox</code>. Καταχωρίστε το URL του webhook για τα <code>CHECKOUT.ORDER.APPROVED</code>, <code>PAYMENT.CAPTURE.COMPLETED</code>, <code>.DENIED</code>, <code>.DECLINED</code>, <code>.REFUNDED</code> και βάλτε το id του στο <code>PAYPAL_WEBHOOK_ID</code>. Κάντε επανεκκίνηση.</li>
+        <li>Ορίστε το <strong>Payment method</strong> σε <code>PayPal</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Αποθηκεύεται. Ένα POST με κενό σώμα στο webhook του PayPal απαντά <code>400</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/payments/paypal.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-056" data-priority="P1">
+      <h3>PayPal: έγκριση και επιστροφή</h3>
+      <ol class="steps">
+        <li>Παραγγείλτε QA Mug στο <code>/en/checkout</code> και πατήστε <strong>Place order</strong>. Στη σελίδα sandbox του PayPal συνδεθείτε με τον λογαριασμό αγοραστή sandbox και εγκρίνετε.</li>
+        <li>Κοιτάξτε τη σελίδα στην οποία επιστρέφετε και το καλάθι.</li>
+        <li>Περιμένετε το webhook και εκτελέστε το ερώτημα παραγγελίας· ελέγξτε το <code>JSON_EXTRACT(p.metadata,'$.captureId')</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Ο browser μεταβαίνει αμέσως στο PayPal· η παραγγελία είναι <code>pending</code> με πληρωμή <code>paypal</code> της οποίας το provider_ref είναι το id της παραγγελίας στο PayPal.</li>
+        <li>Επιστρέφετε στο <code>/en/order?ref=ORD-…</code>.</li>
+        <li>Μετά το webhook: παραγγελία <code>paid</code>, πληρωμή <code>captured</code> με <code>captureId</code>· το απόθεμα έχει δεσμευτεί.</li>
+      </ul>
+      <p class="exp"><span class="exp-label">Γνωστό κενό:</span> Η σελίδα επιστροφής είναι η απλή φόρμα <strong>Track your order</strong>: αγνοεί το <code>ref</code>, δεν εμφανίζει ευχαριστήριο μήνυμα, και το καλάθι εξακολουθεί να περιέχει το QA Mug (μόνο οι ροές μέσα στη σελίδα το αδειάζουν). Καταγράψτε το μαζί με το αποτέλεσμα· αδειάστε το καλάθι χειροκίνητα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/payments/paypal.ts</code> · <code>src/app/[locale]/order/OrderLookupClient.tsx</code> · <code>src/cms/core/payments/webhooks.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-057" data-priority="P2">
+      <h3>PayPal: ακύρωση και επιστροφή</h3>
+      <ol class="steps">
+        <li>Υποβάλετε μια παραγγελία και στο PayPal πατήστε τον σύνδεσμο για ακύρωση και επιστροφή στο κατάστημα.</li>
+        <li>Εκτελέστε το ερώτημα παραγγελίας.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Καταλήγετε στο <code>/en/order?ref=…</code>. Η παραγγελία μένει <code>pending</code> με πληρωμή <code>pending</code> και χωρίς δέσμευση αποθέματος. Αργότερα ακυρώνεται από την εργασία των ληξιπρόθεσμων παραγγελιών (COM-089). Η υποβολή νέας παραγγελίας από το ίδιο καλάθι δημιουργεί νέο κωδικό αναφοράς.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/payments/paypal.ts</code> (<code>cancel_url</code> = URL επιστροφής)</p>
+    </article>
+
+    <article class="tc" id="COM-058" data-priority="P2">
+      <h3>Ρύθμιση της Viva σε demo</h3>
+      <ol class="steps">
+        <li>Ορίστε τα <code>VIVA_CLIENT_ID</code>, <code>VIVA_CLIENT_SECRET</code>, <code>VIVA_MERCHANT_ID</code>, <code>VIVA_API_KEY</code>, <code>VIVA_ENV=demo</code> και <code>VIVA_WEBHOOK_VERIFICATION_KEY</code>· κάντε επανεκκίνηση.</li>
+        <li>Εκτελέστε <code>curl -s "$BASE/api/cms/payments/webhooks/viva"</code>. Στη συνέχεια, στην πύλη demo της Viva, καταχωρίστε το URL του webhook για τα Transaction Payment Created, Reversal Created και Failed, και ορίστε την ανακατεύθυνση επιτυχίας και αποτυχίας της πηγής πληρωμών σε <code>&lt;site&gt;/en/order</code>.</li>
+        <li>Ορίστε το <strong>Payment method</strong> σε <code>Viva.com (card)</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 2 απαντά <code>{"Key":"&lt;your verification key&gt;"}</code> και η Viva αποδέχεται το URL. Χωρίς ορισμένο κλειδί, το GET απαντά 404.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/payments/viva.ts</code> · <code>src/cms/core/payments/webhooks.ts</code> (Viva GET) · docs/dev-guides/08-commerce.md §7.3</p>
+    </article>
+
+    <article class="tc" id="COM-059" data-priority="P2">
+      <h3>Viva: επιτυχία και αποτυχία</h3>
+      <ol class="steps">
+        <li>Παραγγείλτε QA Mug και πληρώστε στο Smart Checkout της Viva με τη δοκιμαστική κάρτα επιτυχίας του demo. Περιμένετε το webhook· εκτελέστε το ερώτημα παραγγελίας και το <code>SELECT JSON_EXTRACT(metadata,'$.transactionId') FROM payments WHERE provider = 'viva' ORDER BY id DESC LIMIT 1;</code></li>
+        <li>Υποβάλετε άλλη μια παραγγελία και χρησιμοποιήστε την κάρτα demo για απορριπτόμενη πληρωμή (ή ακυρώστε στη σελίδα της Viva).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: το provider_ref είναι ο 16ψήφιος κωδικός παραγγελίας· μετά το webhook η παραγγελία είναι <code>paid</code>, η πληρωμή <code>captured</code>, και το <code>transactionId</code> περιέχει το id της συναλλαγής (διαφορετικό από τον κωδικό παραγγελίας). Βήμα 2: πληρωμή <code>failed</code> (ή ακόμη <code>pending</code> μετά από ακύρωση), παραγγελία <code>pending</code>, απόθεμα ανέγγιχτο. Η σελίδα επιστροφής έχει το ίδιο κενό με τη COM-056.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/payments/viva.ts</code> (<code>confirmTransaction</code>) · <code>src/cms/core/payments/events.ts</code> (<code>vivaEventKind</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-060" data-priority="P2">
+      <h3>Επαναλήψεις και ανανεώσεις: μία παραγγελία, μία πληρωμή, μία κίνηση αποθέματος</h3>
+      <ol class="steps">
+        <li>Στη σελίδα επιστροφής μιας πληρωμένης παραγγελίας PayPal ή Viva ανανεώστε δύο φορές.</li>
+        <li>Στον πίνακα δοκιμών του Stripe στείλτε ξανά το συμβάν <code>payment_intent.succeeded</code> της παραγγελίας της COM-052 (ή με το CLI, στείλτε ξανά εκείνο το id συμβάντος). Στον προσομοιωτή webhooks του PayPal sandbox, στείλτε ξανά το συμβάν capture της COM-056.</li>
+        <li>Εκτελέστε: <code>SELECT o.reference, COUNT(p.id) FROM orders o JOIN payments p ON p.order_id = o.id WHERE o.reference IN ('&lt;ref1&gt;','&lt;ref2&gt;') GROUP BY o.reference;</code> και το ερώτημα αποθέματος.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε παραγγελία έχει ακόμη ακριβώς μία πληρωμή πύλης, κατάσταση <code>captured</code>· δεν δημιουργήθηκε νέα παραγγελία από την ανανέωση· το απόθεμα δεν μειώθηκε δεύτερη φορά (μη διπλή καταχώριση, idempotency). Τα webhooks που στάλθηκαν ξανά απαντούν 200 στο αρχείο καταγραφής του παρόχου.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/payments.ts</code> (<code>capturePaymentByRef</code>) · <code>uniq_payments_provider_ref</code> (DB-039)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-rejections">
+    <h2>Τι απορρίπτει το checkout</h2>
+    <p class="intro">Επαναφέρετε το <strong>Payment method</strong> σε <code>Manual / bank transfer</code>. Κάθε απόρριψη δεν πρέπει να αφήνει πίσω της παραγγελία: συγκρίνετε το <code>SELECT MAX(id) FROM orders;</code> πριν και μετά.</p>
+
+    <article class="tc" id="COM-061" data-priority="P2">
+      <h3>Προϊόν που αποσύρθηκε από τη δημοσίευση ενώ βρίσκεται στο καλάθι</h3>
+      <ol class="steps">
+        <li>Προσθέστε το QA Candle στο καλάθι. Στο διαχειριστικό ορίστε το <code>qa-candle</code> σε <code>draft</code> και στις δύο γλώσσες.</li>
+        <li>Υποβάλετε την παραγγελία στο <code>/en/checkout</code>. Δημοσιεύστε ξανά το προϊόν.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>Product "qa-candle" is no longer available.</code> με κόκκινο· καμία παραγγελία.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/orderable.ts</code> (<code>orderableRow</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-062" data-priority="P2">
+      <h3>Απενεργοποιημένη παραλλαγή και εξαντλημένο προϊόν χωρίς παρακολούθηση αποθέματος</h3>
+      <ol class="steps">
+        <li>Προσθέστε το QA T-shirt Blue/M στο καλάθι. Στο διαχειριστικό ξετσεκάρετε το <strong>On</strong> για το Blue/M και αποθηκεύστε. Υποβάλετε την παραγγελία.</li>
+        <li>Τσεκάρετέ το ξανά. Προσθέστε το QA Candle, στη συνέχεια ορίστε τη διαθεσιμότητά του σε <code>out-of-stock</code> και υποβάλετε την παραγγελία. Επαναφέρετέ τη σε <code>in-stock</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>The option you chose for "QA T-shirt" is no longer available.</code> Βήμα 2: <code>"QA Candle" is out of stock.</code> Καμία παραγγελία και τις δύο φορές.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/orderable.ts</code> (<code>lineUnavailableReason</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-063" data-priority="P3">
+      <h3>Εξωτερικό προϊόν, άγνωστη παραλλαγή και διεύθυνση που λείπει, μέσω του API</h3>
+      <ol class="steps">
+        <li>Για κάθε σώμα εκτελέστε <code>curl -s -X POST "$BASE/api/cms/commerce/checkout" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.80.0.4' -d '&lt;body&gt;' -w ' %{http_code}\n'</code> (νέα διεύθυνση κάθε λίγες κλήσεις), το καθένα με <code>"customer":{"name":"QA","email":"qa.api@example.com","address1":"Odos 1","city":"Athina","postal":"10558","country":"GR"},"locale":"en","acceptTerms":true</code> συν:
+          <ul>
+            <li><code>"items":[{"slug":"qa-ext","quantity":1}]</code></li>
+            <li><code>"items":[{"slug":"qa-tee","variationId":"nope","quantity":1}]</code></li>
+            <li><code>"items":[{"slug":"qa-nothing","quantity":1}]</code></li>
+            <li>το είδος qa-mug με <code>"acceptTerms":false</code></li>
+            <li>το είδος qa-mug χωρίς το <code>address1</code> του πελάτη</li>
+            <li><code>"items":[]</code></li>
+          </ul></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Με τη σειρά: <code>400</code> <code>"QA External" cannot be bought here.</code> (το όνομα του προϊόντος)· <code>400</code> <code>The option you chose for "QA T-shirt" is no longer available.</code>· <code>400</code> <code>Product "qa-nothing" is no longer available.</code>· <code>400</code> <code>Please accept the terms to place your order.</code>· <code>400</code> <code>A delivery address is required.</code>· <code>400</code> <code>invalid_input</code>. Δεν δημιουργείται παραγγελία.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/orders.ts</code> (<code>createOrder</code>, <code>checkoutBody</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-064" data-priority="P3">
+      <h3>Οι τιμές του client αγνοούνται· προϊόν με παραλλαγές χωρίς παραλλαγή</h3>
+      <ol class="steps">
+        <li>Στο Local Storage επεξεργαστείτε το <code>site-cart</code> και αλλάξτε το <code>unitPrice</code> του QA Mug σε <code>0.01</code>· ανανεώστε και υποβάλετε την παραγγελία.</li>
+        <li>Μέσω του API παραγγείλτε <code>{"slug":"qa-tee","quantity":1}</code> χωρίς <code>variationId</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: η σύνοψη μπορεί να δείχνει €0.01, αλλά η παραγγελία αποθηκεύεται με 1200 ανά κούπα (την τιμή την ορίζει ο διακομιστής). Βήμα 2: γίνεται δεκτή με τη βασική τιμή 2000 χωρίς παραλλαγή (γνωστή ιδιαιτερότητα, docs/dev-guides/08-commerce.md §10)· καταγράψτε το. Ακυρώστε και τις δύο παραγγελίες.</p>
+      <p class="ref">Αναφ.: docs/dev-guides/08-commerce.md §4.3, §10</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-confirm">
+    <h2>Email επιβεβαίωσης και αναζήτηση παραγγελίας</h2>
+
+    <article class="tc" id="COM-065" data-priority="P1">
+      <h3>Το email επιβεβαίωσης προς τον πελάτη</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Η παραγγελία της COM-042 (περιτύλιγμα δώρου), υποβεβλημένη στα αγγλικά.</p>
+      <ol class="steps">
+        <li>Ανοίξτε το email στο γραμματοκιβώτιο του πελάτη.</li>
+      </ol>
+      <ul class="exp">
+        <li>Θέμα <code>Your order ORD-2026-…</code>· πρώτη γραμμή <code>Thank you for your order! We have received it and will be in touch shortly.</code>· <code>Order reference: ORD-…</code>· <code>Ship to: Odos 1, Athina, 10558, GR</code>.</li>
+        <li>Ένας πίνακας <code>Item</code> / <code>Qty</code> / <code>Amount</code> με <code>QA Mug</code> 1 €12.00, και στη συνέχεια <code>Subtotal</code> €12.00, <code>Shipping</code> €4.00, <code>Surcharge</code> €2.00, <code>Gift wrap</code> €2.50 και με έντονα <code>Total</code> €20.50. Οι γραμμές αθροίζονται στο σύνολο και στο <code>orders.total</code>.</li>
+        <li>Γράφει «received» (παραλήφθηκε), όχι «paid» (πληρώθηκε) (το ίδιο email στέλνεται για τις παραγγελίες μέσω πύλης πληρωμής πριν από την πληρωμή).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/orders.ts</code> (<code>sendOrderEmails</code>, <code>EMAIL_LABELS</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-066" data-priority="P2">
+      <h3>Το email ειδοποίησης του καταστήματος και η ελληνική έκδοση</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το αντίγραφο του καταστήματος για την παραγγελία της COM-042.</li>
+        <li>Υποβάλετε μια παραγγελία manual στο <code>/checkout</code> (ελληνικά) και ανοίξτε και τα δύο email.</li>
+        <li>Αδειάστε το <strong>Inquiry notification emails</strong>, υποβάλετε άλλη μια παραγγελία, ελέγξτε το γραμματοκιβώτιο του <code>CONTACT_RECIPIENT_EMAIL</code>· επαναφέρετε τη ρύθμιση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: θέμα <code>New order ORD-…</code>, πρώτη γραμμή <code>QA Shopper · &lt;customer email&gt;</code>, ο ίδιος πίνακας· το Reply-To είναι ο πελάτης. Βήμα 2: θέματα <code>Η παραγγελία σας ORD-…</code> και <code>Νέα παραγγελία ORD-…</code>, γραμμές <code>Προϊόν</code>, <code>Ποσ.</code>, <code>Ποσό</code>, <code>Υποσύνολο</code>, <code>Μεταφορικά</code>, <code>Επιβάρυνση</code>, <code>Σύνολο</code>· τιμές ως <code>12,00 €</code>. Βήμα 3: η ειδοποίηση πηγαίνει στον προεπιλεγμένο παραλήπτη.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/orders.ts</code> (<code>parseRecipients</code>) · <code>src/cms/core/email/graph.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-067" data-priority="P2">
+      <h3>Αναζήτηση παραγγελίας από επισκέπτη</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/en/order</code>. Εισαγάγετε έναν κωδικό αναφοράς και το email του· πατήστε <strong>Look up order</strong>.</li>
+        <li>Δοκιμάστε τον ίδιο κωδικό αναφοράς με άλλο email, καθώς και το email με κεφαλαία.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>Status</code> με τη μεταφρασμένη κατάσταση (<code>Pending</code>, <code>Paid</code>, <code>Shipped</code> για το fulfilled…), οι γραμμές, το <code>Total</code> και το <code>Ship to</code>. Λάθος email: <code>No order found for that reference and email.</code> Καταγράψτε αν γίνεται δεκτό το email με κεφαλαία.</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/order/OrderLookupClient.tsx</code> · <code>src/cms/modules/commerce/orders.ts</code> (<code>lookupOrder</code>, <code>publicOrder</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-orders">
+    <h2>Οθόνη Orders</h2>
+
+    <article class="tc" id="COM-068" data-priority="P1">
+      <h3>Λίστα, αριθμοί, φίλτρο και αναζήτηση</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <strong>Orders</strong> (<code>/admin/orders</code>).</li>
+        <li>Επιλέξτε <strong>Status</strong> <code>pending</code> και μετά <code>All</code>. Πληκτρολογήστε μέρος ενός κωδικού αναφοράς στο <strong>Search</strong> και πατήστε <strong>Find</strong>· στη συνέχεια ένα email πελάτη· και μετά <code>QA Shopper</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Πλαίσια <code>ORDERS</code> (πλήθος όλων των παραγγελιών) και <code>REVENUE</code> (όλες οι παραγγελίες που δεν έχουν ακυρωθεί ή επιστραφεί, μαζί με τις pending), και ένα chip ανά κατάσταση, όπως <code>pending: 7</code>, το καθένα με επεξήγηση (για παράδειγμα pending: <code>Placed but not paid yet: …</code>).</li>
+        <li>Στήλες πίνακα Reference, Date, Customer, Total, Status και ένα κουμπί <strong>View</strong>, με τις νεότερες πρώτες.</li>
+        <li>Το φίλτρο κατάστασης περιορίζει τον πίνακα· η αναζήτηση βρίσκει βάσει κωδικού αναφοράς, email ή ονόματος. Με περισσότερες από 25 παραγγελίες εμφανίζονται τα <strong>Prev</strong>/<strong>Next</strong> και το <code>N total · page 1/M</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/OrdersTable.tsx</code> · <code>src/cms/modules/commerce/orders.ts</code> (<code>listOrders</code>, <code>orderStats</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-069" data-priority="P2">
+      <h3>Το πλαίσιο της παραγγελίας</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>View</strong> στην παραγγελία της COM-045 (δωροκάρτα + manual) και μετά σε μια παραγγελία PayPal.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ένα πλευρικό πλαίσιο με επικεφαλίδα τον κωδικό αναφοράς: πεδία πελάτη (<strong>Email *</strong>, <strong>Customer name</strong>, <strong>Phone</strong>, <strong>Address</strong>, <strong>City</strong>, <strong>Postal code</strong>, <strong>Country</strong>), <strong>Items</strong> με όνομα, παραλλαγή, SKU, τιμή και ποσότητα, τα πεδία κόστους, μια σύνοψη Subtotal / Shipping / Payment surcharge / (Gift wrap) / Discount / Total που αθροίζεται σωστά, <strong>Notes</strong>, <strong>Delivery</strong> (για τη COM-045 <code>Gift cards used €25.00</code>), <strong>Payments</strong> (<code>Gift card</code> €25.00 captured· <code>Manual / bank transfer</code> €17.00 pending· για το PayPal <code>PayPal</code> captured με <strong>Refund</strong>), <strong>Shipments</strong>, κουμπιά <strong>Status</strong>, <strong>Cancel</strong> και <strong>Save order</strong>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/OrdersTable.tsx</code> · <code>src/cms/admin/OrderFulfilment.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-070" data-priority="P1">
+      <h3>Τα κουμπιά κατάστασης ακολουθούν τον κύκλο ζωής</h3>
+      <ol class="steps">
+        <li>Ανοίξτε μια παραγγελία <code>pending</code>. Περάστε τον δείκτη πάνω από κάθε κουμπί κατάστασης.</li>
+        <li>Πατήστε <strong>paid</strong>. Περάστε ξανά τον δείκτη πάνω από τα κουμπιά.</li>
+        <li>Πατήστε <strong>fulfilled</strong>. Περάστε ξανά τον δείκτη.</li>
+      </ol>
+      <ul class="exp">
+        <li>Pending: τα <strong>paid</strong> και <strong>cancelled</strong> είναι ενεργά· τα <strong>fulfilled</strong> και <strong>refunded</strong> είναι γκριζαρισμένα με την επεξήγηση <code>A pending order cannot be moved to fulfilled.</code> / <code>… to refunded.</code> Το τρέχον κουμπί έχει σκούρο περίγραμμα.</li>
+        <li>Paid: τα <strong>fulfilled</strong>, <strong>refunded</strong>, <strong>cancelled</strong> ενεργά· το <strong>pending</strong> ανενεργό (<code>A paid order cannot be moved to pending.</code>).</li>
+        <li>Fulfilled: ενεργό μόνο το <strong>refunded</strong>.</li>
+        <li>Η επεξήγηση του Status γράφει <code>… Only the next steps are offered: pending → paid or cancelled, paid → fulfilled, refunded or cancelled, fulfilled → refunded. Cancelled and refunded are final.</code></li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/order-status.ts</code> · <code>src/cms/admin/OrdersTable.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-071" data-priority="P2">
+      <h3>Τα email κατάστασης και οι επιβεβαιώσεις για ακύρωση και επιστροφή χρημάτων</h3>
+      <ol class="steps">
+        <li>Για την παραγγελία fulfilled της COM-070 ελέγξτε το γραμματοκιβώτιο του πελάτη.</li>
+        <li>Σε άλλη πληρωμένη παραγγελία manual πατήστε <strong>cancelled</strong>, διαβάστε τον διάλογο, επιλέξτε την επιλογή ακύρωσης του διαλόγου και στη συνέχεια επιβεβαιώστε με <strong>Cancel order</strong>.</li>
+        <li>Σε μια πληρωμένη παραγγελία manual πατήστε <strong>refunded</strong> και επιβεβαιώστε με <strong>Mark refunded</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Fulfilled: email <code>Order update ORD-…</code> που γράφει <code>Your order has been shipped.</code></li>
+        <li>Διάλογος ακύρωσης: <code>Cancel this order?</code>, που εξηγεί ότι το απόθεμα επιστρέφει και ότι <code>Any payment already taken is not refunded by this — use Refund under Payments, or refund it with your provider.</code> Αν υπαναχωρήσετε, δεν αλλάζει τίποτε. Μετά την επιβεβαίωση: <code>Your order has been cancelled.</code></li>
+        <li>Διάλογος επιστροφής χρημάτων: <code>Mark this order refunded?</code>· μετά την επιβεβαίωση: <code>Your order has been refunded.</code> Δεν μετακινούνται χρήματα σε κανέναν πάροχο.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/OrdersTable.tsx</code> (<code>ORDER_STATUS_CONFIRM</code>) · <code>src/cms/modules/commerce/orders.ts</code> (<code>sendOrderStatusEmail</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-072" data-priority="P2">
+      <h3>Τα cancelled και refunded είναι οριστικά· το API συμφωνεί</h3>
+      <ol class="steps">
+        <li>Ανοίξτε μια ακυρωμένη παραγγελία και περάστε τον δείκτη πάνω από τα κουμπιά.</li>
+        <li>Εκτελέστε <code>curl -s -X PATCH "$BASE/api/cms/orders/&lt;id&gt;" -b "cms_session=$S" -H 'Content-Type: application/json' -d '{"status":"paid"}' -w ' %{http_code}\n'</code> για εκείνη την παραγγελία.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε κουμπί εκτός από το τρέχον είναι ανενεργό (<code>A cancelled order cannot be moved to paid.</code> κ.ο.κ.). curl: <code>409</code> με <code>An order that is cancelled cannot be moved to paid.</code></p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/orders.ts</code> (<code>orderUpdateRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-073" data-priority="P2">
+      <h3>Το απόθεμα επιστρέφει με την ακύρωση, μία φορά</h3>
+      <ol class="steps">
+        <li>Σημειώστε το απόθεμα του <code>qa-mug</code>. Υποβάλετε μια παραγγελία manual για QA Mug × 2 (απόθεμα −2).</li>
+        <li>Ακυρώστε την στο διαχειριστικό. Εκτελέστε το ερώτημα αποθέματος και το ερώτημα παραγγελίας.</li>
+        <li>Ακυρώστε μια παραγγελία Stripe <code>pending</code> της οποίας η κάρτα δεν χρεώθηκε ποτέ (COM-054 βήμα 2) και ελέγξτε ξανά το απόθεμα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 2: το απόθεμα επιστρέφει στον αρχικό αριθμό και στις δύο γραμμές γλώσσας· <code>stock_taken</code> false. Βήμα 3: το απόθεμα δεν αλλάζει (δεν δεσμεύτηκε τίποτε, άρα δεν επιστρέφεται τίποτε).</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/stock.ts</code> (<code>restockOrder</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-074" data-priority="P2">
+      <h3>Κατάσταση που άλλαξε στο μεταξύ: 409, όχι αντικατάσταση</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το πλαίσιο μιας παραγγελίας manual <code>pending</code> και αφήστε το ανοιχτό.</li>
+        <li>Στο τερματικό ακυρώστε την: <code>curl -s -X PATCH "$BASE/api/cms/orders/&lt;id&gt;" -b "cms_session=$S" -H 'Content-Type: application/json' -d '{"status":"cancelled"}'</code>.</li>
+        <li>Στο πλαίσιο που είναι ακόμη ανοιχτό πατήστε <strong>paid</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ένα κόκκινο μήνυμα στο πλαίσιο: <code>An order that is cancelled cannot be moved to paid.</code> Η παραγγελία μένει ακυρωμένη. (Αν δύο αλλαγές γίνουν ακριβώς ταυτόχρονα, το μήνυμα είναι <code>This order changed while you were looking at it. Reload it and try again.</code>)</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/orders.ts</code> (<code>orderUpdateRoute</code>, <code>onlyFrom</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-075" data-priority="P2">
+      <h3>Επεξεργασία παραγγελίας που άλλαξε κάποιος άλλος: 409</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το πλαίσιο μιας παραγγελίας και αλλάξτε το <strong>Customer name</strong>.</li>
+        <li>Σε SQL εκτελέστε <code>UPDATE orders SET version = version + 1 WHERE id = &lt;id&gt;;</code></li>
+        <li>Πατήστε <strong>Save order</strong>. Κλείστε το πλαίσιο με <strong>Cancel</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 3: κόκκινο κείμενο <code>This order was changed by someone else while you had it open. Reload to see their version — saving now would replace their work, including any line items they added.</code> και τίποτε δεν αποθηκεύεται. Το κλείσιμο ρωτά <code>Discard your changes?</code> με <strong>Discard changes</strong>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/orders.ts</code> (<code>saveOrder</code>, <code>expectedVersion</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-076" data-priority="P2">
+      <h3>Επεξεργασία των γραμμών και του κόστους μιας παραγγελίας</h3>
+      <ol class="steps">
+        <li>Ανοίξτε μια παραγγελία manual σε εκκρεμότητα. Αλλάξτε την ποσότητα της κούπας από 1 σε 2, ορίστε το <strong>Shipping (EUR)</strong> σε <code>0</code> και πατήστε <strong>Save order</strong>.</li>
+        <li>Εκτελέστε το ερώτημα παραγγελίας και το ερώτημα αποθέματος.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το σύνολο του πλαισίου ενημερώνεται πριν από την αποθήκευση και η αποθήκευση πετυχαίνει· τα <code>orders.total</code> και <code>subtotal</code> αντιστοιχούν στις νέες γραμμές· το <code>cod</code> ακολουθεί το νέο σύνολο. Το απόθεμα δεν αλλάζει (η επεξεργασία δεν μετακινεί ποτέ απόθεμα), οι πληρωμές δεν αλλάζουν και δεν στέλνεται email.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/orders.ts</code> (<code>saveOrder</code>, <code>rebaseCodAmount</code>) · docs/dev-guides/08-commerce.md §10</p>
+    </article>
+
+    <article class="tc" id="COM-077" data-priority="P2">
+      <h3>Χειροκίνητη δημιουργία παραγγελίας· εξαγωγή CSV</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>+ New order</strong>, πατήστε <strong>Create order</strong> χωρίς email· στη συνέχεια πληκτρολογήστε το email <code>qa.phone@example.com</code> και πατήστε ξανά χωρίς είδη.</li>
+        <li>Προσθέστε το QA Mug με το <code>Add product… (search)</code> και πατήστε <strong>Create order</strong>.</li>
+        <li>Πατήστε <strong>Export CSV</strong> με το φίλτρο κατάστασης σε <code>pending</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>Email is required.</code>, μετά <code>Add at least one item.</code>, και μετά η νέα παραγγελία εμφανίζεται ως <code>pending</code> (χωρίς γραμμή πληρωμής, απόθεμα αμετάβλητο). Το αρχείο <code>orders.csv</code> που κατεβαίνει έχει μόνο παραγγελίες pending με στήλες reference, date, status, customer, currency, subtotal, discount, shipping, surcharge, total, coupon και items. Ένα όνομα πελάτη πληκτρολογημένο ως <code>=1+1</code> εμφανίζεται ως κείμενο, όχι ως τύπος.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/OrdersTable.tsx</code> · <code>src/cms/modules/commerce/orders.ts</code> (εξαγωγή CSV, <code>csvCell</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-078" data-priority="P3">
+      <h3>Ένας ρόλος μόνο ανάγνωσης βλέπει τις παραγγελίες αλλά δεν μπορεί να τις αλλάξει</h3>
+      <ol class="steps">
+        <li>Δημιουργήστε έναν ρόλο <code>QA orders view</code> μόνο με <strong>Access</strong> και <strong>View orders</strong>, και έναν χρήστη με αυτόν. Συνδεθείτε ως αυτός ο χρήστης και ανοίξτε μια παραγγελία.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Δεν υπάρχει <strong>+ New order</strong>· το <strong>Export CSV</strong> υπάρχει. Τα πεδία του πλαισίου είναι μόνο για ανάγνωση, δεν υπάρχουν κουμπιά κατάστασης, ούτε Refund, ούτε φόρμα αποστολής, υπάρχει κουμπί <strong>Close</strong> αντί για Cancel/Save, και το <code>Your role can view orders but not change them.</code></p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/OrdersTable.tsx</code> (<code>canWrite</code>) · AUTH-055</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-refunds">
+    <h2>Επιστροφές χρημάτων και η ειδοποίηση ότι απαιτείται επιστροφή χρημάτων</h2>
+
+    <article class="tc" id="COM-079" data-priority="P2">
+      <h3>Stripe: μερική και στη συνέχεια πλήρης επιστροφή χρημάτων</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Τρόπος πληρωμής Stripe· μια πληρωμένη παραγγελία Stripe €16.00 για QA Mug × 1.</p>
+      <ol class="steps">
+        <li>Ανοίξτε την παραγγελία και πατήστε <strong>Refund</strong> στην πληρωμή Stripe. Εισαγάγετε <code>5.00</code>, <strong>Reason (optional)</strong> <code>QA partial</code>, πατήστε <strong>Refund</strong>, διαβάστε τον διάλογο και επιβεβαιώστε.</li>
+        <li>Σημειώστε το απόθεμα και την κατάσταση. Πατήστε ξανά <strong>Refund</strong>· αποδεχτείτε το προτεινόμενο <code>11.00</code> και επιβεβαιώστε.</li>
+        <li>Εκτελέστε το ερώτημα παραγγελίας και το ερώτημα αποθέματος· ελέγξτε τον πίνακα δοκιμών του Stripe.</li>
+      </ol>
+      <ul class="exp">
+        <li>Διάλογος 1: <code>Refund €5.00?</code> … <code>This is a partial refund: the order keeps its status and nothing goes back into stock.</code> Μετά: <code>€5.00 already refunded · €11.00 left</code>, μια νέα γραμμή <code>Stripe</code> −€5.00 <code>refunded</code>, η κατάσταση παραμένει paid, το απόθεμα δεν αλλάζει.</li>
+        <li>Ο διάλογος 2 τελειώνει με <code>… so the order is marked refunded, its items go back into stock and the customer is emailed.</code> Μετά: κατάσταση <code>refunded</code>, απόθεμα +1, email <code>Your order has been refunded.</code> μία φορά, δεν μένει κουμπί Refund.</li>
+        <li>SQL: η γραμμή capture παραμένει <code>captured</code> με <code>refundedAmount</code> 1600· δύο αρνητικές γραμμές <code>refunded</code> (−500, −1100). Το Stripe δείχνει δύο επιστροφές χρημάτων. Το μεταγενέστερο webhook <code>charge.refunded</code> δεν στέλνει δεύτερο email.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/OrderFulfilment.tsx</code> (<code>OrderPayments</code>) · <code>src/cms/modules/commerce/payments.ts</code> (<code>refundOrderPayment</code>) · <code>src/cms/core/payments/refunds.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-080" data-priority="P3">
+      <h3>Έλεγχοι του ποσού επιστροφής χρημάτων</h3>
+      <ol class="steps">
+        <li>Σε μια πληρωμένη παραγγελία Stripe ανοίξτε το <strong>Refund</strong> και δοκιμάστε <code>0</code>, μετά ποσό μεγαλύτερο από την πληρωμή και μετά <code>abc</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το καθένα εμφανίζει <code>Enter an amount between €0.01 and €16.00.</code> (το ποσό της πληρωμής) και δεν στέλνεται τίποτε.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/OrderFulfilment.tsx</code> (<code>submit</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-081" data-priority="P2">
+      <h3>Επιστροφές χρημάτων PayPal και Viva</h3>
+      <ol class="steps">
+        <li>Στην παραγγελία PayPal της COM-056 επιστρέψτε <code>2.00</code> και μετά το υπόλοιπο.</li>
+        <li>Στην παραγγελία Viva της COM-059 επιστρέψτε ολόκληρο το ποσό.</li>
+        <li>Εκτελέστε <code>SELECT provider, status, amount, JSON_EXTRACT(metadata,'$.refundOf') FROM payments WHERE order_id IN (&lt;paypal id&gt;, &lt;viva id&gt;) ORDER BY id;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και οι δύο ολοκληρώνονται και εμφανίζονται στους πίνακες sandbox· το PayPal επιστρέφει το capture (<code>captureId</code>), η Viva αντιλογίζει το αποθηκευμένο <code>transactionId</code>. Οι παραγγελίες καταλήγουν <code>refunded</code> με το απόθεμα να επιστρέφει μία φορά. Αν η Viva απαντήσει αντί γι' αυτό με μήνυμα, καταγράψτε το: μια πληρωμή Viva της οποίας το webhook δεν αποθήκευσε ποτέ <code>transactionId</code> απορρίπτεται με <code>That payment has no provider reference to refund against.</code> (κάντε την επιστροφή χρημάτων στην πύλη της Viva). Οι επιστροφές χρημάτων της Viva σημειώνονται στον οδηγό προγραμματιστή ως «δεν έχουν ακόμη επαληθευτεί από άκρη σε άκρη».</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/payments/refunds.ts</code> (<code>refundTargetRef</code>) · docs/dev-guides/08-commerce.md §4.7, §10</p>
+    </article>
+
+    <article class="tc" id="COM-082" data-priority="P2">
+      <h3>Πληρωμή που φτάνει αφού έχει ακυρωθεί η παραγγελία</h3>
+      <ol class="steps">
+        <li>Με Stripe, υποβάλετε μια παραγγελία και σταματήστε στη φόρμα κάρτας.</li>
+        <li>Στο διαχειριστικό ακυρώστε εκείνη την παραγγελία (επιβεβαιώστε με <strong>Cancel order</strong>).</li>
+        <li>Πίσω στο κατάστημα, πληρώστε με την επιτυχή δοκιμαστική κάρτα. Περιμένετε το webhook και ανοίξτε ξανά την παραγγελία.</li>
+        <li>Επιστρέψτε ολόκληρη την πληρωμή από το Payments.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 3: η παραγγελία μένει <code>cancelled</code>, δεν δεσμεύεται απόθεμα, και μια κόκκινη ειδοποίηση γράφει <code>The online payment for this order arrived after the order was closed, so it was not reopened and no stock was taken. The customer has been charged: refund the payment under Payments.</code> SQL: το <code>JSON_EXTRACT(metadata,'$.refundRequired.reason')</code> είναι <code>captured_after_close</code>.</li>
+        <li>Βήμα 4: η ειδοποίηση εξαφανίζεται· η παραγγελία περνά σε <code>refunded</code> και ο πελάτης λαμβάνει το email επιστροφής χρημάτων.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/core/payments/webhooks.ts</code> (<code>settleCapturedOrder</code>) · <code>src/cms/modules/commerce/order-admin.ts</code> (<code>refundStillOwed</code>) · <code>src/cms/admin/OrdersTable.tsx</code> (<code>REFUND_DUE_TEXT</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-083" data-priority="P2">
+      <h3>Δύο παραγγελίες με κάρτα για το τελευταίο τεμάχιο</h3>
+      <ol class="steps">
+        <li>Δημιουργήστε το <code>qa-last</code>, τιμή <code>10</code>, απόθεμα <code>1</code>, δημοσιευμένο. Με Stripe, στο παράθυρο A υποβάλετε μια παραγγελία γι' αυτό και σταματήστε στη φόρμα κάρτας· στο παράθυρο B (άλλος browser) κάντε το ίδιο.</li>
+        <li>Πληρώστε στο B και μετά στο A. Ανοίξτε και τις δύο παραγγελίες.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η B είναι <code>paid</code> και το απόθεμα είναι 0. Η A είναι <code>cancelled</code> με την κόκκινη ειδοποίηση <code>The online payment arrived but there was not enough stock, so the order was cancelled. The customer has been charged: refund the payment under Payments.</code>· η SQL δείχνει <code>refundRequired.reason</code> <code>stock_short</code> και μια καταχώριση <code>stockFailure</code>. Το απόθεμα δεν πέφτει ποτέ κάτω από 0. Κάντε επιστροφή χρημάτων για την A ώστε να φύγει η ειδοποίηση.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/payments/webhooks.ts</code> · <code>src/cms/modules/commerce/stock.ts</code> (<code>moveOrderStock</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-fulfil">
+    <h2>Εκτέλεση παραγγελιών, εταιρείες courier και voucher αποστολής</h2>
+    <p class="intro">Οι κλήσεις προς τη BoxNow γίνονται μόνο στο stage API (<code>BOXNOW_API_URL</code> κενό ή το URL του stage). Οι ACS, Speedex και ΕΛΤΑ δεν καλούνται ποτέ: οι αριθμοί τους πληκτρολογούνται.</p>
+
+    <article class="tc" id="COM-084" data-priority="P2">
+      <h3>Η οθόνη στοιχείων σύνδεσης των εταιρειών courier</h3>
+      <ol class="steps">
+        <li>Στο Settings → Ecommerce → Shipping κυλήστε μέχρι το <strong>Couriers</strong>. Πατήστε <strong>Save</strong> στο <strong>BoxNow client ID</strong> με το πεδίο κενό.</li>
+        <li>Εισαγάγετε το client ID του stage της BoxNow και πατήστε <strong>Save</strong>· κάντε το ίδιο για το <strong>BoxNow client secret</strong>. Ανανεώστε.</li>
+        <li>Εκτελέστε <code>SELECT `key`, hint FROM integration_secrets WHERE `key` LIKE 'courier.%';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κενή αποθήκευση: <code>Type a new BoxNow client ID to save, or use Clear.</code> Μετά την αποθήκευση: <code>Saved.</code>· μετά την ανανέωση το καθένα δείχνει <code>Set · …</code> μόνο με τους τελευταίους χαρακτήρες και ένα κουμπί <strong>Clear</strong>· η ίδια η τιμή δεν εμφανίζεται ποτέ. Υπάρχουν δύο κρυπτογραφημένες γραμμές. Το <strong>Clear</strong> ρωτά <code>Clear the BoxNow client ID?</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/CourierCredentials.tsx</code> · <code>src/cms/modules/commerce/shipping-methods.ts</code> (<code>COURIER_SECRET_DEFS</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-085" data-priority="P2">
+      <h3>Προσθήκη αριθμού παρακολούθησης αποστολής για ACS, Speedex, ΕΛΤΑ ή άλλη</h3>
+      <ol class="steps">
+        <li>Ανοίξτε την παραγγελία της COM-036 (QA ACS). Στο <strong>Shipments</strong> πατήστε <strong>Add tracking number</strong> με το πεδίο κενό.</li>
+        <li>Επιλέξτε <strong>Courier</strong> <code>ACS</code>, <strong>Tracking number</strong> <code>QA123456</code> και πατήστε <strong>Add tracking number</strong>. Προσθέστε δεύτερο με <code>Other</code> / <code>X1</code>, και μετά ξανά τον ίδιο αριθμό ACS.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κενό: <code>Type the tracking number the courier gave you.</code> Στη συνέχεια η λίστα δείχνει <code>ACS QA123456</code> με τη σημερινή ημερομηνία και έναν σύνδεσμο <strong>Track parcel</strong> προς το <code>https://www.acscourier.net/el/track-and-trace?trackingNumber=QA123456</code>· το <code>Other X1</code> δεν έχει σύνδεσμο. Ο διπλός αριθμός ACS απορρίπτεται με σφάλμα και δεν δημιουργείται δεύτερη γραμμή. Σε αυτή την παραγγελία δεν υπάρχει κουμπί <strong>Create BoxNow voucher</strong>. Η κατάσταση της παραγγελίας δεν άλλαξε και δεν στάλθηκε email.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/OrderFulfilment.tsx</code> (<code>OrderShipments</code>) · <code>src/cms/modules/commerce/shipping-methods.ts</code> (<code>TRACKING_URLS</code>, <code>shipmentActions</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-086" data-priority="P2">
+      <h3>BoxNow: μια απλήρωτη παραγγελία με αντικαταβολή καταχωρίζεται ως COD</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Έχει ολοκληρωθεί η COM-084· τρόπος πληρωμής Manual.</p>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s "$BASE/api/cms/commerce/lockers?postal=105" -H 'X-Real-IP: 10.80.0.5'</code> και επιλέξτε ένα id και ένα όνομα θυρίδας.</li>
+        <li>Υποβάλετε μια παραγγελία μέσω του API όπως στη COM-036 με το id του τρόπου <code>QA BoxNow</code> και <code>"lockerId":"&lt;id&gt;","lockerName":"&lt;name&gt;"</code>. Στη συνέχεια δοκιμάστε μία φορά χωρίς <code>lockerId</code>.</li>
+        <li>Ανοίξτε την παραγγελία, πατήστε <strong>Create BoxNow voucher</strong> και επιβεβαιώστε με <strong>Create voucher</strong>.</li>
+        <li>Αναζητήστε το voucher στην πύλη συνεργατών του stage της BoxNow.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: έως 50 θυρίδες των οποίων ο ταχυδρομικός κώδικας αρχίζει από 105. Βήμα 2: η παραγγελία δημιουργείται με <code>cod</code> ίσο με το σύνολό της· χωρίς θυρίδα: <code>400</code> <code>Please choose a locker for this delivery option.</code> Βήμα 3: το Delivery του πλαισίου δείχνει <code>Shipping method QA BoxNow · BoxNow (locker)</code> και <code>BoxNow locker &lt;name&gt; (&lt;id&gt;)</code>· μετά το voucher, μια γραμμή <code>BoxNow (locker) &lt;voucher&gt;</code> με <strong>Track parcel</strong> προς το <code>https://boxnow.gr/track/&lt;voucher&gt;</code>. Βήμα 4: το δέμα έχει τρόπο πληρωμής COD με ποσό είσπραξης ίσο με το σύνολο της παραγγελίας σε ευρώ.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/shipping-service.ts</code> (<code>createShipment</code>) · <code>src/cms/modules/commerce/couriers/boxnow.ts</code> (<code>createVoucher</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-087" data-priority="P3">
+      <h3>BoxNow: μια πληρωμένη παραγγελία είναι προπληρωμένη· τα στοιχεία σύνδεσης που λείπουν εξηγούνται</h3>
+      <ol class="steps">
+        <li>Υποβάλετε άλλη μια παραγγελία με θυρίδα BoxNow, σημειώστε την <strong>paid</strong>, δημιουργήστε το voucher· ελέγξτε τον τρόπο πληρωμής του στην πύλη συνεργατών.</li>
+        <li>Διαγράψτε και τα δύο στοιχεία σύνδεσης της BoxNow και πατήστε <strong>Create BoxNow voucher</strong> σε μια τρίτη παραγγελία BoxNow. Εισαγάγετε ξανά τα στοιχεία σύνδεσης.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: καταχωρίζεται ως προπληρωμένη, χωρίς ποσό είσπραξης. Βήμα 2: κόκκινο κείμενο <code>BoxNow is not connected. Add the client ID and secret in Settings → Ecommerce → Shipping → Couriers.</code> και καμία γραμμή αποστολής.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/shipping-service.ts</code> (<code>codAmount</code> μόνο όταν δεν είναι πληρωμένη) · <code>BOXNOW_NOT_CONNECTED</code></p>
+    </article>
+
+    <article class="tc" id="COM-088" data-priority="P2">
+      <h3>Το email αποστολής και η παρακολούθηση αποστολής</h3>
+      <ol class="steps">
+        <li>Σημειώστε την παραγγελία της COM-085 ως <strong>paid</strong> και μετά ως <strong>fulfilled</strong>. Ανοίξτε το email του πελάτη.</li>
+        <li>Αναζητήστε την παραγγελία στο <code>/en/order</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο (γνωστό κενό):</span> Το email <code>Order update ORD-…</code> γράφει <code>Your order has been shipped.</code> και τον κωδικό αναφοράς, αλλά δεν περιέχει αριθμό ή σύνδεσμο παρακολούθησης αποστολής· ούτε η σελίδα αναζήτησης δείχνει παρακολούθηση, μόνο <code>Shipped</code>. Η προσθήκη αριθμού παρακολούθησης δεν στέλνει κανένα email (το λέει η επεξήγηση του Shipments). Καταγράψτε το ως email παρακολούθησης αποστολής που λείπει.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/orders.ts</code> (<code>sendOrderStatusEmail</code>) · <code>src/cms/admin/OrderFulfilment.tsx</code> (επεξήγηση του Shipments)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-jobs">
+    <h2>Προγραμματισμένες εργασίες: ληξιπρόθεσμες παραγγελίες και εγκαταλελειμμένα καλάθια</h2>
+    <p class="intro">Οι εργασίες καλούνται όπως στο docs/dev-guides/10-settings-cron-operations.md §3.4: <code>curl -s -X POST -H "x-cron-secret: $CRON" "$BASE/api/cms/cron/&lt;job&gt;"</code>. Το 404 για απενεργοποιημένο module και το 401 για λάθος μυστικό καλύπτονται στη SET-042.</p>
+
+    <article class="tc" id="COM-089" data-priority="P2">
+      <h3>Οι απλήρωτες παραγγελίες με κάρτα ακυρώνονται μετά τον χρόνο αναμονής</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Η εγκαταλελειμμένη παραγγελία Stripe της COM-054 και η παραγγελία που ακυρώθηκε στο PayPal στη COM-057 είναι ακόμη <code>pending</code>· υπάρχει μια παραγγελία manual σε εκκρεμότητα.</p>
+      <ol class="steps">
+        <li>Κάντε και τις τρεις παλαιότερες: <code>UPDATE orders SET created_at = NOW() - INTERVAL 72 HOUR WHERE reference IN ('&lt;stripe&gt;','&lt;paypal&gt;','&lt;manual&gt;');</code></li>
+        <li>Εκτελέστε την εργασία <code>commerce-stale-orders</code> και στη συνέχεια ελέγξτε τις τρεις παραγγελίες και το γραμματοκιβώτιο του πελάτη.</li>
+        <li>Εκτελέστε ξανά την εργασία.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 2: <code>{"ok":true,"data":{"status":"ran","result":{"checked":…,"cancelled":[&lt;stripe id&gt;,&lt;paypal id&gt;]}}}</code>. Οι δύο παραγγελίες μέσω πύλης πληρωμής είναι <code>cancelled</code> και κάθε πελάτης λαμβάνει <code>Your order has been cancelled.</code>· η παραγγελία manual μένει <code>pending</code>. Βήμα 3: <code>"cancelled":[]</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/stale-orders.ts</code> · docs/dev-guides/08-commerce.md §4.8</p>
+    </article>
+
+    <article class="tc" id="COM-090" data-priority="P3">
+      <h3>Η ρύθμιση του χρόνου αναμονής και παραγγελία πληρωμένη εν μέρει με δωροκάρτα</h3>
+      <ol class="steps">
+        <li>Ορίστε το <strong>Cancel unpaid card orders after (hours)</strong> σε <code>0</code>, κάντε παλαιότερη μια νέα απλήρωτη παραγγελία Stripe και εκτελέστε την εργασία. Επαναφέρετε σε 48.</li>
+        <li>Με Stripe, υποβάλετε μια παραγγελία πληρωμένη εν μέρει με δωροκάρτα και εγκαταλείψτε τη φόρμα κάρτας· κάντε την παλαιότερη και εκτελέστε την εργασία.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>"checked":0,"cancelled":[]</code>. Βήμα 2: η παραγγελία δεν ακυρώνεται (η καταχωρισμένη πληρωμή με δωροκάρτα μετρά ως συνδεδεμένα χρήματα) και το υπόλοιπο της κάρτας μένει δεσμευμένο μέχρι να την ακυρώσει ένας διαχειριστής· καταγράψτε αυτόν τον γνωστό περιορισμό.</p>
+      <p class="ref">Αναφ.: docs/dev-guides/08-commerce.md §10 (εργασία ληξιπρόθεσμων παραγγελιών και δωροκάρτες)</p>
+    </article>
+
+    <article class="tc" id="COM-091" data-priority="P2">
+      <h3>Ένα καλάθι καταγράφεται μόλις πληκτρολογηθεί το email</h3>
+      <ol class="steps">
+        <li>Ορίστε <code>COMMERCE_ABANDONED_DELAY_MINUTES=1</code> στο <code>.env.local</code> και κάντε επανεκκίνηση.</li>
+        <li>Σε ιδιωτικό παράθυρο προσθέστε το QA Mug και το QA T-shirt Red/S, ανοίξτε το <code>/en/checkout</code>, πληκτρολογήστε το email του πελάτη και περιμένετε δύο δευτερόλεπτα. Κλείστε το παράθυρο χωρίς να παραγγείλετε.</li>
+        <li>Εκτελέστε <code>SELECT id, email, status, subtotal, reminder_sent_at FROM abandoned_carts ORDER BY id DESC LIMIT 1;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Μία γραμμή για εκείνο το email, κατάσταση <code>pending</code>, subtotal 3200, <code>reminder_sent_at</code> NULL. Εμφανίζεται στο <strong>Abandoned carts</strong> (<code>/admin/abandoned</code>) στο <strong>Pending</strong>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/abandoned.ts</code> (<code>captureCart</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-092" data-priority="P2">
+      <h3>Το email υπενθύμισης και η επιστροφή στο καλάθι</h3>
+      <ol class="steps">
+        <li>Περιμένετε ένα λεπτό, εκτελέστε την εργασία <code>commerce-abandoned-reminders</code> και ανοίξτε το email.</li>
+        <li>Πατήστε <strong>Return to your cart</strong> σε νέο ιδιωτικό παράθυρο.</li>
+        <li>Εκτελέστε ξανά την εργασία.</li>
+      </ol>
+      <ul class="exp">
+        <li>Εργασία: <code>"result":{"sent":1,"skippedSuppressed":0,"cappedBy":0}</code>.</li>
+        <li>Θέμα email <code>You left something in your cart</code>, κείμενο <code>Your items are waiting. Pick up where you left off whenever you like.</code>, μια λίστα <code>QA Mug × 1</code>, <code>QA T-shirt — Colour: Red, Size: S × 1</code>, το κουμπί, <code>If you already completed your purchase, please ignore this message.</code> και ένας μικρός σύνδεσμος <code>Don’t want reminders like this? Unsubscribe</code>.</li>
+        <li>Ο σύνδεσμος <code>/en/cart/recover?token=…</code> γεμίζει ξανά το καλάθι και οδηγεί στο <code>/en/checkout</code> με τις δύο γραμμές. Η γραμμή στο διαχειριστικό δείχνει <code>opened</code> και κατάσταση <code>reminded</code>.</li>
+        <li>Δεύτερη εκτέλεση: <code>"sent":0</code> (μία υπενθύμιση ανά καλάθι).</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/abandoned.ts</code> (<code>EMAIL_COPY</code>, <code>recoverUrl</code>, <code>processReminders</code>) · <code>src/components/shop/cart/RecoverCartClient.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-093" data-priority="P2">
+      <h3>Διαγραφή από τις υπενθυμίσεις, και μια παραγγελία μετατρέπει το καλάθι</h3>
+      <ol class="steps">
+        <li>Πατήστε τον σύνδεσμο <strong>Unsubscribe</strong> του email και επιβεβαιώστε (η ίδια η σελίδα καλύπτεται στη MKT-048).</li>
+        <li>Καταγράψτε ένα νέο καλάθι με το ίδιο email· περιμένετε ένα λεπτό και εκτελέστε την εργασία υπενθυμίσεων.</li>
+        <li>Καταγράψτε ένα καλάθι με το <code>qa.other@example.com</code> και στη συνέχεια υποβάλετε μια παραγγελία με αυτό το email· εκτελέστε την εργασία.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 2: δεν καταγράφεται νέα γραμμή για τη διεύθυνση που διαγράφηκε (ή, αν υπάρχει, η εργασία αναφέρει <code>"skippedSuppressed":1</code>) και δεν φτάνει email. Βήμα 3: η κατάσταση του καλαθιού γίνεται <code>converted</code> αμέσως μετά την παραγγελία και δεν στέλνεται υπενθύμιση. Τα email της παραγγελίας εξακολουθούν να φτάνουν στη διεύθυνση που διαγράφηκε.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/abandoned.ts</code> (<code>captureCart</code>, <code>markConvertedByEmail</code>) · MKT-048</p>
+    </article>
+
+    <article class="tc" id="COM-094" data-priority="P3">
+      <h3>Η οθόνη Abandoned carts</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/admin/abandoned</code>· εναλλάξτε μεταξύ <strong>All</strong>, <strong>Pending</strong>, <strong>Reminded</strong>, <strong>Converted</strong>.</li>
+        <li>Καταγράψτε ένα νέο καλάθι, περιμένετε ένα λεπτό και πατήστε <strong>Send all due reminders</strong>.</li>
+        <li>Διαγράψτε μια γραμμή με την ενέργεια διαγραφής της.</li>
+        <li>Αφαιρέστε το <code>COMMERCE_ABANDONED_DELAY_MINUTES</code> από το <code>.env.local</code> και κάντε επανεκκίνηση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Στήλες Email, Items, Value, Status, Captured, Reminded. Βήμα 2: <code>Sent 1 reminder(s).</code> Βήμα 3: <code>Delete this captured cart?</code> με το email, κουμπί <strong>Delete cart</strong>· η γραμμή εξαφανίζεται και ο σύνδεσμος ανάκτησής της δεν επαναφέρει πλέον τίποτε.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/AbandonedCartsTable.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-customers">
+    <h2>Λογαριασμοί πελατών</h2>
+    <p class="intro">Οι λογαριασμοί πελατών πρέπει να είναι ενεργοί (COM-001). Χρησιμοποιήστε νέο ιδιωτικό παράθυρο για τον πελάτη. Οι κωδικοί πρόσβασης χρειάζονται τουλάχιστον 10 χαρακτήρες με ένα πεζό και ένα κεφαλαίο γράμμα, έναν αριθμό και ένα σύμβολο· αυτή η σελίδα χρησιμοποιεί το <code>Qa-Shop-Pass-2026!</code>.</p>
+
+    <article class="tc" id="COM-095" data-priority="P1">
+      <h3>Εγγραφή λογαριασμού</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Εκτελέστε την πρώτα με ορισμένα τα κλειδιά reCAPTCHA.</p>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/en/account/register</code>. <strong>Full name</strong> <code>QA Customer</code>, <strong>Email</strong> το γραμματοκιβώτιο του πελάτη, <strong>Password</strong> <code>short</code>· πατήστε <strong>Create an account</strong>.</li>
+        <li>Χρησιμοποιήστε το <code>Qa-Shop-Pass-2026!</code> και υποβάλετε ξανά.</li>
+      </ol>
+      <ul class="exp">
+        <li>Με ορισμένα τα κλειδιά η φόρμα θα έπρεπε να λειτουργεί· καταγράψτε Αποτυχία αν εμφανίζεται <code>Captcha check failed. Please try again.</code> (οι φόρμες λογαριασμού δεν στέλνουν token captcha), και στη συνέχεια αδειάστε τα κλειδιά και συνεχίστε.</li>
+        <li>Αδύναμος κωδικός: <code>Password needs at least 10 characters, an uppercase letter, a number, a symbol.</code> (οι κανόνες που δεν τηρούνται).</li>
+        <li>Έγκυρος: <code>If that address can be used, you will get an email with the next step.</code>· φτάνει ένα email <code>Confirm your email</code> με κουμπί <strong>Confirm email</strong> προς το <code>/en/account/verify?token=…</code>.</li>
+        <li>Το <code>SELECT email, email_verified_at, status FROM customers WHERE email = '&lt;customer&gt;';</code> δείχνει τη διεύθυνση με πεζά, <code>email_verified_at</code> NULL, <code>active</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/account/AccountForms.tsx</code> · <code>src/cms/modules/customers/routes.ts</code> · <code>src/cms/modules/customers/emails.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-096" data-priority="P2">
+      <h3>Επαλήθευση του email· ένας παλιός σύνδεσμος</h3>
+      <ol class="steps">
+        <li>Πατήστε <strong>Confirm email</strong>.</li>
+        <li>Ανοίξτε ξανά τον ίδιο σύνδεσμο.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>Confirming…</code> και μετά <code>Your email is confirmed.</code>· το <code>email_verified_at</code> ορίζεται. Οι παραγγελίες επισκέπτη που υποβλήθηκαν νωρίτερα με αυτό το email συνδέονται πλέον με τον λογαριασμό (το <code>SELECT COUNT(*) FROM orders WHERE customer_id = &lt;id&gt;;</code> τις μετρά). Βήμα 2: <code>This link is no longer valid. Ask for a new one.</code></p>
+      <p class="ref">Αναφ.: <code>src/components/account/VerifyClient.tsx</code> · <code>src/cms/modules/customers/service.ts</code> (<code>claimGuestOrders</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-097" data-priority="P2">
+      <h3>Σύνδεση, η σελίδα του λογαριασμού, αποσύνδεση</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/en/account</code> χωρίς σύνδεση.</li>
+        <li>Συνδεθείτε με λάθος κωδικό και μετά με τον σωστό.</li>
+        <li>Πατήστε <strong>Sign out</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 1 ανακατευθύνει στο <code>/en/account/login</code> (<code>Sign in to see your orders and saved addresses.</code>)· σε αυτή τη σελίδα δεν υπάρχει σύνδεσμος για εγγραφή ή για επαναφορά κωδικού (καταγράψτε το ως κενό UX). Λάθος κωδικός: <code>Those details do not match an account.</code> Σωστός: <code>My account</code>, <code>Signed in as &lt;email&gt;</code>, σύνδεσμοι <strong>My orders</strong>, <strong>My addresses</strong>, <strong>My details</strong>, <strong>Data and privacy</strong>· η κεφαλίδα δείχνει τον σύνδεσμο του λογαριασμού. Η αποσύνδεση σας αφήνει αποσυνδεδεμένους· το <code>/en/account</code> ανακατευθύνει ξανά.</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/account/page.tsx</code> · <code>src/app/[locale]/account/require-customer.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-098" data-priority="P2">
+      <h3>Ξέχασα τον κωδικό και επαναφορά</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/en/account/forgot</code>, εισαγάγετε το email του πελάτη και πατήστε <strong>Send me a link</strong>. Επαναλάβετε με το <code>nobody@example.com</code>.</li>
+        <li>Ανοίξτε τον σύνδεσμο <strong>Set a new password</strong> του email, εισαγάγετε νέο ισχυρό κωδικό και πατήστε <strong>Set password</strong>. Συνδεθείτε με αυτόν.</li>
+        <li>Ανοίξτε ξανά τον σύνδεσμο επαναφοράς.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και οι δύο διευθύνσεις λαμβάνουν την ίδια απάντηση <code>If an account exists for that address, we have sent a link.</code>· μόνο η πραγματική λαμβάνει το <code>Set a new password</code> (ισχύει μία ώρα). Η επαναφορά οδηγεί στη σελίδα σύνδεσης και ο νέος κωδικός λειτουργεί· κάθε άλλη ενεργή συνεδρία αυτού του πελάτη αποσυνδέεται. Ο σύνδεσμος που χρησιμοποιείται ξανά γράφει <code>This link is no longer valid. Ask for a new one.</code> Η ίδια σημείωση για το captcha με τη COM-095 ισχύει για το <strong>Send me a link</strong>.</p>
+      <p class="ref">Αναφ.: <code>src/components/account/AccountForms.tsx</code> · <code>src/cms/modules/customers/tokens.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-099" data-priority="P2">
+      <h3>Τα στοιχεία μου και αλλαγή κωδικού πρόσβασης</h3>
+      <ol class="steps">
+        <li>Στο <strong>My details</strong> αλλάξτε τα <strong>Full name</strong> και <strong>Phone</strong>, τσεκάρετε το <code>Send me offers and news</code> και πατήστε <strong>Save</strong>.</li>
+        <li>Στο <strong>Change password</strong> εισαγάγετε λάθος <strong>Current password</strong>· στη συνέχεια τον σωστό και έναν νέο ισχυρό κωδικό.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>Saved.</code> και οι τιμές διατηρούνται μετά την ανανέωση. Λάθος τρέχων κωδικός: σφάλμα. Σωστός: <code>Password changed. Please sign in again.</code> (<code>Changing your password signs out every device, including this one.</code>) και ένα email <code>Your password was changed</code>.</p>
+      <p class="ref">Αναφ.: <code>src/components/account/AccountPanels.tsx</code> · <code>src/cms/modules/customers/emails.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-100" data-priority="P2">
+      <h3>Διευθύνσεις: προσθήκη, ορισμός προεπιλογής, αφαίρεση</h3>
+      <ol class="steps">
+        <li>Στο <strong>My addresses</strong> (<code>Used to prefill the checkout form.</code>) συμπληρώστε το <strong>New address</strong>: <code>Address name (e.g. Home)</code> <code>Home</code>, όνομα, <strong>Address</strong> <code>Odos 5</code>, <strong>Postcode</strong> <code>10558</code>, <strong>City</strong> <code>Athina</code>, <strong>Country</strong> <code>Greece</code>, τηλέφωνο· <strong>Save</strong>.</li>
+        <li>Αλλάξτε τη χώρα σε <code>GR</code> και αποθηκεύστε. Προσθέστε μια δεύτερη διεύθυνση <code>Work</code> (χώρα <code>GR</code>), αφήνοντας κενό το <strong>Address (line 2)</strong>.</li>
+        <li>Πατήστε <strong>Make default</strong> στο Work· στη συνέχεια <strong>Remove</strong> στο Home.</li>
+        <li>Ανοίξτε το <code>/en/checkout</code> με κάτι στο καλάθι.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το <code>Greece</code> απορρίπτεται (η χώρα πρέπει να είναι διψήφιος κωδικός, αλλά η φόρμα δεν το λέει· καταγράψτε το ασαφές μήνυμα). Το <code>GR</code> αποθηκεύεται: <code>Saved.</code> και εμφανίζεται η κάρτα.</li>
+        <li>Μια κάρτα με σήμανση <code>Default for delivery</code> δεν έχει κουμπί Make default· μετά το πάτημα τη σήμανση την έχει το Work. Το Remove διαγράφει το Home χωρίς ερώτηση.</li>
+        <li>Το checkout είναι προσυμπληρωμένο από την προεπιλεγμένη διεύθυνση, και το email είναι αυτό του λογαριασμού.</li>
+        <li>Καταγράψτε αν μια διεύθυνση μπορεί να επεξεργαστεί επί τόπου: η σελίδα προσφέρει μόνο Make default και Remove.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/components/account/AccountPanels.tsx</code> (<code>AddressesPanel</code>) · <code>src/cms/modules/customers/routes.ts</code> (<code>addressBody</code>) · <code>src/cms/modules/customers/checkout-service.ts</code> (<code>checkoutPrefill</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-101" data-priority="P2">
+      <h3>Ιστορικό παραγγελιών, και λογαριασμός που δημιουργείται στο checkout</h3>
+      <ol class="steps">
+        <li>Συνδεδεμένοι, υποβάλετε μια παραγγελία manual. Ανοίξτε το <strong>My orders</strong> και την παραγγελία.</li>
+        <li>Αποσυνδεθείτε. Σε ιδιωτικό παράθυρο υποβάλετε μια παραγγελία με νέο email, τσεκάροντας το <code>Create an account so I can see my orders</code> και με ισχυρό <strong>Password</strong>.</li>
+        <li>Υποβάλετε άλλη μια παραγγελία επισκέπτη με το ίδιο νέο email (χωρίς το κουτί λογαριασμού). Επαληθεύστε το email από το μήνυμα επαλήθευσης, συνδεθείτε και ανοίξτε το <strong>My orders</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: η παραγγελία εμφανίζεται με τον κωδικό αναφοράς, τη μεταφρασμένη κατάσταση και το σύνολό της· η σελίδα της δείχνει τις γραμμές και το <code>Total</code>. Η ενότητα λογαριασμού δεν εμφανίζεται σε συνδεδεμένο πελάτη. Βήμα 2: η παραγγελία ολοκληρώνεται και φτάνει email επαλήθευσης. Βήμα 3: μετά την επαλήθευση εμφανίζονται και οι δύο παραγγελίες (η δεύτερη συνδέεται κατά την επαλήθευση). Ο κωδικός αναφοράς άλλου πελάτη στο <code>/en/account/orders/&lt;ref&gt;</code> δεν βρίσκεται.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/customers/checkout-service.ts</code> (<code>attachCheckoutAccount</code>) · <code>src/app/[locale]/account/orders/[reference]/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-102" data-priority="P3">
+      <h3>Εγγραφή διεύθυνσης που έχει ήδη λογαριασμό</h3>
+      <ol class="steps">
+        <li>Χωρίς σύνδεση, κάντε ξανά εγγραφή με το email του πελάτη.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το ίδιο ουδέτερο μήνυμα με τη COM-095, κανένας δεύτερος λογαριασμός, και ένα email <code>You already have an account</code> με σύνδεσμο προς τη σελίδα σύνδεσης.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/customers/emails.ts</code> (<code>existsSubject</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-103" data-priority="P2">
+      <h3>Λήψη των δεδομένων μου και διαγραφή του λογαριασμού</h3>
+      <ol class="steps">
+        <li>Στο <strong>Data and privacy</strong> πατήστε <strong>Download my data</strong>.</li>
+        <li>Πατήστε <strong>Delete account</strong>, εισαγάγετε λάθος κωδικό στο <code>Confirm with your password</code> και μετά τον σωστό.</li>
+        <li>Εκτελέστε <code>SELECT email, name, password_hash, status, deleted_at FROM customers WHERE id = &lt;id&gt;;</code> και <code>SELECT COUNT(*) FROM orders WHERE customer_id = &lt;id&gt;;</code> και <code>SELECT COUNT(*) FROM customer_addresses WHERE customer_id = &lt;id&gt;;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ένα αρχείο <code>my-data.json</code> με τα στοιχεία, τις διευθύνσεις και τις παραγγελίες. Λάθος κωδικός: σφάλμα και τίποτε δεν διαγράφεται. Σωστός: αποσύνδεση· η γραμμή έχει email <code>deleted+&lt;id&gt;-…@invalid.local</code>, name και password_hash NULL, κατάσταση <code>disabled</code>, ορισμένο <code>deleted_at</code>· 0 συνδεδεμένες παραγγελίες και 0 διευθύνσεις, ενώ οι ίδιες οι παραγγελίες εξακολουθούν να υπάρχουν. Η σύνδεση με τα παλιά στοιχεία αποτυγχάνει.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/customers/policy.ts</code> (<code>anonymisedCustomer</code>, <code>buildCustomerExport</code>)</p>
+    </article>
+
+    <article class="tc" id="COM-104" data-priority="P2">
+      <h3>Η οθόνη Customers</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <strong>Customers</strong> (<code>/admin/customers</code>). Πληκτρολογήστε μέρος ενός email στο <code>Search by name or email</code> και πατήστε <strong>Search</strong>.</li>
+        <li>Πατήστε <strong>Disable</strong> στον πελάτη που δημιουργήθηκε στο checkout· δοκιμάστε να συνδεθείτε ως αυτός· πατήστε <strong>Enable</strong>.</li>
+        <li>Αναζητήστε τρόπο για εκ νέου αποστολή του email επαλήθευσης.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Στήλες Email, Name, Orders, Registered, Last sign-in, μια σήμανση κατάστασης (<code>Active</code>, <code>Unconfirmed</code>, <code>Disabled</code>, <code>Deleted</code>) και η ενέργεια. Ο διαγραμμένος πελάτης δείχνει <code>Deleted</code> χωρίς ενέργεια. Disabled: η σύνδεση αποτυγχάνει και κάθε ανοιχτή συνεδρία τερματίζεται· το Enable τον επαναφέρει. Κανένας κωδικός δεν εμφανίζεται πουθενά. Δεν υπάρχει κουμπί εκ νέου αποστολής επαλήθευσης (το API το υποστηρίζει)· καταγράψτε το ως κενό.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/CustomersTable.tsx</code> · <code>src/cms/modules/customers/admin-routes.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-reviews">
+    <h2>Αξιολογήσεις</h2>
+
+    <article class="tc" id="COM-105" data-priority="P2">
+      <h3>Υποβολή αξιολόγησης</h3>
+      <ol class="steps">
+        <li>Στο <code>/en/shop/qa-mug</code> βρείτε το <strong>Reviews</strong> (<code>No reviews yet. Be the first!</code>) και το <strong>Write a review</strong>. Πατήστε <strong>Submit review</strong> χωρίς βαθμολογία.</li>
+        <li>Επιλέξτε 4 αστέρια, <strong>Name</strong> <code>QA Reviewer</code>, <strong>Email</strong>, <strong>Your review</strong> <code>Nice mug</code>, αφήστε κενό τον κωδικό αναφοράς παραγγελίας· υποβάλετε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>Please pick a star rating.</code>, και μετά <code>Thank you! Your review was submitted and will appear after moderation.</code> Η αξιολόγηση δεν εμφανίζεται ακόμη στη σελίδα. Το <code>SELECT status, verified, rating FROM product_reviews ORDER BY id DESC LIMIT 1;</code> δίνει <code>pending</code>, 0, 4.</p>
+      <p class="ref">Αναφ.: <code>src/components/shop/ReviewForm.tsx</code> · <code>src/cms/modules/commerce/reviews.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-106" data-priority="P2">
+      <h3>Έγκριση, εμφάνιση και διαγραφή</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <strong>Reviews</strong> (<code>/admin/reviews</code>)· η καρτέλα <strong>Pending</strong> την εμφανίζει. Πατήστε <strong>Approve</strong>.</li>
+        <li>Ανανεώστε το <code>/en/shop/qa-mug</code> και το <code>/shop/qa-mug</code>.</li>
+        <li>Πατήστε <strong>Reject</strong> στην καρτέλα <strong>Approved</strong>· ανανεώστε το προϊόν. Στη συνέχεια διαγράψτε την (<code>Delete this review?</code>).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Εγκεκριμένη: η αξιολόγηση εμφανίζεται στις σελίδες και των δύο γλωσσών με 4 αστέρια και <code>1 review</code>· οι μετρητές των καρτελών αλλάζουν. Απορριφθείσα: εξαφανίζεται από τη σελίδα. Η διαγραφή αφαιρεί τη γραμμή μετά από επιβεβαίωση. Δεν στέλνεται email στον συντάκτη της αξιολόγησης.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/ReviewsTable.tsx</code> · <code>src/components/shop/ProductReviews.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-107" data-priority="P3">
+      <h3>Η σήμανση Verified purchase</h3>
+      <ol class="steps">
+        <li>Υποβάλετε μια αξιολόγηση στο <code>qa-mug</code> με τον κωδικό αναφοράς και το email μιας πληρωμένης παραγγελίας που περιέχει το QA Mug. Υποβάλετε άλλη μία με τον κωδικό αναφοράς μιας ακυρωμένης παραγγελίας.</li>
+        <li>Εγκρίνετε και τις δύο.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η πρώτη έχει <code>Verified</code> στο διαχειριστικό και <code>Verified purchase</code> στη σελίδα· η δεύτερη δεν έχει κανένα από τα δύο.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/reviews.ts</code> (<code>orderQualifiesForBadge</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-wishlist">
+    <h2>Λίστα επιθυμιών</h2>
+
+    <article class="tc" id="COM-108" data-priority="P2">
+      <h3>Ρυθμίσεις λίστας επιθυμιών και λίστα επισκέπτη</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/en/wishlist</code>. Στη συνέχεια στο Settings → Ecommerce → <strong>Wishlist</strong> τσεκάρετε το <code>Let shoppers save products to a wishlist</code>, <code>Maximum products in one wishlist</code> <code>2</code>, και πατήστε <strong>Save</strong>.</li>
+        <li>Ως επισκέπτης πατήστε <strong>Add to wishlist</strong> στο QA Mug, στο QA Candle, και μετά περάστε τον δείκτη πάνω από το κουμπί στο QA T-shirt.</li>
+        <li>Ανοίξτε το <code>/en/wishlist</code> και πατήστε <strong>Move to basket</strong> σε ένα είδος.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: σελίδα «δεν βρέθηκε» όσο η λίστα επιθυμιών είναι ανενεργή. Βήμα 2: η κεφαλίδα δείχνει <code>Wishlist (1)</code> και μετά <code>(2)</code>· το τρίτο κουμπί είναι ανενεργό με <code>A wishlist holds up to 2 products.</code> Βήμα 3: το <code>My wishlist</code> εμφανίζει και τα δύο με τρέχουσες τιμές· το Move to basket το προσθέτει στο καλάθι. Το κλειδί Local Storage <code>site-wishlist</code> περιέχει τη λίστα.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/WishlistSettings.tsx</code> · <code>src/components/shop/wishlist/*</code> · <code>src/app/[locale]/wishlist/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="COM-109" data-priority="P3">
+      <h3>Η λίστα επισκέπτη συγχωνεύεται κατά τη σύνδεση</h3>
+      <ol class="steps">
+        <li>Ως επισκέπτης αποθηκεύστε το QA Mug. Συνδεθείτε ως πελάτης του οποίου η λίστα είναι άδεια· ανοίξτε το <code>/en/wishlist</code>.</li>
+        <li>Εκτελέστε <code>SELECT product_id, variation_id FROM wishlist_items WHERE customer_id = &lt;id&gt;;</code> Ανοίξτε τον ιστότοπο σε άλλο browser συνδεδεμένοι ως ο ίδιος πελάτης.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το QA Mug βρίσκεται στη λίστα του συνδεδεμένου πελάτη, αποθηκευμένο στο <code>wishlist_items</code> (variation_id <code>''</code>), και είναι ορατό από τον άλλο browser. Στη συνέχεια επαναφέρετε το μέγιστο σε μεγαλύτερο αριθμό.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/wishlist.ts</code> · <code>src/components/shop/wishlist/WishlistProvider.tsx</code> (<code>merge</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-feeds">
+    <h2>Feeds προϊόντων και ο διακόπτης του module</h2>
+
+    <article class="tc" id="COM-110" data-priority="P2">
+      <h3>Feeds για πλατφόρμες σύγκρισης τιμών</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s -i "$BASE/feeds/skroutz.xml" | head -20</code>, και στη συνέχεια το ίδιο για τα <code>bestprice</code>, <code>shopflix</code>, <code>google-merchant.xml</code> και <code>nothing.xml</code>.</li>
+        <li>Αναζητήστε σε καθένα τα <code>qa-mug</code>, <code>qa-candle</code> (κρυφό ή όχι) και ένα πρόχειρο προϊόν.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Skroutz, BestPrice και Shopflix: XML με ρίζα <code>&lt;mywebstore&gt;</code>· Google: RSS. <code>Cache-Control: public, max-age=3600, s-maxage=3600</code>. Τα προϊόντα εμφανίζονται με το ελληνικό όνομα (προεπιλεγμένη γλώσσα), τιμή 12.00 και SKU· τα πρόχειρα και τα προϊόντα που κρύβει ο κατάλογος απουσιάζουν. <code>nothing.xml</code>: <code>404</code> <code>{"ok":false,"error":"not_found"}</code>.</p>
+      <p class="ref">Αναφ.: <code>src/app/feeds/[feed]/route.ts</code> · <code>src/cms/modules/commerce/feeds.ts</code></p>
+    </article>
+
+    <article class="tc" id="COM-111" data-priority="P3">
+      <h3>Commerce ανενεργό: τι προσθέτει αυτή η λίστα ελέγχου</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Εκτελέστε τις SET-034 έως SET-037 και SET-042 για το διαχειριστικό, τις σελίδες του καταστήματος και το cron. Αυτή η περίπτωση καλύπτει μόνο τις επιπλέον διευθύνσεις.</p>
+      <ol class="steps">
+        <li>Ξετσεκάρετε το <strong>Commerce</strong> και αποθηκεύστε. Ανοίξτε τα <code>/en/checkout</code>, <code>/en/order</code>, <code>/en/wishlist</code>, <code>/en/account</code> και <code>$BASE/feeds/skroutz.xml</code>.</li>
+        <li>Ανοίξτε ξανά τον σύνδεσμο διαγραφής της MKT-048.</li>
+        <li>Τσεκάρετε ξανά το <strong>Commerce</strong> και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τα checkout, order και wishlist εμφανίζουν τη σελίδα «δεν βρέθηκε»· το feed απαντά 404. Το <code>/en/account</code> εξακολουθεί να λειτουργεί όσο το Customer accounts είναι ενεργό (βλ. ADM-012 για αυτόν τον συνδυασμό). Ο σύνδεσμος διαγραφής εξακολουθεί να λειτουργεί (σκόπιμα δεν εξαρτάται από το module). Μετά την επανενεργοποίηση όλα τα δεδομένα QA είναι ανέπαφα.</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/checkout/page.tsx</code> · <code>src/app/[locale]/order/page.tsx</code> · <code>src/cms/modules/commerce/unsubscribe.ts</code> · docs/dev-guides/08-commerce.md §4.13</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-cleanup">
+    <h2>Καθαρισμός</h2>
+
+    <article class="tc" id="COM-112" data-priority="P3">
+      <h3>Αφαίρεση των δεδομένων QA του καταστήματος και επαναφορά ρυθμίσεων</h3>
+      <ol class="steps">
+        <li>Διαγράψτε από το διαχειριστικό τα προϊόντα, τις κατηγορίες, τις ετικέτες και τον πίνακα μεγεθών QA. Διαγράψτε τη ζώνη αποστολής QA (διαγράφονται μαζί και οι τρόποι της), τα επτά κουπόνια, και διαγράψτε τα στοιχεία σύνδεσης της BoxNow αν δεν πρέπει να παραμείνουν.</li>
+        <li>Εκτελέστε:
+<pre><code>DELETE FROM orders WHERE email IN ('qa.api@example.com','qa.other@example.com','qa.phone@example.com') OR customer_name LIKE 'QA %';
+DELETE FROM abandoned_carts WHERE email LIKE 'qa.%@example.com';
+DELETE FROM product_reviews WHERE author_name = 'QA Reviewer';</code></pre>
+          και αφαιρέστε τις δωροκάρτες και τις γραμμές πελατών QA βάσει id αν άλλες λίστες ελέγχου δεν τις προβλέπουν.</li>
+        <li>Επαναφέρετε το <strong>Payment method</strong>, αφαιρέστε τις τιμές sandbox πληρωμών και courier από το <code>.env.local</code> αν το περιβάλλον δεν πρέπει να τις κρατήσει, επαναφέρετε τα κλειδιά reCAPTCHA και επαναφέρετε τους διακόπτες των modules.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το <code>/en/shop</code> δεν εμφανίζει προϊόντα QA· το <code>/admin/orders</code> δεν εμφανίζει παραγγελίες QA· οι ρυθμίσεις είναι όπως πριν από την εκτέλεση.</p>
+      <p class="ref">Αναφ.: αυτή η λίστα ελέγχου</p>
+    </article>
+  </section>
+
+</main>
+<footer class="page">Λίστα ελέγχου 08 από 12. Τα αποτελέσματα αποθηκεύονται μόνο σε αυτόν τον browser· χρησιμοποιήστε την εξαγωγή πριν καθαρίσετε τα δεδομένα του browser. Στη συνέχεια επαναφέρετε τον τρόπο πληρωμής και τους διακόπτες των modules, αφαιρέστε τα κλειδιά sandbox που δεν πρέπει να παραμείνουν, επαναφέρετε τα κλειδιά reCAPTCHA και διαγράψτε τον κατάλογο, τις παραγγελίες, τα κουπόνια, τις δωροκάρτες και τους πελάτες QA (COM-112).</footer>
+</body>
+</html>

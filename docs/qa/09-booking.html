@@ -1,0 +1,1278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Booking checklist</title>
+<link rel="stylesheet" href="qa.css">
+<script src="qa.js" defer></script>
+</head>
+<body>
+<nav class="crumbs"><a href="index.html">CMS manual QA</a></nav>
+<header class="page">
+  <h1>09 · Booking: availability, reservations &amp; payments</h1>
+  <p class="scope">The booking module end to end, for both kinds: <strong>transport</strong> (a calendar day: tours, boat days, charters; shared, exclusive and per-option allocation, party size, capacity per day) and <strong>stay</strong> (a range of nights: check-in, check-out, nightly and seasonal rates, minimum stay, occupancy, fees). Covered here: the Booking settings; building experiences, options, prices, seasons, cut-off and advance limits; the admin Availability calendar (capacity and price overrides, closed dates, the overbooking report); the public pages <code>/booking</code> and <code>/en/booking</code> (listing and detail), the date picker and its agreement with what can really be booked; quotes; form validation; holds and their expiry through the <code>booking-expire</code> job; request and instant flows; deposits and full payments with Stripe, PayPal and Viva in sandbox; the pay-balance page; guest lookup; concurrency and overbooking; late payments that cannot be applied (“Needs action”); the Reservations screen, its drawer, status moves, manual payments and refunds; and the customer emails for every status. Covered elsewhere and referenced by ID: the Booking switch and its 404s (SET-038, ADM-038), scheduled jobs of a disabled module (SET-042), the booking tables and their invariants (DB-053 to DB-058, DB-091 to DB-093), booking permissions (AUTH-055), the sidebar entries (ADM-010, ADM-017), the admin bar on booking pages (ADM-027, ADM-060), booking addresses in the sitemap (MED-079), trip and stay JSON-LD (MED-094, MED-095), and payment-provider sandbox setup (COM-051, COM-055, COM-058). You need: a test environment reachable from the internet (for PayPal and Viva webhooks), sandbox accounts at Stripe, PayPal and Viva, a mailbox you can read as the customer and one as the operator, database client access, a terminal with <code>curl</code>, and two browsers (or a normal and a private window).</p>
+</header>
+<main>
+
+  <section class="suite" id="suite-prep">
+    <h2>Before you start</h2>
+    <p class="intro">Checklists 01 (migrations, seeds, superadmin <code>qa-admin@example.com</code>) and 07 (MKT-001: outgoing mail works) must be done. Sign in as <code>qa-admin@example.com</code> unless a case says otherwise. URLs use <code>http://localhost:3002</code>; on the hosted test environment use its address. Greek is the default language and has no prefix: <code>/booking</code> is Greek, <code>/en/booking</code> English. Most steps use the English pages so quoted text can be compared directly. Admin money is shown in Greek format (<code>130,00 €</code>); the English public pages show <code>€130.00</code>. Database money is in cents.</p>
+    <div class="callout">
+      <p><strong>Never use live keys.</strong> Stripe keys must start <code>sk_test_</code> / <code>pk_test_</code>, <code>PAYPAL_ENV=sandbox</code>, <code>VIVA_ENV=demo</code>. Configure the providers and their webhooks exactly as in COM-051, COM-055 and COM-058 (bookings settle through the same webhook URLs); only the site-wide choice differs: booking money uses <strong>Settings</strong> → <strong>Booking</strong> → <strong>Payment method</strong>, not the Ecommerce one.</p>
+      <p><strong>Terminal.</strong> In the project folder run <code>BASE=http://localhost:3002</code>, <code>CRON='&lt;value of CMS_CRON_SECRET&gt;'</code>, and copy the admin <code>cms_session</code> cookie into <code>S</code> as in checklist 05 (“Using curl with a session”); add <code>-b "cms_session=$S"</code> to admin calls. Public booking endpoints are rate limited per address (request 5/min, quote and availability 60/min, lookup 20/min, pay 10/min): give each curl its own <code>-H 'X-Real-IP: 10.90.0.N'</code> (a new N per case).</p>
+      <p><strong>The expiry sweep.</strong> Run it as in SET-042 and docs/dev-guides/10-settings-cron-operations.md §3.4: <code>curl -s -X POST -H "x-cron-secret: $CRON" "$BASE/api/cms/cron/booking-expire"</code>. It answers <code>{"ok":true,"data":{"status":"ran","result":{"expired":N}}}</code>.</p>
+      <p><strong>Reservation at a glance.</strong> Many cases end with these queries; replace the reference and the id:</p>
+<pre><code>SELECT id, reference, status, mode, allocation_mode, slot_date, end_date, nights, persons, adults, children,
+       resource_label, total, deposit_amount, amount_paid, expires_at, email_status,
+       JSON_EXTRACT(metadata,'$.attention.reason') AS attention
+FROM reservations WHERE reference = 'BKG-2026-XXXXXXXX';
+
+SELECT slot_key, slot_date, seats, state, expires_at FROM reservation_holds
+WHERE reservation_id = &lt;id&gt; ORDER BY slot_key, slot_date;
+
+SELECT id, provider, provider_ref, status, amount, JSON_EXTRACT(metadata,'$.surcharge') AS surcharge,
+       JSON_EXTRACT(metadata,'$.transactionId') AS viva_tx, JSON_EXTRACT(metadata,'$.captureId') AS pp_capture,
+       JSON_EXTRACT(metadata,'$.refundOf') AS refund_of, JSON_EXTRACT(metadata,'$.refundedAmount') AS refunded
+FROM reservation_payments WHERE reservation_id = &lt;id&gt; ORDER BY id;
+
+SELECT kind, from_status, to_status, recipient, email_status FROM reservation_events
+WHERE reservation_id = &lt;id&gt; ORDER BY id;</code></pre>
+      <p><strong>Slot keys.</strong> <code>SELECT slug, translation_group_id, JSON_EXTRACT(data,'$.options[*].id') AS option_ids FROM documents WHERE type = 'booking' AND locale = 'el' AND slug LIKE 'qa-%';</code> An experience's day ledger is <code>exp:&lt;translation_group_id&gt;</code>, an option's is <code>res:&lt;option id&gt;</code>. Per-date overrides: <code>SELECT * FROM booking_slots WHERE slot_date = '&lt;date&gt;';</code></p>
+      <p><strong>Dates.</strong> Unless a case says otherwise, pick booking dates 5 to 50 days ahead that are not between 20 and 31 December (the QA seasons), and use a fresh date for each case so earlier bookings do not interfere. “D” in a case means the date you chose; write it down.</p>
+      <p><strong>Invariants.</strong> After the payment and refund suites, run DB-091, DB-092 and DB-093 from checklist 02 and compare with the notes in BKG-095.</p>
+    </div>
+
+    <article class="tc" id="BKG-001" data-priority="P1">
+      <h3>Switch booking on and set the Booking settings</h3>
+      <ol class="steps">
+        <li>Open <code>/admin/settings?tab=Modules</code>, tick <strong>Booking</strong>, click <strong>Save settings</strong> (SET-038 covers off/on in detail).</li>
+        <li>Open <code>/admin/settings?tab=Booking</code>. Set <strong>What you take bookings for</strong>: both boxes ticked; <strong>Booking mode</strong> <code>Request first — you confirm, then the customer pays</code>; <strong>Booking currency</strong> <code>EUR</code>; <strong>Timezone</strong> <code>Europe/Athens</code>; <strong>Notify these addresses</strong> the operator mailbox; <strong>Payment method</strong> <code>Manual / bank transfer</code>; <strong>Payment instructions</strong> <code>QA Bank, IBAN GR00 0000 0000 0000 0000 0000 000, quote your booking reference</code>. Leave every other field empty. Click <strong>Save settings</strong>.</li>
+        <li>Run <code>SELECT `key`, value FROM site_settings WHERE `key` LIKE 'booking.%';</code></li>
+      </ol>
+      <ul class="exp">
+        <li><code>Settings saved.</code> The sidebar shows a BOOKING group: Categories, Types, Locations, Experiences, Reservations, Availability.</li>
+        <li>The Booking tab has these fields: What you take bookings for, Booking mode, Booking currency, Timezone, Notify these addresses, Requests lapse after (hours), Instant payment hold (minutes), Payment links expire after (days), Deposit (%), Default places per day, Payment method, Payment instructions, Card surcharge (%), PayPal surcharge (%), Viva.com surcharge (%), Default cut-off (hours before).</li>
+        <li>The query shows <code>booking.mode</code> = <code>request</code>, <code>booking.paymentProvider</code> = <code>manual</code>, <code>booking.timezone</code> = <code>Europe/Athens</code> and the instructions text.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/settings/schema.ts</code> (Booking group) · docs/dev-guides/09-booking.md §7</p>
+    </article>
+
+    <article class="tc" id="BKG-002" data-priority="P2">
+      <h3>Empty settings fall back to the code defaults</h3>
+      <ol class="steps">
+        <li>On <code>/admin/settings?tab=Booking</code> read the grey placeholders of the empty fields.</li>
+        <li>Put <code>abc</code> in <strong>Instant payment hold (minutes)</strong> and <code>Mars/Olympus</code> in <strong>Timezone</strong>, save, then open <code>/en/booking</code> (after BKG-005 exists, also the QA Boat Day page). Put both fields back to empty and save.</li>
+      </ol>
+      <ul class="exp">
+        <li>Placeholders: Requests lapse after <code>72</code>, Instant payment hold <code>20</code>, Payment links expire after <code>7</code>, Deposit <code>0</code>, Default places per day <code>1</code>, Card/PayPal/Viva surcharge <code>0</code>, Default cut-off <code>0</code>, Timezone <code>Europe/Athens</code>.</li>
+        <li>Step 2: the settings save and the public pages still work; the bad values silently fall back to 20 minutes and <code>Europe/Athens</code> (readers are total and never throw).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/booking/settings-read.ts</code> (<code>DEFAULT_PAYMENT_HOLD_MINUTES</code>, <code>DEFAULT_LEAD_TIME_HOURS = 0</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-003" data-priority="P3">
+      <h3>Selling one kind hides the Booking type selector</h3>
+      <ol class="steps">
+        <li>Untick <strong>Stays — rooms, villas, apartments (booked by the night)</strong> in <strong>What you take bookings for</strong>, save, open <strong>Experiences</strong> → <strong>+ New</strong>.</li>
+        <li>After BKG-009 exists, open QA Villa in the editor.</li>
+        <li>Tick both kinds again and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: the new form has no <strong>Booking type</strong> field and shows only transport sections (Pricing, Party size, Availability with <strong>How a date is used up</strong>). Step 2: QA Villa, already saved as a stay, still shows <strong>Booking type</strong> set to <code>Stay — room, villa, apartment (booked by the night)</code> and its stay sections, so it is not stranded. Step 3: <strong>Booking type</strong> is back on new experiences.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/fields.ts</code> (<code>resolveKindField</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-setup">
+    <h2>Admin: filter lists and experiences</h2>
+    <p class="intro">Every item is created in Greek first (the EL tab) and then translated on the EN tab with <strong>Copy from EL</strong> and <strong>Create EN</strong>, as in checklist 03. Fields marked shared (prices, dates, capacity, options) are typed once and are the same in both languages. The first save button reads <strong>Create Experience</strong>, later ones <strong>Save EL</strong> / <strong>Save EN</strong>. Set <strong>Status — EL</strong> and <strong>Status — EN</strong> to <code>published</code> unless a case says otherwise.</p>
+
+    <article class="tc" id="BKG-004" data-priority="P2">
+      <h3>Create a category, a type and a location</h3>
+      <ol class="steps">
+        <li>Under BOOKING open <strong>Categories</strong> → <strong>+ New</strong>: EL name <code>QA Κρουαζιέρες</code>, slug <code>qa-cruises</code>, published; EN <code>QA Cruises</code>, published.</li>
+        <li>Same under <strong>Types</strong>: <code>QA Ταχύπλοο</code> / <code>QA Speedboat</code>, slug <code>qa-speedboat</code>; and under <strong>Locations</strong>: <code>QA Μαρίνα</code> / <code>QA Marina</code>, slug <code>qa-marina</code>.</li>
+        <li>Look at the editor of the category for an <strong>SEO &amp; AEO</strong> section.</li>
+        <li>Run <code>SELECT type, locale, slug, status FROM documents WHERE slug IN ('qa-cruises','qa-speedboat','qa-marina');</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Six rows (<code>booking_category</code>, <code>vessel_type</code>, <code>departure_location</code> × <code>el</code>/<code>en</code>), all <code>published</code>. The category editor has a <strong>Parent</strong> field and <strong>no</strong> SEO &amp; AEO section (categories are filters only, with no page of their own).</p>
+      <p class="ref">Ref: <code>src/site.config.ts</code> · <code>src/cms/modules/booking/collection.ts</code> (<code>bookingTermCollection</code>) · docs/dev-guides/09-booking.md §10 (“booking_category has no route”)</p>
+    </article>
+
+    <article class="tc" id="BKG-005" data-priority="P1">
+      <h3>Create a shared transport experience (QA Boat Day)</h3>
+      <ol class="steps">
+        <li><strong>Experiences</strong> → <strong>+ New</strong>. <strong>Booking type</strong> <code>Transport — boat, helicopter, transfer (booked by the day)</code>; <strong>Experience name</strong> <code>QA Ημερήσια βόλτα</code>; slug <code>qa-boat-day</code>.</li>
+        <li><strong>Organization</strong>: Service categories <code>QA Κρουαζιέρες</code>, Vessel types <code>QA Ταχύπλοο</code>, Departure locations <code>QA Μαρίνα</code>.</li>
+        <li><strong>Pricing</strong>: <strong>Base price</strong> <code>50</code>; one <strong>Seasonal prices</strong> row From <code>12-24</code> To <code>12-26</code> Price <code>70</code>.</li>
+        <li><strong>Party size</strong>: tick <strong>Priced per party size</strong>, <strong>Minimum persons</strong> <code>1</code>, <strong>Maximum persons</strong> <code>10</code>, <strong>Pricing mode</strong> <code>Per person — base price × number of people</code>.</li>
+        <li><strong>Availability</strong>: <strong>How a date is used up</strong> <code>Shared — several bookings share the day, up to the capacity</code>; <strong>Places per day</strong> <code>6</code>; <strong>Bookable up to (days ahead)</strong> <code>60</code>; leave Season opens/closes, Cut-off and Available weekdays empty; <strong>Booking mode</strong> <code>Use the site default</code>.</li>
+        <li><strong>Extras</strong>: tick <strong>Offer extras</strong> and <strong>Multiply extras by party size</strong>; one row Name <code>QA Lunch</code>, Price <code>15</code>.</li>
+        <li><strong>Booking form</strong>: one question <code>Pick-up point</code> with options <code>Marina A</code> and <code>Marina B</code>.</li>
+        <li>Publish, <strong>Create Experience</strong>; then EN: <strong>Copy from EL</strong>, name <code>QA Boat Day</code>, question and extra names in English, published, <strong>Create EN</strong>.</li>
+        <li>Run <code>SELECT locale, status, JSON_EXTRACT(data,'$.kind'), JSON_EXTRACT(data,'$.basePrice'), JSON_EXTRACT(data,'$.capacityPerDay'), JSON_EXTRACT(data,'$.allocationMode') FROM documents WHERE type = 'booking' AND slug = 'qa-boat-day';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both saves succeed without advisory warnings. Two rows, both <code>published</code>, <code>"transport"</code>, <code>50</code>, <code>6</code>, <code>"shared"</code>: the shared values are identical in both languages.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/collection.ts</code> · docs/user-guides/src/04-kratiseis.md (“Νέα καταχώριση”)</p>
+    </article>
+
+    <article class="tc" id="BKG-006" data-priority="P2">
+      <h3>Create a per-option experience with two yachts (QA Yacht Charter)</h3>
+      <ol class="steps">
+        <li>New Transport experience <code>QA Ναύλωση σκάφους</code> / <code>QA Yacht Charter</code>, slug <code>qa-yacht-charter</code>. <strong>Base price</strong> <code>400</code>.</li>
+        <li><strong>Party size</strong>: Priced per party size on, min <code>1</code>, max <code>12</code>, <strong>Pricing mode</strong> <code>Flat price up to N people, then a charge per extra person</code>, <strong>Persons included in the flat price</strong> <code>6</code>, <strong>Charge per extra person</strong> <code>20</code>.</li>
+        <li><strong>Availability</strong>: <strong>How a date is used up</strong> <code>Per option — the chosen option is what gets used up</code>, <strong>Places per day</strong> <code>12</code>, Booking mode <code>Use the site default</code>.</li>
+        <li><strong>Options</strong>: tick <strong>Offer options</strong>, <strong>Option picker label</strong> <code>Choose your yacht</code>; rows <code>QA Yacht Alpha</code> Price <code>500</code> Bookings per day <code>1</code> Sleeps / seats <code>8</code>; <code>QA Yacht Beta</code> Price <code>700</code> Bookings per day <code>1</code> Sleeps / seats <code>12</code>.</li>
+        <li>Publish both languages. Note the two option ids with the slot-key query.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Saved and published. <code>$.options[*].id</code> returns two ids, identical in the <code>el</code> and <code>en</code> rows.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/data.ts</code> (<code>readOptions</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-007" data-priority="P2">
+      <h3>Create an exclusive and an instant experience</h3>
+      <ol class="steps">
+        <li>New Transport experience <code>QA Ηλιοβασίλεμα</code> / <code>QA Sunset Exclusive</code>, slug <code>qa-sunset-exclusive</code>: Base price <code>300</code>, <strong>Priced per party size</strong> off, <strong>How a date is used up</strong> <code>Exclusive — one booking takes the whole day</code>, Places per day empty, <strong>Booking mode</strong> <code>Instant — the customer books and pays straight away</code>.</li>
+        <li>New Transport experience <code>QA Γύρος νησιού</code> / <code>QA Island Tour</code>, slug <code>qa-island-tour</code>: Base price <code>40</code>, Priced per party size on, min <code>1</code>, max <code>10</code>, Per person, Shared, Places per day <code>20</code>, Booking mode <code>Instant — the customer books and pays straight away</code>. No extras, no questions.</li>
+        <li>Publish both in both languages.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Saved and published without warnings.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/collection.ts</code> (<code>ALLOCATION_MODE_VALUES</code>, <code>BOOKING_MODE_VALUES</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-008" data-priority="P1">
+      <h3>Create a nightly stay without options (QA Villa)</h3>
+      <ol class="steps">
+        <li>New experience, <strong>Booking type</strong> <code>Stay — room, villa, apartment (booked by the night)</code>, <code>QA Βίλα</code> / <code>QA Villa</code>, slug <code>qa-villa</code>.</li>
+        <li><strong>Nightly rates</strong>: <strong>Rate per night</strong> <code>100</code>; one <strong>Seasonal rates</strong> row From <code>12-20</code> To <code>12-31</code> Rate per night <code>150</code> <strong>Minimum nights in this season</strong> <code>3</code>.</li>
+        <li><strong>Nights &amp; arrival</strong>: <strong>Minimum nights</strong> <code>2</code>, <strong>Maximum nights</strong> <code>7</code>, Check-in days and Check-out days empty.</li>
+        <li><strong>Occupancy</strong>: <strong>Guests included in the rate</strong> <code>2</code>, <strong>Maximum guests</strong> <code>4</code>, <strong>Charge per extra guest, per night</strong> <code>20</code>, tick <strong>Accept children at a different rate</strong>, <strong>A child is under</strong> <code>12</code>, <strong>Charge per child, per night</strong> <code>10</code>.</li>
+        <li><strong>Fees &amp; taxes</strong>: <code>QA Cleaning</code> Amount <code>30</code> Charged <code>Once per booking</code>; <code>QA City tax</code> Amount <code>2</code> Charged <code>Per night</code>.</li>
+        <li><strong>Availability</strong>: Places per day empty, Booking mode <code>Instant — the customer books and pays straight away</code>. Publish both languages.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The stay form shows Nightly rates, Nights &amp; arrival, Occupancy and Fees &amp; taxes, and hides Pricing, Party size, <strong>How a date is used up</strong> and <strong>Available weekdays</strong>. Saved and published without warnings; <code>$.kind</code> is <code>"stay"</code> in both rows.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/collection.ts</code> (<code>showIf</code> stay/transport) · <code>src/cms/modules/booking/stay.ts</code></p>
+    </article>
+
+    <article class="tc" id="BKG-009" data-priority="P2">
+      <h3>Create a stay with two rooms as options (QA Suites)</h3>
+      <ol class="steps">
+        <li>New Stay <code>QA Σουίτες</code> / <code>QA Suites</code>, slug <code>qa-suites</code>: Rate per night <code>90</code>, Minimum nights <code>1</code>, Maximum guests empty, Booking mode Instant.</li>
+        <li><strong>Options</strong>: Offer options on, label <code>Choose your room</code>; <code>QA Sea View</code> Price <code>120</code> Bookings per day <code>1</code> Sleeps / seats <code>2</code>; <code>QA Garden</code> Price <code>90</code> Bookings per day <code>1</code> Sleeps / seats <code>3</code>. Publish both languages.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Saved and published. The option Price help reads that it <em>replaces</em> the rate per night, not adds to it.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/collection.ts</code> (option <code>cost</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-010" data-priority="P2">
+      <h3>Pricing warnings do not block a save, but a broken price is not bookable</h3>
+      <ol class="steps">
+        <li>Create a draft transport experience <code>qa-broken</code> (Base price <code>10</code>) with two <strong>Seasonal prices</strong> rows <code>06-01</code>–<code>06-30</code> Price <code>20</code> and <code>06-15</code>–<code>07-15</code> Price <code>30</code>. Save.</li>
+        <li>Publish it anyway in EN and open <code>/en/booking/qa-broken</code>; pick any date.</li>
+        <li>Run <code>curl -s -X POST "$BASE/api/cms/booking/request" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.90.0.1' -d '{"slug":"qa-broken","locale":"en","date":"&lt;D&gt;","persons":1,"customer":{"name":"QA Curl","email":"qa.curl@example.com"},"acceptTerms":true}' -w ' %{http_code}\n'</code></li>
+        <li>Delete <code>qa-broken</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: an advisory under the second row reads <code>Season 2 overlaps season 1. Two prices for one date is ambiguous.</code>; the save still succeeds. Step 2: the price breakdown shows <code>Price on request</code>. Step 3: <code>409</code> with <code>"message":"This experience cannot be booked online right now."</code> (no season details leak) and no reservation row is created.</p>
+      <p class="ref">Ref: <code>src/cms/admin/advisories.ts</code> · <code>src/cms/modules/booking/pricing.ts</code> (<code>validatePricingConfig</code>) · <code>src/cms/modules/booking/reservations.ts</code> (<code>priceRefusalMessage</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-public">
+    <h2>Public pages: listing and detail</h2>
+    <p class="intro">Use a private window (not signed in) so the admin bar (ADM-027) does not get in the way.</p>
+
+    <article class="tc" id="BKG-011" data-priority="P1">
+      <h3>Listing in both languages</h3>
+      <ol class="steps">
+        <li>Open <code>/booking</code>, <code>/en/booking</code> and <code>/el/booking</code>.</li>
+        <li>Read the cards of QA Boat Day, QA Villa and QA Yacht Charter on the English page.</li>
+      </ol>
+      <ul class="exp">
+        <li><code>/booking</code>: heading <code>Κρατήσεις</code>, eyebrow <code>Εμπειρίες</code>, Greek titles. <code>/en/booking</code>: heading <code>Booking</code>, intro <code>Choose an experience, a date and how many of you there are.</code>, English titles. <code>/el/booking</code> redirects to <code>/booking</code>.</li>
+        <li>QA Boat Day reads <code>from €50.00</code>; QA Villa <code>from €100.00 / night</code>; QA Yacht Charter <code>from €400.00</code> (the lowest of base price, seasons and options). Each card has <code>View details</code>. The result count reads <code>6 experiences</code> (the six QA experiences; add any seeded ones).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/[locale]/booking/page.tsx</code> · <code>src/components/booking/BookingCard.tsx</code> · <code>src/cms/modules/booking/data.ts</code> (<code>lowestPrice</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-012" data-priority="P2">
+      <h3>Search, filters, sort and paging on the listing</h3>
+      <ol class="steps">
+        <li>On <code>/en/booking</code> type <code>villa</code> in <code>Search experiences…</code> and press Enter.</li>
+        <li>Clear it. Under <strong>Filters</strong> tick <code>QA Cruises</code> in <strong>Category</strong>; then also <code>QA Speedboat</code> in <strong>Type</strong>; then click <strong>Clear</strong>.</li>
+        <li>Set <strong>Sort</strong> to <code>Price (high first)</code>, then <code>Name (Z–A)</code>.</li>
+        <li>Open <code>/en/booking?category=nothing-here</code> and <code>/en/booking?page=99</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: the URL gains <code>?q=villa</code>; only QA Villa is listed.</li>
+        <li>Step 2: <code>?category=qa-cruises</code> lists only QA Boat Day; adding the type gives <code>&amp;type=qa-speedboat</code> and still QA Boat Day; Clear removes both.</li>
+        <li>Step 3: <code>?sort=price-desc</code> puts QA Yacht Charter (400) first; <code>?sort=title-desc</code> orders by English title Z to A.</li>
+        <li>Step 4: <code>No experience matches your filters.</code>; a page past the end shows no cards but no error. With more than 15 experiences, <code>Next</code> / <code>Page 1 of N</code> appear.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/[locale]/booking/booking-params.ts</code> (<code>BOOKING_PAGE_SIZE = 15</code>) · <code>src/components/booking/BookingFilters.tsx</code> · <code>src/components/booking/BookingToolbar.tsx</code></p>
+    </article>
+
+    <article class="tc" id="BKG-013" data-priority="P3">
+      <h3>A booking category has no page of its own</h3>
+      <ol class="steps">
+        <li>Open <code>/en/booking/qa-cruises</code>, <code>/en/booking/category/qa-cruises</code> and <code>/booking/qa-cruises</code>.</li>
+        <li>Run <code>curl -s "$BASE/sitemap.xml" | grep -c qa-cruises</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> All three show the site's not-found page (404). The sitemap count is <code>0</code>. The only way to reach a category is the <code>?category=qa-cruises</code> filter (BKG-012).</p>
+      <p class="ref">Ref: <code>src/app/[locale]/booking/[slug]/page.tsx</code> · docs/dev-guides/09-booking.md §10</p>
+    </article>
+
+    <article class="tc" id="BKG-014" data-priority="P1">
+      <h3>Transport detail page and form</h3>
+      <ol class="steps">
+        <li>Open <code>/en/booking/qa-boat-day</code>.</li>
+        <li>Pick a date D in the calendar.</li>
+      </ol>
+      <ul class="exp">
+        <li>The page shows the title, the gallery and content, and a form <code>Book this experience</code> with the note <code>We will check availability and come back to you.</code> (request mode). The calendar has the legend <code>Available</code>, <code>Unavailable</code>, <code>Your date</code> and Previous/Next month buttons; days before today are disabled.</li>
+        <li><code>Guests</code> shows 1 with <code>Between 1 and 10 guests</code>.</li>
+        <li>After picking D: <code>Extras</code> with <code>QA Lunch</code> (per person), <code>Pick-up point</code> with Marina A preselected, <code>Price breakdown</code> (<code>Base price</code> €50.00, <code>Total</code> €50.00), <code>Your details</code> (Full name, Email, Phone, Anything we should know), <code>I accept the booking terms</code> and the button <code>Request this date</code>.</li>
+        <li>On <code>/en/booking/qa-island-tour</code> the note reads <code>Your date is reserved immediately.</code> and, once priced, the button reads <code>Book now — €40.00</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/[locale]/booking/[slug]/page.tsx</code> · <code>src/components/booking/BookingForm.tsx</code> · <code>src/components/booking/TransportFields.tsx</code> · <code>messages/en.json</code> (<code>bookingForm</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-015" data-priority="P2">
+      <h3>Stay detail page and range picker</h3>
+      <ol class="steps">
+        <li>Open <code>/en/booking/qa-villa</code>. Click a check-in date D.</li>
+        <li>Click D+3 as check-out. Then click <strong>Clear dates</strong>.</li>
+        <li>Repeat on <code>/booking/qa-villa</code> (Greek).</li>
+      </ol>
+      <ul class="exp">
+        <li>The date label reads <code>Check-in — Check-out</code>; <code>Adults</code> starts at 2 and <code>Children</code> shows <code>Under 12</code>.</li>
+        <li>After the first click a line shows the date and <code>now pick your check-out</code>; days before D+1 are disabled for the second click.</li>
+        <li>After the second: <code>&lt;D&gt; – &lt;D+3&gt; · 3 night(s)</code> and the breakdown appears. Clear dates empties the selection.</li>
+        <li>Greek: <code>Άφιξη — Αναχώρηση</code>, <code>επιλέξτε ημερομηνία αναχώρησης</code>, <code>3 διανυκτέρευση/εις</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/booking/StayFields.tsx</code> · <code>src/components/booking/BookingCalendar.tsx</code> (range mode)</p>
+    </article>
+
+    <article class="tc" id="BKG-016" data-priority="P3">
+      <h3>Draft or unknown experiences are not reachable</h3>
+      <ol class="steps">
+        <li>Set QA Sunset Exclusive's <strong>Status — EN</strong> to <code>draft</code> and save. Open <code>/en/booking/qa-sunset-exclusive</code> and <code>/en/booking</code>.</li>
+        <li>Run <code>curl -s "$BASE/api/cms/booking/quote" -X POST -H 'Content-Type: application/json' -H 'X-Real-IP: 10.90.0.2' -d '{"slug":"no-such-thing","locale":"en"}'</code></li>
+        <li>Publish QA Sunset Exclusive in EN again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: not-found page, and the English listing no longer shows it (the Greek one still does). Step 2: <code>404</code> <code>{"ok":false,"error":"not_found","message":"That experience is no longer available."}</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/quote.ts</code> (<code>bookingQuoteRoute</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-calendar">
+    <h2>The public calendar agrees with what can be booked</h2>
+    <p class="intro">The public calendar asks <code>GET /api/cms/booking/availability</code> for the month on screen. A disabled day's reason is in its accessible name (<code>&lt;day&gt; — Fully booked.</code>): read it with the browser's accessibility inspector, or pick the day first and then change the party so the red note under the calendar appears. Direct check: <code>curl -s "$BASE/api/cms/booking/availability?slug=&lt;slug&gt;&amp;from=&lt;D&gt;&amp;to=&lt;D&gt;&amp;persons=&lt;n&gt;" -H 'X-Real-IP: 10.90.0.N'</code> returns <code>{"ok":true,"data":{"days":[{"date":…,"status":…,"bookable":…,"remaining":…}],"kind":…,"rules":{…}}}</code>.</p>
+
+    <article class="tc" id="BKG-017" data-priority="P1">
+      <h3>Seats left follow real bookings (shared)</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Settings → Booking → Payment method <code>Manual / bank transfer</code>. QA Island Tour (instant, shared, 20 places) has no bookings on D.</p>
+      <ol class="steps">
+        <li>Run the availability curl for <code>qa-island-tour</code>, D, <code>persons=1</code>.</li>
+        <li>On <code>/en/booking/qa-island-tour</code> book D for <code>Guests</code> 10 (name <code>QA One</code>, email the customer mailbox, tick terms, <strong>Book now — €400.00</strong>). Repeat for another 8 guests.</li>
+        <li>Run the curl again with <code>persons=2</code> and <code>persons=3</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>"status":"open","bookable":true,"remaining":20</code>. Step 2: two <code>confirmed</code> reservations (instant + manual confirms at once), each holding <code>exp:&lt;group&gt;</code> seats 10 and 8, state <code>confirmed</code>. Step 3: <code>persons=2</code> → <code>open</code>, <code>remaining 2</code>; <code>persons=3</code> → <code>"status":"full","bookable":false,"remaining":2</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/quote.ts</code> (<code>bookingAvailabilityRoute</code>) · <code>src/cms/modules/booking/allocation.ts</code> (<code>getDayStates</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-018" data-priority="P2">
+      <h3>The party size is sent, so a too-large party sees the day as full</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> BKG-017 left 2 seats on D.</p>
+      <ol class="steps">
+        <li>On <code>/en/booking/qa-island-tour</code> with <code>Guests</code> 2, look at D. Pick it.</li>
+        <li>Change <code>Guests</code> to 3. Watch the Network tab of the browser's developer tools.</li>
+        <li>Try to submit with 3 guests (if the button is enabled).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: D is selectable. Step 2: a new <code>availability?…&amp;persons=3</code> request is made; D turns unavailable and the red note <code>Fully booked.</code> appears under the calendar. Step 3: if submitted, the form shows <code>&lt;D&gt; is no longer available.</code> and no reservation is created. The calendar must never offer a day the server then refuses for the same party.</p>
+      <p class="ref">Ref: <code>src/components/booking/booking-form-types.ts</code> (<code>availabilityParams</code>) · <code>src/components/booking/use-availability.ts</code></p>
+    </article>
+
+    <article class="tc" id="BKG-019" data-priority="P2">
+      <h3>Exclusive: one booking closes the day whatever the party</h3>
+      <ol class="steps">
+        <li>Book QA Sunset Exclusive on D in <code>/en/booking/qa-sunset-exclusive</code> (manual provider, so it confirms at once).</li>
+        <li>Run the availability curl for <code>qa-sunset-exclusive</code> on D with <code>persons=1</code>; reload the page.</li>
+        <li>Check its holds.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>confirmed</code>, <code>allocation_mode</code> <code>exclusive</code>. Step 2: <code>"status":"full","remaining":0</code>; the day is disabled in the calendar. Step 3: one hold on <code>exp:&lt;group&gt;</code> with <code>seats</code> 1 (not the party size). In <strong>Availability</strong> the slot shows <code>Default capacity 1 per day</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/availability.ts</code> (<code>slotRequestsFor</code>, exclusive) · <code>src/cms/modules/booking/schedule.ts</code></p>
+    </article>
+
+    <article class="tc" id="BKG-020" data-priority="P2">
+      <h3>Per option: the chosen yacht is what runs out</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> QA Yacht Charter is request mode; for this case set its <strong>Booking mode</strong> to <code>Instant — the customer books and pays straight away</code> (payment method still manual). Put it back to <code>Use the site default</code> at the end.</p>
+      <ol class="steps">
+        <li>On <code>/en/booking/qa-yacht-charter</code> pick D, <code>Choose your yacht</code> <code>QA Yacht Alpha</code>, Guests 8, book.</li>
+        <li>Reload, pick D again with Alpha selected and Guests 4; then switch to QA Yacht Beta (Guests 4); then Guests 5.</li>
+        <li>Run the availability curl with <code>&amp;resourceId=&lt;Alpha id&gt;</code> and with the Beta id; check the holds.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: two confirmed holds: <code>exp:&lt;group&gt;</code> seats 8 and <code>res:&lt;Alpha id&gt;</code> seats 1. Step 2: with Alpha, D shows <code>Fully booked.</code>; with Beta and 4 guests, D is available again; with 5 guests it is <code>Fully booked.</code> (the experience has only 4 of its 12 places left). Step 3: Alpha <code>full</code> / <code>remaining 0</code>; Beta <code>open</code> / <code>remaining 1</code> (the smaller of the experience's 4 seats left and Beta's 1 booking).</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/availability.ts</code> (<code>slotRequestsFor</code> resource, <code>combinedDayStatus</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-021" data-priority="P2">
+      <h3>Shared or exclusive with options reads the experience slot only</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Temporarily add options to QA Sunset Exclusive: Offer options on, rows <code>QA Boat A</code> Price <code>300</code> and <code>QA Boat B</code> Price <code>300</code>. Keep it exclusive and instant. Remove the options at the end.</p>
+      <ol class="steps">
+        <li>Book D2 with <code>QA Boat A</code>.</li>
+        <li>On the page select <code>QA Boat B</code> and look at D2. Run the availability curl for D2 with <code>resourceId=&lt;Boat B id&gt;</code>.</li>
+        <li>Check the holds of the booking.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> D2 is unavailable with Boat B too (<code>"status":"full"</code>): exclusive mode claims only <code>exp:&lt;group&gt;</code> (the hold list has no <code>res:</code> row), and the calendar reads that same slot. A calendar that showed D2 open for Boat B would promise a day the server refuses.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/availability.ts</code> (<code>slotRequestsForKind</code>, <code>readAllocationMode</code>) · docs/dev-guides/09-booking.md §10</p>
+    </article>
+
+    <article class="tc" id="BKG-022" data-priority="P2">
+      <h3>Season opens and closes, including a season across new year</h3>
+      <ol class="steps">
+        <li>On QA Boat Day set <strong>Season opens</strong> to the month-day of today + 10 and <strong>Season closes</strong> to today + 30; save. Look at today + 5 and today + 15 on the public calendar and with curl.</li>
+        <li>Set Season opens <code>12-01</code> and Season closes <code>02-28</code>; save. Run the availability curl for the next 30 November, 15 December and 15 January (dates more than 60 days away read <code>too_far</code>, which is fine: the point is that they are not <code>out_of_season</code>).</li>
+        <li>Empty both fields and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: today + 5 is <code>out_of_season</code> (<code>Outside the season.</code>), today + 15 is open. The detail page shows <code>Available &lt;from&gt; – &lt;to&gt;</code>. Step 2: 30 November <code>out_of_season</code>; 15 December and 15 January are not <code>out_of_season</code> (the window wraps the year end). Step 3: every in-range day is open again.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/availability.ts</code> (<code>dayStatus</code> order: past, out_of_season, wrong_weekday, too_far, too_soon, closed, full)</p>
+    </article>
+
+    <article class="tc" id="BKG-023" data-priority="P2">
+      <h3>Available weekdays</h3>
+      <ol class="steps">
+        <li>On QA Boat Day tick only <code>Saturday</code> in <strong>Available weekdays</strong>, save. Open the public calendar.</li>
+        <li>Post a request for a Tuesday: <code>curl -s -X POST "$BASE/api/cms/booking/request" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.90.0.3' -d '{"slug":"qa-boat-day","locale":"en","date":"&lt;a Tuesday&gt;","persons":1,"answers":{"&lt;question id&gt;":"Marina A"},"customer":{"name":"QA Curl","email":"qa.curl@example.com"},"acceptTerms":true}' -w ' %{http_code}\n'</code> (question id: <code>JSON_EXTRACT(data,'$.choices[0].id')</code>).</li>
+        <li>Untick Saturday and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: only Saturdays are selectable; other days have the reason <code>Not running that day.</code> Step 2: <code>409</code> <code>"This experience does not run on that day of the week."</code>. Stays ignore this field (they use Check-in/Check-out days, BKG-046).</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/availability.ts</code> (<code>readDayRules</code>) · <code>src/cms/modules/booking/reservations.ts</code> (<code>unavailableMessage</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-024" data-priority="P2">
+      <h3>Cut-off defaults to 0: today can still be booked</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> <strong>Default cut-off (hours before)</strong> empty in Settings → Booking and <strong>Cut-off (hours before)</strong> empty on QA Island Tour.</p>
+      <ol class="steps">
+        <li>Open <code>/en/booking/qa-island-tour</code> and look at today (Athens date).</li>
+        <li>Run the availability curl for today.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Today is selectable and the curl says <code>"status":"open"</code> with <code>"leadTimeHours":0</code> in <code>rules</code>. The admin field placeholder shows the same <code>0</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/settings-read.ts</code> (<code>DEFAULT_LEAD_TIME_HOURS</code>) · <code>src/cms/modules/booking/availability.ts</code> (<code>dayStatus</code>: cut-off only when &gt; 0)</p>
+    </article>
+
+    <article class="tc" id="BKG-025" data-priority="P2">
+      <h3>Cut-off is counted from midnight in the booking timezone</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Run this between minute 05 and 55 of an hour, while the Athens hour H is between 01 and 22.</p>
+      <ol class="steps">
+        <li>Note the current hour H in Athens. On QA Island Tour set <strong>Cut-off (hours before)</strong> to <code>23 − H</code>; save. Run the availability curl for tomorrow.</li>
+        <li>Set it to <code>24 − H</code>; save; run the curl again and reload the public calendar.</li>
+        <li>Post a request for tomorrow (as in BKG-023, slug <code>qa-island-tour</code>).</li>
+        <li>Set the per-experience cut-off empty and put <code>24 − H</code> into <strong>Default cut-off (hours before)</strong> in Settings; run the curl. Then empty that setting.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: tomorrow <code>open</code> (fewer hours than remain until Athens midnight). Step 2: tomorrow <code>too_soon</code> and the reason <code>Too close to book.</code>: the cut-off is Athens midnight of tomorrow minus <code>24 − H</code> hours, which has just passed. If step 2 still says <code>open</code>, the cut-off is being anchored on UTC midnight (the old 2–3 hour bug): Fail. Step 3: <code>409</code> <code>"&lt;tomorrow&gt; is too close — please choose a later one."</code>. Step 4: the site default applies the same way (<code>too_soon</code>).</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/availability.ts</code> (<code>cutoffFor</code>, <code>zonedMidnight</code>) · docs/dev-guides/09-booking.md §10 (Timezones)</p>
+    </article>
+
+    <article class="tc" id="BKG-026" data-priority="P2">
+      <h3>Bookable up to N days ahead</h3>
+      <ol class="steps">
+        <li>QA Boat Day has <strong>Bookable up to (days ahead)</strong> <code>60</code>. Run the availability curl for today + 60 and today + 61.</li>
+        <li>Post a request for today + 61.</li>
+        <li>Set the field to <code>0</code>, save, and repeat step 1 for today + 61. Set it back to 60.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: +60 <code>open</code>, +61 <code>too_far</code> (<code>Too far ahead to book.</code>). Step 2: <code>409</code> <code>"&lt;date&gt; is too far ahead to book yet."</code>. Step 3: with 0 (no limit) +61 is open.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/availability.ts</code> (<code>readDayRules</code>: 0 means no limit)</p>
+    </article>
+
+    <article class="tc" id="BKG-027" data-priority="P3">
+      <h3>Past dates, and the availability API's limits</h3>
+      <ol class="steps">
+        <li>Run the availability curl for yesterday.</li>
+        <li>Run it with <code>from</code> today and <code>to</code> today + 200; count the days returned.</li>
+        <li>Run it with <code>from=2026-13-40</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>"status":"past"</code>. Step 2: at most 92 days are returned. Step 3: a <code>422</code> validation error, not a server error.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/quote.ts</code> (<code>eachDate(…, 92)</code>, <code>availabilityQuery</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-schedule">
+    <h2>Admin Availability calendar</h2>
+    <p class="intro"><code>/admin/availability</code>. The <strong>Experience</strong> list holds one entry per published experience (Greek titles) plus <code>&lt;experience&gt; → &lt;option&gt;</code> entries; a stay with options is listed by its options only. Each day cell shows <code>taken/capacity</code>, a dot when the day has an exception, <code>Closed</code>, a price override and a note.</p>
+
+    <article class="tc" id="BKG-028" data-priority="P2">
+      <h3>Slots and month grid</h3>
+      <ol class="steps">
+        <li>Open <code>/admin/availability</code> and open the <strong>Experience</strong> list.</li>
+        <li>Choose <code>QA Γύρος νησιού</code> and go to the month of BKG-017's D.</li>
+        <li>Click D.</li>
+      </ol>
+      <ul class="exp">
+        <li>The list contains QA Ημερήσια βόλτα, QA Γύρος νησιού, QA Ηλιοβασίλεμα, QA Βίλα, QA Ναύλωση σκάφους plus <code>QA Ναύλωση σκάφους → QA Yacht Alpha</code> and <code>→ QA Yacht Beta</code>, and <code>QA Σουίτες → QA Sea View</code> and <code>→ QA Garden</code>, but no plain <code>QA Σουίτες</code> entry. Drafts are absent.</li>
+        <li>Header <code>Default capacity 20 per day</code>. D reads <code>18/20</code>; the legend shows Available, Full, Closed, Overbooked.</li>
+        <li>The drawer is titled D, shows <code>18 of 20 taken</code> and <code>18 confirmed</code>, a <code>Close this date</code> box, <code>Capacity</code> (placeholder 20, help <code>Leave empty to use the default of 20.</code>), <code>Price override</code>, <code>Note</code>, <code>Save</code> and <code>Cancel</code>.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/AvailabilityCalendar.tsx</code> · <code>src/cms/modules/booking/schedule.ts</code> (<code>listSchedulableSlots</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-029" data-priority="P2">
+      <h3>A per-date capacity override changes what the public can book</h3>
+      <ol class="steps">
+        <li>On QA Γύρος νησιού pick an empty date D3, set <strong>Capacity</strong> <code>3</code>, Note <code>QA small boat</code>, <strong>Save</strong>.</li>
+        <li>Run the availability curl for D3 with <code>persons=3</code> and <code>persons=4</code>; check <code>booking_slots</code> for D3.</li>
+        <li>Set Capacity <code>25</code> and save; run the curl with <code>persons=10</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: D3 shows <code>0/3</code>, the exception dot and the note. Step 2: persons 3 <code>open</code>, 4 <code>full</code>; one row <code>exp:&lt;group&gt;</code>, <code>capacity</code> 3, <code>closed</code> 0, note <code>QA small boat</code>. Step 3: D3 shows <code>0/25</code>; persons 10 <code>open</code> with <code>remaining 25</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/schedule.ts</code> (<code>setSlotOverride</code>) · <code>src/cms/modules/booking/availability.ts</code> (<code>resolveCapacity</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-030" data-priority="P2">
+      <h3>Close a date (transport) and a night (stay)</h3>
+      <ol class="steps">
+        <li>On QA Γύρος νησιού tick <strong>Close this date</strong> on D4 and save. Check the public calendar and post a request for D4.</li>
+        <li>On QA Βίλα close one night N; on the public QA Villa page try a stay that includes N, and one that ends on N (check-out N).</li>
+        <li>On QA Ημερήσια βόλτα (request mode) close D5, then post a request for D5 with curl.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: D4 cell reads <code>Closed</code>; public reason <code>Not available.</code>; the request answers <code>409</code> <code>"&lt;D4&gt; is not available."</code>. Step 2: the stay across N shows <code>&lt;N&gt; — Not available.</code> and the submit button stays disabled; a stay ending on N is allowed (check-out day is not held). Step 3: request mode holds nothing, so the enquiry is accepted as <code>pending</code> (201) even on a closed date; the refusal comes when you accept it: <strong>Accept &amp; send payment instructions</strong> shows <code>&lt;D5&gt; is not available.</code> in the drawer. Record whether that is acceptable to the business.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/allocation.ts</code> (<code>allocateSlots</code>: closed → 409) · <code>src/cms/modules/booking/reservations.ts</code> (<code>createReservation</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-031" data-priority="P2">
+      <h3>Price overrides: base price, option and nightly rate</h3>
+      <ol class="steps">
+        <li>On QA Ημερήσια βόλτα set <strong>Price override</strong> <code>60</code> on D6 and save. Quote D6 with 2 guests on the public page.</li>
+        <li>On <code>QA Ναύλωση σκάφους → QA Yacht Alpha</code> set a price override <code>450</code> on D7. Quote D7 with Alpha and with Beta, 6 guests.</li>
+        <li>On QA Βίλα set <code>180</code> on night N2. Quote a 2-night stay starting N2 for 2 adults.</li>
+        <li>Read each drawer's Price override help.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>Price for this date — 2 persons</code> €120.00 (the cell shows <code>€60</code>). Step 2: Alpha <code>QA Yacht Alpha</code> €450.00; Beta €700.00 (not affected). Step 3: <code>Accommodation — 1 night</code> €180.00 and <code>Accommodation — 1 night</code> €100.00, plus QA Cleaning €30.00 and <code>QA City tax — 2 nights</code> €4.00, total €314.00. Step 4: the help texts differ per slot kind (base price / this option’s price / the nightly rate) and end with <code>In major units (e.g. 250). Leave empty to price it the usual way.</code> <code>booking_slots.price_override</code> is stored in cents (6000, 45000, 18000).</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/quote.ts</code> (<code>loadPriceOverrides</code>) · <code>src/cms/admin/AvailabilityCalendar.tsx</code> (<code>priceOverrideHelp</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-032" data-priority="P3">
+      <h3>Reset to default removes the override row</h3>
+      <ol class="steps">
+        <li>Open D3 from BKG-029 and click <strong>Reset to default</strong>. Do the same for D4, D5, D6, D7, N and N2.</li>
+        <li>Run <code>SELECT COUNT(*) FROM booking_slots WHERE note IS NOT NULL OR capacity IS NOT NULL OR closed = 1 OR price_override IS NOT NULL;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The cells lose their dot, note, price and <code>Closed</code>; capacity goes back to the default. The count is 0 for those dates (a row that says nothing is deleted, not stored as NULLs; rows may remain for dates that were allocated, but with every override column empty). The audit log has <code>booking.schedule.set</code> and <code>booking.schedule.clear</code> entries.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/schedule.ts</code> (<code>setSlotOverride</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-033" data-priority="P2">
+      <h3>Overbooked report: a capacity override lowered below what is taken</h3>
+      <ol class="steps">
+        <li>On QA Γύρος νησιού open BKG-017's D (18 taken). Type <code>10</code> in <strong>Capacity</strong> and read the drawer before saving; then <strong>Save</strong>.</li>
+        <li>Run the admin schedule API: <code>curl -s -b "cms_session=$S" "$BASE/api/cms/booking/schedule?from=&lt;D&gt;&amp;to=&lt;D&gt;&amp;slotKey=exp:&lt;group&gt;"</code></li>
+        <li>Reset D to default.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: before saving an amber note <code>18 booking(s) already hold this date. Saving a lower capacity will leave it overbooked, and it will be flagged on the calendar.</code>; saving is allowed. The banner reads <code>1 date hold more bookings than the capacity allows</code> and <code>&lt;D&gt; (18/10). This happens when a capacity is lowered after bookings were taken.</code>; the cell is amber. Step 2: <code>"overbooked":[{"slotKey":"exp:…","slotDate":"&lt;D&gt;","capacity":10,"taken":18}]</code>. Step 3: the banner disappears. (Note the grammar “1 date hold”.)</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/allocation.ts</code> (<code>findOverbookedSlots</code>) · <code>src/cms/admin/AvailabilityCalendar.tsx</code></p>
+    </article>
+
+    <article class="tc" id="BKG-034" data-priority="P2">
+      <h3>Overbooked report: a date with no override is judged against the default</h3>
+      <ol class="steps">
+        <li>On the QA Island Tour experience change <strong>Places per day</strong> from 20 to <code>15</code> and save (BKG-017's D has 18 taken and no override).</li>
+        <li>Open <code>/admin/availability</code> on QA Γύρος νησιού, month of D.</li>
+        <li>Set Places per day back to <code>20</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 2: header <code>Default capacity 15 per day</code>; the banner lists <code>&lt;D&gt; (18/15)</code> although <code>booking_slots</code> has no capacity for D. Step 3: the banner is gone.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/availability.ts</code> (<code>overbookedFrom</code>) · <code>src/cms/modules/booking/schedule.ts</code> (<code>scheduleReadRoute</code> passes the defaults)</p>
+    </article>
+
+    <article class="tc" id="BKG-035" data-priority="P3">
+      <h3>Overbooked report ignores expired holds</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Stripe configured (COM-051); Settings → Booking → <strong>Payment method</strong> <code>Card (Stripe)</code>, <strong>Instant payment hold (minutes)</strong> <code>2</code>.</p>
+      <ol class="steps">
+        <li>On QA Island Tour book 2 guests on BKG-017's D (18 confirmed). You are sent to the pay page; do not pay.</li>
+        <li>Within 2 minutes open <code>/admin/availability</code> on D: note the cell.</li>
+        <li>After 3 minutes (do not run the sweep) set a capacity override <code>19</code> on D and save; read the banner. Check the new booking's hold.</li>
+        <li>Reset D, set Payment method back to <code>Manual / bank transfer</code> and the hold to empty.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 2: <code>20/20</code> with <code>2 held</code> in the drawer. Step 3: the cell shows <code>18/19</code> and there is <strong>no</strong> overbooked banner: the expired <code>held</code> row (still <code>held</code>, <code>expires_at</code> in the past) is not counted, by the app clock, before the sweep has run.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/allocation.ts</code> (<code>findOverbookedSlots</code>: held counts only while unexpired)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-quote">
+    <h2>Price quotes</h2>
+    <p class="intro">The form re-prices on every change through <code>POST /api/cms/booking/quote</code>; the server never trusts a price from the browser. Line labels are the engine's (English on both languages).</p>
+
+    <article class="tc" id="BKG-036" data-priority="P2">
+      <h3>Per-person price with a per-person extra</h3>
+      <ol class="steps">
+        <li>On <code>/en/booking/qa-boat-day</code> pick D, Guests <code>2</code>, tick <code>QA Lunch</code>.</li>
+        <li>Change Guests to 3; untick the extra.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>Base price — 2 persons × €50.00</code> €100.00, <code>QA Lunch — 2 persons × €15.00</code> €30.00, <code>Total</code> €130.00. While re-pricing the breakdown dims (<code>Calculating…</code> only when empty). Step 2: 3 guests with lunch €195.00; without €150.00.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/pricing.ts</code> (<code>quoteBooking</code>, multiply mode)</p>
+    </article>
+
+    <article class="tc" id="BKG-037" data-priority="P2">
+      <h3>Seasonal price, and a date override over the season</h3>
+      <ol class="steps">
+        <li>Temporarily set QA Boat Day's Bookable up to <code>0</code>. Quote the next 25 December with 2 guests (use the calendar or <code>curl -s -X POST "$BASE/api/cms/booking/quote" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.90.0.4' -d '{"slug":"qa-boat-day","locale":"en","date":"&lt;YYYY&gt;-12-25","persons":2}'</code>).</li>
+        <li>Put a price override <code>90</code> on that date in Availability and quote again. Then reset it and set Bookable up to back to 60.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>Seasonal price — 2 persons</code>, total 14000 (€140.00). Step 2: <code>Price for this date — 2 persons</code>, total 18000: the calendar override beats the season.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/pricing.ts</code> (unit price precedence) · docs/dev-guides/09-booking.md §4.1</p>
+    </article>
+
+    <article class="tc" id="BKG-038" data-priority="P2">
+      <h3>Option price replaces the base; flat price up to N persons</h3>
+      <ol class="steps">
+        <li>On <code>/en/booking/qa-yacht-charter</code> pick D, <code>QA Yacht Alpha</code>, Guests 6.</li>
+        <li>Guests 8; then choose <code>QA Yacht Beta</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>QA Yacht Alpha</code> €500.00, total €500.00 (the base price 400 is not added). Step 2: Alpha 8 guests: €500.00 + <code>Additional persons (over 6) — 2 persons</code> €40.00 = €540.00; Beta: €740.00.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/pricing.ts</code> (<code>group_threshold</code>, option cost)</p>
+    </article>
+
+    <article class="tc" id="BKG-039" data-priority="P2">
+      <h3>Stay quote: nights, extra guests, children and fees</h3>
+      <ol class="steps">
+        <li>On <code>/en/booking/qa-villa</code> choose D → D+3 (outside 20–31 December), Adults 2, Children 0.</li>
+        <li>Adults 3, Children 1.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>Accommodation — 3 nights × €100.00</code> €300.00, <code>QA Cleaning</code> €30.00, <code>QA City tax — 3 nights</code> €6.00, total €336.00. Step 2: adds <code>Additional guests (over 2) — 1 guest × 3 nights</code> €60.00 and <code>Children (under 12) — 1 child × 3 nights</code> €30.00: total €426.00.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/stay.ts</code> (<code>quoteStay</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-040" data-priority="P2">
+      <h3>A stay across a season boundary, and the season's minimum stay</h3>
+      <ol class="steps">
+        <li>Quote 18 → 22 December of the coming December, 2 adults.</li>
+        <li>Quote 20 → 22 December (2 nights, arriving in the season whose minimum is 3). Look at the breakdown and at any red note; then submit the form.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: two nightly lines, <code>Accommodation — 2 nights</code> €200.00 and <code>Accommodation — 2 nights</code> €300.00, QA Cleaning €30.00, <code>QA City tax — 4 nights</code> €8.00; total €538.00. Step 2: the server refuses the quote (arrival night's season minimum 3), so the breakdown reads <code>Price on request</code>, and submitting shows <code>The minimum stay is 3 night(s).</code> The form shows no minimum-stay note before submitting because it only knows the general minimum (2): note this as a UX gap in the result.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/stay.ts</code> (<code>minNightsFor</code>) · <code>src/components/booking/StayFields.tsx</code> (<code>stayRangeError</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-041" data-priority="P3">
+      <h3>The quote API refuses tampered input</h3>
+      <ol class="steps">
+        <li>Quote <code>qa-boat-day</code> with <code>"extraIds":["nope"]</code>.</li>
+        <li>Quote <code>qa-villa</code> with <code>"date":"&lt;D&gt;","endDate":"&lt;D+2&gt;","adults":4,"children":1</code>.</li>
+        <li>Quote <code>qa-villa</code> with <code>endDate</code> before <code>date</code>, and with <code>"persons":0</code> for <code>qa-boat-day</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>200</code> with <code>"quote":{"ok":false,"reason":"unknown_extra"}</code>. Step 2: <code>"reason":"over_occupancy","maxOccupancy":4</code>. Step 3: <code>"reason":"invalid_range"</code>; <code>persons 0</code> is a <code>422</code> validation error. No reservation is ever created by the quote endpoint.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/quote.ts</code> (<code>quoteBody</code>) · <code>src/cms/modules/booking/stay.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-form">
+    <h2>Booking form validation</h2>
+    <p class="intro">Payment method <code>Manual / bank transfer</code>. Compare <code>SELECT MAX(id) FROM reservations;</code> before and after each refusal: a refusal must leave no row.</p>
+
+    <article class="tc" id="BKG-042" data-priority="P2">
+      <h3>Required fields and the terms box</h3>
+      <ol class="steps">
+        <li>On <code>/en/booking/qa-boat-day</code> before picking a date, look for the submit button.</li>
+        <li>Pick D. Click <strong>Request this date</strong> with everything empty; then with a name and <code>not-an-email</code>; then with a valid email but the terms box unticked.</li>
+        <li>Tick the terms and submit.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: the details, breakdown and button are hidden until a date is chosen. Step 2: the browser blocks each submit on the first invalid required field (name, email format, terms); no request is sent. Step 3: the green panel <code>We have your request</code>, <code>Booking reference BKG-&lt;year of D&gt;-XXXXXXXX. A confirmation email is on its way.</code> and <code>View your booking</code> linking to <code>/en/booking/lookup</code>.</p>
+      <p class="ref">Ref: <code>src/components/booking/BookingForm.tsx</code> · <code>src/cms/modules/booking/reference.ts</code> (<code>formatBookingReference</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-043" data-priority="P3">
+      <h3>The server enforces what the form enforces</h3>
+      <ol class="steps">
+        <li>Post a QA Boat Day request (as in BKG-023, a valid date) without <code>acceptTerms</code>.</li>
+        <li>Post it with <code>"acceptTerms":true</code> but no <code>answers</code>.</li>
+        <li>Post it with <code>"customer":{"name":"","email":"x"}</code>, and with <code>"date":"2026-02-30x"</code>.</li>
+        <li>Post it for yesterday.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>400</code> <code>"message":"Please accept the terms to request this booking."</code>. Step 2: <code>409</code> <code>"Please answer every question on the form."</code>. Step 3: <code>422</code> validation errors. Step 4: <code>409</code> <code>"&lt;yesterday&gt; has already passed."</code>. <code>MAX(id)</code> is unchanged throughout.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/reservations.ts</code> (<code>createReservation</code>, <code>reservationRequestSchema</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-044" data-priority="P3">
+      <h3>Honeypot and rate limit on booking requests</h3>
+      <ol class="steps">
+        <li>Post a valid request with <code>"_hp":"bot"</code>.</li>
+        <li>Post six requests within one minute from the same <code>X-Real-IP</code> (valid bodies, distinct emails).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>201</code> with <code>"reference":"BKG-0000-00000000"</code> and no row created. Step 2: the first five are created; the sixth answers <code>429</code>. Delete the five test enquiries afterwards (cleanup query in BKG-096).</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/reservations.ts</code> (<code>bookingRequestRoute</code>, rate limit 5/min)</p>
+    </article>
+
+    <article class="tc" id="BKG-045" data-priority="P3">
+      <h3>A party above the maximum holds the same seats it stores</h3>
+      <ol class="steps">
+        <li>Payment method manual. Post a QA Island Tour request for an empty date with <code>"persons":15</code> (maximum 10).</li>
+        <li>Check the reservation's <code>persons</code>, <code>total</code> and its hold's <code>seats</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Either the request is refused, or the booking is priced and held for the same party: <code>persons</code> = hold <code>seats</code>. Current code clamps the price to 10 persons (<code>persons</code> 10, total 40000) but claims seats with the raw 15: if <code>seats</code> is 15, mark Fail (the calendar then shows 5 seats gone that nobody paid for).</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/reservations.ts</code> (<code>slotRequestsFor</code> with <code>input.persons</code>) · <code>src/cms/modules/booking/pricing.ts</code> (<code>clampPersons</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-046" data-priority="P2">
+      <h3>Stay rules on the form: minimum, maximum, arrival day, occupancy</h3>
+      <ol class="steps">
+        <li>On <code>/en/booking/qa-villa</code> choose a 1-night stay; then an 8-night stay.</li>
+        <li>On QA Villa set <strong>Check-in days</strong> to <code>Saturday</code> only; save. Choose a Tuesday check-in for 3 nights. Then clear Check-in days.</li>
+        <li>Choose a valid 3-night stay, Adults 4, Children 1.</li>
+        <li>Submit with 5 guests anyway.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: red notes <code>The minimum stay for these dates is 2 night(s).</code> and <code>The maximum stay for these dates is 7 night(s).</code>; the submit button is disabled. Step 2: <code>Check-in is not available on that day of the week.</code> Step 3: the guest inputs turn red with <code>This can take at most 4 guest(s).</code> Step 4: the server answers <code>This can take at most 4 guest(s).</code> in the form's red alert and nothing is created.</p>
+      <p class="ref">Ref: <code>src/components/booking/StayFields.tsx</code> · <code>src/cms/modules/booking/availability.ts</code> (<code>stayStatus</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-request">
+    <h2>Request mode: enquiry, accept, pay</h2>
+    <p class="intro">QA Boat Day follows the site default (request first). Payment method <code>Manual / bank transfer</code> unless stated.</p>
+
+    <article class="tc" id="BKG-047" data-priority="P1">
+      <h3>An enquiry holds nothing and notifies both sides</h3>
+      <ol class="steps">
+        <li>On <code>/en/booking/qa-boat-day</code> request D8 for 2 guests with QA Lunch (name <code>QA Guest</code>, the customer mailbox, phone <code>6900000000</code>, note <code>QA note</code>).</li>
+        <li>Run the reservation queries; check both mailboxes.</li>
+      </ol>
+      <ul class="exp">
+        <li>Reservation <code>pending</code>, <code>mode</code> <code>request</code>, total 13000, <code>slot_label</code> <code>Marina A</code>, <code>expires_at</code> about 72 hours ahead, <strong>no</strong> holds. Items: base 10000 and extra 3000.</li>
+        <li>Customer: <code>We have your request — BKG-…</code> with <code>We will check availability and come back to you shortly.</code>, then a summary (Booking reference, Date, Guests 2, Price breakdown, Total <code>€130.00</code>).</li>
+        <li>Operator: <code>New booking BKG-… — QA Boat Day</code>, body <code>QA Guest requested QA Boat Day.</code>, the same summary and <em>QA note</em>; replying goes to the customer.</li>
+        <li>Events: <code>email.request_received</code> sent, <code>email.admin_new_request</code> sent.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/booking/emails.ts</code> (<code>sendReservationEmails</code>) · <code>src/cms/modules/booking/lifecycle.ts</code> (<code>initialStatus</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-048" data-priority="P1">
+      <h3>Accept and send payment instructions (manual)</h3>
+      <ol class="steps">
+        <li>Open <code>/admin/reservations</code>, click <strong>View</strong> on BKG-047's booking.</li>
+        <li>Click <strong>Accept &amp; send payment instructions</strong>; read the dialog; confirm.</li>
+        <li>Run the queries; check the customer mailbox; look at the Availability cell for D8.</li>
+      </ol>
+      <ul class="exp">
+        <li>The drawer explains <code>Accepting claims the date and asks the customer to pay — they are emailed your payment instructions. If someone else has already taken the date, this is refused.</code> The dialog: <code>The date is taken and the customer is emailed your payment instructions (Settings → Booking). They have 7 days to pay before the booking expires — record the payment here when it arrives.</code></li>
+        <li>Status <code>awaiting_payment</code>; one hold <code>exp:&lt;group&gt;</code> seats 2 state <code>held</code> with <code>expires_at</code> = reservation <code>expires_at</code> ≈ now + 7 days. D8 reads <code>2/6</code>.</li>
+        <li>Email <code>Your booking is approved — complete payment — BKG-…</code> with <code>How to pay:</code> and the instructions text, then the summary.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/booking/reservations.ts</code> (<code>updateReservationStatus</code>) · <code>src/cms/modules/booking/lifecycle.ts</code> (<code>operatorPaymentDeadline</code>) · <code>src/cms/modules/booking/payments.ts</code> (<code>requestPayment</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-049" data-priority="P2">
+      <h3>Competing enquiries: the second accept is refused</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Give D9 a capacity override of <code>4</code> for QA Ημερήσια βόλτα.</p>
+      <ol class="steps">
+        <li>From two browsers request D9 on QA Boat Day for 3 guests each (<code>QA First</code>, <code>QA Second</code>).</li>
+        <li>Open QA First's drawer.</li>
+        <li>Accept QA First. Then open QA Second and accept it.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: both are <code>pending</code> (request mode lets several people ask for one date). Step 2: an amber box <code>1 other request for this date</code> listing QA Second's reference, <code>3 pax</code> and <code>Awaiting your reply</code>. Step 3: QA First moves to <code>Awaiting payment</code>; accepting QA Second shows the red alert <code>&lt;D9&gt; is no longer available.</code> in the drawer and it stays <code>pending</code> with no holds and no email sent.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/reservations.ts</code> (<code>competingReservations</code>) · <code>src/cms/modules/booking/allocation.ts</code> (<code>allocateSlots</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-050" data-priority="P2">
+      <h3>Record a partial and then the remaining payment by hand</h3>
+      <ol class="steps">
+        <li>In BKG-048's drawer (awaiting payment, total 130,00 €) type <code>abc</code> in <strong>Amount received (EUR)</strong> and click <strong>Record payment</strong>; then <code>200</code>; then <code>50</code>.</li>
+        <li>Confirm the dialog for 50. Read the panel; run the queries.</li>
+        <li>Record <code>80</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: <code>Enter an amount such as 120 or 120.50.</code>; <code>That is more than the balance due.</code>; for 50 the dialog <code>Record 50,00 € as received? This does not charge the customer…</code></li>
+        <li>Step 2: Payments lists <code>Manual</code> <code>captured</code> 50,00 €; <code>Paid so far</code> 50,00 €, <code>Balance due</code> 80,00 €; status stays <code>Awaiting payment</code> (no deposit was set, so a part payment does not secure the date) and <code>expires_at</code> is unchanged. Note: this booking can still lapse at the sweep with money recorded against it.</li>
+        <li>Step 3: status <code>Paid</code>, <code>amount_paid</code> 13000, holds <code>confirmed</code>, <code>expires_at</code> NULL, email <code>Payment received — BKG-…</code> (<code>Thank you — we have received your payment.</code> plus the cancellation terms).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/admin/ReservationPayments.tsx</code> · <code>src/cms/modules/booking/payment-actions.ts</code> (<code>recordPaymentRefusal</code>, <code>parseMoneyInput</code>) · <code>src/cms/modules/booking/payments.ts</code> (<code>settlementFor</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-051" data-priority="P2">
+      <h3>Mark paid records the outstanding balance as a manual payment</h3>
+      <ol class="steps">
+        <li>Accept QA First from BKG-049 is already done (awaiting payment, total 150,00 €). Open its drawer and click <strong>Mark paid</strong>; read the dialog; confirm.</li>
+        <li>Look at Payments; run the queries; check the mailbox.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Under the button: <code>Emails the customer a receipt. It does not charge them.</code> Dialog: <code>This records the outstanding balance (150,00 €) as a manual payment and emails the customer a receipt. It does not move any money.</code> Afterwards Payments shows a new <code>Manual</code> <code>captured</code> 150,00 € line, <code>Paid so far</code> 150,00 €, <code>Balance due</code> 0,00 €, status <code>Paid</code>; <code>reservation_payments</code> has a <code>manual</code> row 15000; <code>amount_paid</code> 15000; holds <code>confirmed</code>; email <code>Payment received — BKG-…</code>. The <strong>Mark paid</strong> and <strong>Record payment</strong> controls disappear.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/payment-actions.ts</code> (<code>markPaidPlan</code>) · <code>src/cms/modules/booking/reservations.ts</code> (<code>reservationUpdateRoute</code> → <code>markReservationPaid</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-052" data-priority="P3">
+      <h3>Recording a payment on an unanswered request</h3>
+      <ol class="steps">
+        <li>Request a new date D10 on QA Boat Day (pending). Give D10 a capacity override of 2, then request D10 again as a second customer for 2 guests and accept that second one (it takes both seats).</li>
+        <li>Open the first (pending, 2 guests) drawer. Is <strong>Record payment</strong> offered? Record its full total.</li>
+        <li>Run the queries for it; open D10 in Availability.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> A payment on an enquiry must not confirm a date it never claimed. Current code offers Record payment on a pending booking and settles it to <code>Confirmed</code> with <strong>no</strong> <code>reservation_holds</code> rows, so D10 shows <code>2/2</code> while two bookings (one confirmed, one awaiting payment) are on it for 4 guests. If that is what you see, mark Fail and attach the queries.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/payment-actions.ts</code> (<code>canRecordPayment</code>) · <code>src/cms/modules/booking/payments.ts</code> (<code>settlementFor</code> fallback to confirmed; verdict <code>none</code>) · docs/dev-guides/09-booking.md §10</p>
+    </article>
+
+    <article class="tc" id="BKG-053" data-priority="P2">
+      <h3>Accept with an online provider emails a payment link</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Stripe configured (COM-051). Settings → Booking → <strong>Payment method</strong> <code>Card (Stripe)</code>.</p>
+      <ol class="steps">
+        <li>Request D11 on QA Boat Day for 1 guest. Open its drawer.</li>
+        <li>Click <strong>Accept &amp; send payment link</strong>, confirm.</li>
+        <li>Check the email and the reservation.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Dialog: <code>The date is taken and the customer is emailed a Card (Stripe) payment link. They have 7 days to pay before the booking expires and the date is released.</code> (the label is the provider's). Email <code>Your booking is approved — complete payment — BKG-…</code> with <code>Complete your payment here:</code> and a link <code>&lt;site&gt;/en/booking/pay/BKG-…?t=&lt;32 chars&gt;</code>. Row: <code>awaiting_payment</code>, <code>payment_token_hash</code> set (the plain token appears nowhere in the database), <code>deposit_amount</code> 5000, <code>payment_link_sent_at</code> set. The drawer now shows <strong>Resend payment link</strong> with <code>Emails the customer a new Card (Stripe) link, valid for 7 days. The previous link stops working.</code></p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/payments.ts</code> (<code>issuePaymentLink</code>) · <code>src/cms/admin/ReservationsTable.tsx</code> (<code>acceptMessage</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-instant">
+    <h2>Instant bookings, holds and expiry</h2>
+
+    <article class="tc" id="BKG-054" data-priority="P1">
+      <h3>Instant stay with manual payment: confirmed, email shows check-in → check-out</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Payment method <code>Manual / bank transfer</code>.</p>
+      <ol class="steps">
+        <li>On <code>/en/booking/qa-villa</code> book D → D+3, 2 adults, 1 child (total €366.00: 300 + 30 + 6 + 30).</li>
+        <li>Repeat on <code>/booking/qa-villa</code> (Greek) for another free range of 2 nights.</li>
+        <li>Check the mailbox, the reservation queries and the Reservations list.</li>
+      </ol>
+      <ul class="exp">
+        <li>The form shows the green panel with the reference (its title still reads <code>We have your request</code> although the stay is confirmed: record as copy issue). Status <code>confirmed</code>, <code>mode</code> <code>instant</code>, <code>allocation_mode</code> <code>resource</code>, <code>nights</code> 3, <code>end_date</code> D+3, <code>adults</code> 2, <code>children</code> 1, <code>persons</code> 3; three holds on <code>exp:&lt;group&gt;</code> for D, D+1, D+2 (not D+3), each seats 1, <code>confirmed</code>.</li>
+        <li>English email <code>Your booking is confirmed — BKG-…</code>: <code>Your date is reserved.</code>, <code>How to pay:</code> with the instructions, a summary row <strong>Stay</strong> reading <code>&lt;check-in&gt; → &lt;check-out&gt; (3 nights)</code>, <code>Guests</code> 3, the breakdown, and the cancellation terms.</li>
+        <li>Greek email <code>Η κράτησή σας επιβεβαιώθηκε — BKG-…</code> with <strong>Διαμονή</strong> <code>… → … (2 νύχτες)</code>.</li>
+        <li>The list's Date column shows <code>&lt;D&gt; → &lt;D+3&gt; 3 nights</code>; the row has the <code>instant</code> badge.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/booking/lifecycle.ts</code> (<code>bookedDatesText</code>, <code>emailForNewReservation</code>) · <code>src/cms/modules/booking/emails.ts</code> (<code>summaryHtml</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-055" data-priority="P1">
+      <h3>Instant booking with Stripe creates a hold and opens the pay page</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Payment method <code>Card (Stripe)</code>; Instant payment hold empty (20 minutes).</p>
+      <ol class="steps">
+        <li>On <code>/en/booking/qa-island-tour</code> book D12 for 2 guests (<strong>Book now — €80.00</strong>).</li>
+        <li>Look at the page you land on; run the queries; check the mailbox.</li>
+      </ol>
+      <ul class="exp">
+        <li>The browser goes straight to <code>/en/booking/pay/BKG-…?t=…</code>: heading <code>My booking</code>, eyebrow <code>QA Island Tour</code>, Booking reference, Date D12, Guests 2, Total €80.00, <code>Amount due</code> €80.00 and <strong>Pay now</strong>. The page is <code>noindex</code>.</li>
+        <li>Row <code>awaiting_payment</code>, <code>expires_at</code> ≈ now + 20 minutes; hold <code>held</code> seats 2 with the same <code>expires_at</code>; <code>payment_token_expires_at</code> equals it (the link cannot outlive the hold); <code>deposit_amount</code> 8000.</li>
+        <li>Email <code>Complete your payment — BKG-…</code> (instant wording) with the same link.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/booking/reservations.ts</code> (<code>createReservation</code>: awaiting_payment → <code>issuePaymentLink</code>) · <code>src/app/[locale]/booking/pay/[reference]/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="BKG-056" data-priority="P2">
+      <h3>The hold length comes from the setting, and a lapsed hold stops counting at once</h3>
+      <ol class="steps">
+        <li>Set <strong>Instant payment hold (minutes)</strong> <code>2</code>. Give QA Γύρος νησιού a capacity override <code>2</code> on D13.</li>
+        <li>Book D13 for 2 guests on QA Island Tour; do not pay. Run the availability curl for D13 (<code>persons=1</code>).</li>
+        <li>Wait 3 minutes without running the sweep. Run the curl again and check the reservation.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 2: <code>expires_at</code> ≈ now + 2 minutes; D13 <code>full</code>, <code>remaining 0</code>. Step 3: D13 is <code>open</code> with <code>remaining 2</code> although the reservation is still <code>awaiting_payment</code> and the hold still reads <code>held</code>: an expired hold stops counting before the sweep. The pay link now answers the not-found page.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/allocation.ts</code> (<code>getDayStates</code>) · <code>src/cms/modules/booking/settings-read.ts</code> (<code>getPaymentHoldMinutes</code>, min 1)</p>
+    </article>
+
+    <article class="tc" id="BKG-057" data-priority="P1">
+      <h3>The booking-expire job expires the booking, releases the hold and tells the customer</h3>
+      <ol class="steps">
+        <li>After BKG-056 run the sweep: <code>curl -s -X POST -H "x-cron-secret: $CRON" "$BASE/api/cms/cron/booking-expire"</code></li>
+        <li>Run the queries; check the mailbox; run the sweep again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>"status":"ran","result":{"expired":1}</code> (or more if other stale rows existed). Step 2: status <code>expired</code>, <code>expires_at</code> NULL, hold <code>released</code>; event <code>status.expired</code> with no actor; email <code>Your booking expired — BKG-…</code> with <code>The payment deadline passed, so the date has been released. Do get in touch if you would still like to book.</code> The second run reports <code>"expired":0</code> and sends nothing. Set the hold setting back to empty.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/allocation.ts</code> (<code>expireStaleReservations</code>) · <code>src/app/api/cms/cron/[job]/route.ts</code> · SET-042</p>
+    </article>
+
+    <article class="tc" id="BKG-058" data-priority="P2">
+      <h3>An unanswered request lapses at the sweep</h3>
+      <ol class="steps">
+        <li>Request D14 on QA Boat Day (pending). Move its deadline into the past: <code>UPDATE reservations SET expires_at = '2000-01-01 00:00:00' WHERE reference = '&lt;ref&gt;';</code></li>
+        <li>Run the sweep; check the row and the mailbox.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>expired</code>; no hold existed so nothing is released; email <code>Your request expired — BKG-…</code> with <code>We did not manage to confirm your request in time. Do get in touch if you are still interested.</code></p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/emails.ts</code> (<code>customerEmailBody</code>, expired from pending)</p>
+    </article>
+
+    <article class="tc" id="BKG-059" data-priority="P3">
+      <h3>The older expire endpoint and its secret</h3>
+      <ol class="steps">
+        <li>Set <code>BOOKING_CRON_SECRET=short</code> in <code>.env.local</code>; restart. Run <code>curl -s -X POST -H 'x-cron-secret: short' "$BASE/api/cms/reservations/expire" -w ' %{http_code}\n'</code>.</li>
+        <li>Set a 40+ character secret, restart, repeat with it.</li>
+        <li>Without a secret but with the admin cookie: <code>curl -s -X POST -b "cms_session=$S" "$BASE/api/cms/reservations/expire"</code>. Remove the variable afterwards.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>401</code> (a secret shorter than 32 characters authorises nothing). Steps 2 and 3: <code>{"ok":true,"data":{"expired":N}}</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/payments.ts</code> (<code>bookingExpireRoute</code>, <code>authorizeCronRequest</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-pay">
+    <h2>Paying online in sandbox</h2>
+    <p class="intro">Set Settings → Booking → <strong>Payment method</strong> to the provider under test. Stripe runs inside the pay page; PayPal and Viva redirect. Settlement happens only when the provider's webhook arrives; wait for it before running the queries.</p>
+
+    <article class="tc" id="BKG-060" data-priority="P1">
+      <h3>Stripe: full payment settles the booking</h3>
+      <ol class="steps">
+        <li>From BKG-055-like booking (QA Island Tour, 2 guests, €80.00) on the pay page click <strong>Pay now</strong>.</li>
+        <li>Enter the provider's successful test card and click <strong>Pay now — €80.00</strong>.</li>
+        <li>After the webhook run the queries; check the mailbox; reload the pay link.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: a <code>stripe</code> payment row <code>pending</code> with <code>provider_ref</code> <code>pi_…</code>, amount 8000; <code>payment_started_at</code> set.</li>
+        <li>Step 2: the form is replaced by <code>We are confirming your payment. You will receive an email as soon as it clears — there is nothing more to do.</code></li>
+        <li>Step 3: payment <code>captured</code>; reservation <code>paid</code>, <code>amount_paid</code> 8000, <code>expires_at</code> and <code>payment_token_hash</code> NULL; hold <code>confirmed</code>; events <code>payment.captured</code>, <code>email.receipt</code>. Email <code>Payment received — BKG-…</code>. The old link now shows the not-found page.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/components/booking/BookingPayClient.tsx</code> · <code>src/cms/modules/booking/payments.ts</code> (<code>bookingPayStartRoute</code>, <code>captureReservationPaymentByRef</code>) · <code>src/cms/core/payments/webhooks.ts</code></p>
+    </article>
+
+    <article class="tc" id="BKG-061" data-priority="P2">
+      <h3>Stripe: decline, retry, and the double-start guard</h3>
+      <ol class="steps">
+        <li>Book QA Island Tour (1 guest). On the pay page click <strong>Pay now</strong>, pay with the provider's generic-decline test card.</li>
+        <li>In the same form pay with the successful card.</li>
+        <li>For a new booking, open the pay link in two tabs and click <strong>Pay now</strong> in both within a few seconds.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: the provider's decline text in red; after the webhook the payment row is <code>failed</code> and the booking stays <code>awaiting_payment</code>. Step 2: success message; the same <code>pi_…</code> row becomes <code>captured</code>; booking <code>paid</code>. Step 3: the second tab shows <code>A payment for this booking is already being started. Give it a moment, then try again.</code>; only one pending payment row was created.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/payments.ts</code> (<code>claimPaymentStart</code>, <code>PAYMENT_START_CLAIM_MS</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-062" data-priority="P2">
+      <h3>Deposit first, then the balance through the pay-balance link</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Stripe; Settings → Booking → <strong>Deposit (%)</strong> <code>30</code>.</p>
+      <ol class="steps">
+        <li>Book QA Island Tour, 2 guests (€80.00). On the pay page read the amount; pay with the successful card.</li>
+        <li>After the webhook open the booking's drawer.</li>
+        <li>Click <strong>Resend payment link</strong>, confirm <strong>Resend link</strong>. Open the emailed link.</li>
+        <li>Pay the balance with the successful card; wait for the webhook.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: <code>Deposit due now</code> €24.00; <code>deposit_amount</code> 2400.</li>
+        <li>Step 2: status <code>Confirmed</code>, <code>Paid so far</code> 24,00 €, <code>Balance due</code> 56,00 €; holds <code>confirmed</code>, <code>expires_at</code> NULL; email <code>Your booking is confirmed — BKG-…</code>.</li>
+        <li>Step 3: new email <code>Complete your payment — BKG-…</code>; the pay page shows <code>Amount due</code> €56.00 (not “Deposit due now”); <code>deposit_amount</code> is now 8000; status stays <code>confirmed</code> with no deadline.</li>
+        <li>Step 4: status <code>paid</code>, <code>amount_paid</code> 8000, two captured stripe rows 2400 and 5600; email <code>Payment received — BKG-…</code>.</li>
+      </ul>
+      <p class="exp"><span class="exp-label">Afterwards:</span> Set Deposit (%) back to empty. An experience's own <strong>Deposit %</strong> overrides the site value; repeat step 1 with QA Island Tour's Deposit % <code>50</code> and the site at 30 to see €40.00, then clear it.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/payments.ts</code> (<code>resolveDepositAmount</code>, <code>amountDueFor</code>, <code>paymentLinkAmount</code>) · <code>src/cms/modules/booking/payment-actions.ts</code> (<code>canResendPaymentLink</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-063" data-priority="P2">
+      <h3>Payment surcharge is added at payment time, not credited</h3>
+      <ol class="steps">
+        <li>Stripe; <strong>Card surcharge (%)</strong> <code>4</code>. Book QA Island Tour 2 guests; check the form total and the pay page.</li>
+        <li>Pay; after the webhook run the queries.</li>
+        <li>Set the surcharge back to empty.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: the form and the quote still say €80.00 (no surcharge in the quote); the pay page shows Amount due €80.00, <code>Payment fee</code> €3.20, <code>Total charged</code> €83.20, and the Stripe button <code>Pay now — €83.20</code>. Step 2: payment row amount 8320 with <code>surcharge</code> 320; <code>amount_paid</code> 8000; status <code>paid</code>. In the drawer the refundable figure of that payment is 83,20 € (surcharge included).</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/payments.ts</code> (<code>resolvePaymentTerms</code>) · docs/dev-guides/09-booking.md §4.1 (Surcharges)</p>
+    </article>
+
+    <article class="tc" id="BKG-064" data-priority="P2">
+      <h3>PayPal: approve and return</h3>
+      <ol class="steps">
+        <li>Payment method <code>PayPal</code>. Book QA Island Tour 1 guest; on the pay page click <strong>Pay now</strong>.</li>
+        <li>Approve with the sandbox buyer; note the page you return to.</li>
+        <li>After the webhooks run the queries.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: the browser leaves for PayPal; a <code>paypal</code> row <code>pending</code> with the PayPal order id. Step 2: back on <code>/en/booking/pay/BKG-…?t=…&amp;return=1</code>: <code>Thank you</code> / <code>We are confirming your payment…</code> once the approval webhook has settled it; if it arrives later you may first see the pay page again, and a reload after the webhook shows Thank you. Step 3: row <code>captured</code> with <code>pp_capture</code> set; booking <code>paid</code>; one receipt email.</p>
+      <p class="ref">Ref: <code>src/cms/core/payments/webhooks.ts</code> (<code>CHECKOUT.ORDER.APPROVED</code> capture) · <code>src/cms/modules/booking/payments.ts</code> (<code>paymentReturnUrl</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-065" data-priority="P3">
+      <h3>PayPal: cancel and come back</h3>
+      <ol class="steps">
+        <li>Book, click <strong>Pay now</strong>, and on PayPal cancel and return.</li>
+        <li>Click <strong>Pay now</strong> again at once; then after 2 minutes.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> You return to the pay page (token still valid) with <strong>Pay now</strong>. Immediately: <code>A payment for this booking is already being started. Give it a moment, then try again.</code>; after 2 minutes a new PayPal order starts and a second <code>pending</code> row appears. The booking stays <code>awaiting_payment</code> and expires at the sweep if never paid.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/payments.ts</code> (<code>claimPaymentStart</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-066" data-priority="P2">
+      <h3>Viva: success</h3>
+      <ol class="steps">
+        <li>Payment method <code>Viva.com (card)</code>. Book QA Island Tour 1 guest; click <strong>Pay now</strong>; pay on Viva's Smart Checkout with the demo success card.</li>
+        <li>Note the page you return to. After the webhook run the queries.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>provider_ref</code> is the 16-digit order code; after the webhook the row is <code>captured</code> with <code>viva_tx</code> holding the transaction id (different from the order code); booking <code>paid</code>, receipt emailed. Viva returns to the redirect set on the payment source in COM-058 (<code>/en/order</code>), not to the booking pay page: record this as a known gap.</p>
+      <p class="ref">Ref: <code>src/cms/core/payments/webhooks.ts</code> (Viva) · <code>src/cms/core/payments/viva.ts</code> (<code>confirmTransaction</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-067" data-priority="P3">
+      <h3>The pay page refuses bad, spent and closed links alike</h3>
+      <ol class="steps">
+        <li>Open a live pay link with the last character of <code>t</code> changed; without <code>t</code>; with another booking's reference.</li>
+        <li>Open the link of a paid booking, of a cancelled one and of an expired one.</li>
+        <li>Run <code>curl -s "$BASE/api/cms/booking/pay?reference=&lt;ref&gt;&amp;t=wrong" -H 'X-Real-IP: 10.90.0.5' -w ' %{http_code}\n'</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Every page case shows the same not-found page (no hint whether the reference exists). The curl answers <code>404</code> <code>"That payment link is not valid."</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/payments.ts</code> (<code>redeemPaymentToken</code>) · <code>src/cms/modules/booking/reference.ts</code> (<code>tokenMatches</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-068" data-priority="P3">
+      <h3>A replayed webhook credits once</h3>
+      <ol class="steps">
+        <li>In the Stripe test dashboard resend the <code>payment_intent.succeeded</code> event of BKG-060 (or with the CLI resend that event id).</li>
+        <li>Run the queries and count the receipt emails.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The webhook answers 200; still one stripe row, <code>amount_paid</code> 8000, one <code>payment.captured</code> event and one receipt email.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/payments.ts</code> (<code>captureReservationPaymentByRef</code>: same status is a no-op)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-concurrency">
+    <h2>Concurrency, overbooking and late payments</h2>
+
+    <article class="tc" id="BKG-069" data-priority="P1">
+      <h3>Two browsers, the last seats: one wins, the other gets a clear refusal</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Payment method manual. QA Γύρος νησιού capacity override <code>2</code> on D15.</p>
+      <ol class="steps">
+        <li>In browser A and browser B open <code>/en/booking/qa-island-tour</code>, pick D15, Guests 2, fill the details and tick the terms. Do not submit yet.</li>
+        <li>Submit A. Then submit B (its calendar still shows D15 free).</li>
+        <li>Reload B and look at D15. Repeat B's attempt on <code>/booking/qa-island-tour</code> (Greek).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> A: success panel and a <code>confirmed</code> booking holding 2 seats. B: a red alert <code>&lt;D15&gt; is no longer available.</code> in the form, no reservation row (the API answered <code>409</code> <code>{"ok":false,"error":"conflict",…}</code> and rolled back). After reload D15 is disabled (<code>Fully booked.</code>). On the Greek page the alert is the same English sentence (the Greek <code>errorUnavailable</code> text exists in <code>messages/el.json</code> but is not used): record as a translation defect.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/allocation.ts</code> (<code>allocateSlots</code>: <code>SELECT … FOR UPDATE</code>) · <code>src/components/booking/BookingForm.tsx</code> (error display)</p>
+    </article>
+
+    <article class="tc" id="BKG-070" data-priority="P2">
+      <h3>Truly simultaneous requests never overbook</h3>
+      <ol class="steps">
+        <li>Capacity override <code>2</code> on D16 for QA Γύρος νησιού. Run two requests at the same instant:
+<pre><code>for n in 11 12; do curl -s -X POST "$BASE/api/cms/booking/request" -H 'Content-Type: application/json' -H "X-Real-IP: 10.90.0.$n" -d "{\"slug\":\"qa-island-tour\",\"locale\":\"en\",\"date\":\"&lt;D16&gt;\",\"persons\":2,\"customer\":{\"name\":\"QA Race $n\",\"email\":\"qa.race$n@example.com\"},\"acceptTerms\":true}" -w " %{http_code}\n" &amp; done; wait</code></pre></li>
+        <li>Run <code>SELECT r.reference, r.status, h.seats, h.state FROM reservations r JOIN reservation_holds h ON h.reservation_id = r.id WHERE h.slot_date = '&lt;D16&gt;';</code> Repeat the loop with 5 parallel requests of 1 guest each on a fresh date with capacity 2.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Exactly one <code>201</code> and one <code>409</code> <code>"&lt;D16&gt; is no longer available."</code>; one row with seats 2. In the second run exactly two succeed. The sum of seats never exceeds the capacity, and the Availability banner shows nothing overbooked.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/allocation.ts</code> · docs/dev-guides/09-booking.md §4.3</p>
+    </article>
+
+    <article class="tc" id="BKG-071" data-priority="P2">
+      <h3>Overlapping stays: one night in common is enough to refuse</h3>
+      <ol class="steps">
+        <li>In browser A and B open <code>/en/booking/qa-villa</code>. A chooses D → D+3, B chooses D+2 → D+5 (both free).</li>
+        <li>Submit A, then B. Then book D+3 → D+5 in B.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> A is confirmed. B is refused with <code>&lt;D+2&gt; is no longer available.</code> (the shared night is named). D+3 → D+5 succeeds: A's check-out day was never held.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/availability.ts</code> (<code>stayNights</code>, <code>slotDatePairs</code> lock order)</p>
+    </article>
+
+    <article class="tc" id="BKG-072" data-priority="P2">
+      <h3>A payment after the hold lapsed (before the sweep) is recorded, not credited</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Stripe; Instant payment hold <code>2</code>.</p>
+      <ol class="steps">
+        <li>Book QA Island Tour 2 guests on D17. On the pay page click <strong>Pay now</strong> so the card form appears.</li>
+        <li>Wait 3 minutes (no sweep). Pay with the successful card; wait for the webhook.</li>
+        <li>Run the queries. Open <code>/admin/reservations</code> and the drawer.</li>
+      </ol>
+      <ul class="exp">
+        <li>Payment row <code>captured</code> 8000; reservation still <code>awaiting_payment</code>, <code>amount_paid</code> 0, <code>attention</code> <code>"hold_lapsed"</code>, token cleared; hold not confirmed; event <code>payment.needs_action</code>; no receipt email.</li>
+        <li>The list row has the red badge <code>payment to resolve</code>. The drawer opens with a red banner <code>Payment not applied — 80,00 € via stripe</code> and <code>A payment arrived after the hold on this date had lapsed, so the booking was not confirmed — the date may already be taken. Refund the payment, or rebook the customer by hand.</code> plus <strong>Mark resolved</strong>.</li>
+        <li>Running the sweep then moves it to <code>expired</code> (email <code>Your booking expired</code>); the flag and badge stay.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/booking/allocation.ts</code> (<code>confirmHoldsChecked</code>) · <code>src/cms/modules/booking/payments.ts</code> (<code>flagForAttention</code>) · <code>src/cms/modules/booking/payment-actions.ts</code> (<code>ATTENTION_MESSAGES</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-073" data-priority="P2">
+      <h3>A payment after the sweep expired the booking</h3>
+      <ol class="steps">
+        <li>As BKG-072 but after waiting 3 minutes run the sweep first, then pay in the still-open card form.</li>
+        <li>Run the queries; open the drawer.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Status stays <code>expired</code>; payment <code>captured</code>; <code>amount_paid</code> 0; <code>attention</code> <code>"booking_closed"</code>; banner text <code>A payment arrived for a booking that was already cancelled or expired. It was recorded but not credited. Refund it, or rebook the customer by hand.</code> There is no <strong>Cancel booking</strong> and no <strong>Record payment</strong>; <strong>Refund</strong> is offered for the stripe payment.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/payments.ts</code> (<code>settlementFor</code> refused)</p>
+    </article>
+
+    <article class="tc" id="BKG-074" data-priority="P3">
+      <h3>A payment on a date that has since become full</h3>
+      <ol class="steps">
+        <li>Stripe, hold 20 minutes. Book QA Island Tour 2 guests on D18; click <strong>Pay now</strong>.</li>
+        <li>In Availability set D18's capacity to <code>1</code> and save (the banner shows <code>(2/1)</code>).</li>
+        <li>Pay with the successful card; after the webhook run the queries and open the drawer.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Not credited, still <code>awaiting_payment</code>, <code>attention</code> <code>"no_capacity"</code>, banner <code>A payment arrived but the date no longer has room for this booking, so it was not confirmed. Refund the payment, or rebook the customer by hand.</code> Reset D18 afterwards.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/allocation.ts</code> (<code>confirmHoldsChecked</code>, <code>isOverCapacity</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-075" data-priority="P2">
+      <h3>Mark resolved takes the booking out of Needs action</h3>
+      <ol class="steps">
+        <li>Note the header count on <code>/admin/reservations</code>. Open BKG-074's booking and click <strong>Mark resolved</strong>; read the dialog; confirm.</li>
+        <li>Run the queries; check the mailbox; reload the list.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Dialog: <code>The booking leaves Needs action. Nothing is refunded and the customer is not emailed — use this only once you have dealt with the payment another way.</code> Afterwards the banner and the <code>payment to resolve</code> badge are gone, <code>attention</code> is NULL, <code>amount_paid</code> and the payment row are unchanged, no email is sent, and the header count drops by one.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/reservations.ts</code> (<code>resolveAttention</code>) · <code>src/cms/admin/ReservationsTable.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-reservations">
+    <h2>Reservations screen</h2>
+
+    <article class="tc" id="BKG-076" data-priority="P1">
+      <h3>The list: columns, badges and paging</h3>
+      <ol class="steps">
+        <li>Open <code>/admin/reservations</code>.</li>
+        <li>With more than 25 bookings, use <strong>Next</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Heading <code>Reservations</code>; when anything needs action, <code>N bookings need your action</code> top right.</li>
+        <li>Columns Reference, Experience, Date, Party, Customer, Total, Status, and a <strong>View</strong> button. Instant bookings carry <code>instant</code>; stays show <code>&lt;check-in&gt; → &lt;check-out&gt; N nights</code>; request rows show the first form answer (e.g. <code>Marina A</code>) after the date.</li>
+        <li>Status badges read <code>Awaiting your reply</code>, <code>Awaiting payment</code>, <code>Confirmed</code>, <code>Paid</code>, <code>Cancelled</code>, <code>Expired</code>; flagged rows add <code>payment to resolve</code>.</li>
+        <li>Paging: <code>N bookings · Page 1 of M</code> with Prev/Next; <code>?page=2</code> in the URL.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/reservations/page.tsx</code> · <code>src/cms/admin/ReservationsTable.tsx</code> (<code>RESERVATIONS_PAGE_SIZE = 25</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-077" data-priority="P2">
+      <h3>Filters and search live in the URL</h3>
+      <ol class="steps">
+        <li>Choose <strong>Status</strong> <code>Paid</code>; then <strong>Experience</strong> <code>QA Γύρος νησιού</code>; then a From/To date range covering only D12.</li>
+        <li>Clear them. Search <code>QA Guest</code>, then the customer email, then part of a reference.</li>
+        <li>Copy the URL into a new tab.</li>
+        <li>Combine a filter that matches nothing.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Each change updates the URL (<code>status=paid</code>, <code>experience=&lt;group id&gt;</code>, <code>from=…&amp;to=…</code>, <code>search=…</code>) and resets to page 1; the date range filters on the booked date (check-in for stays), both ends included. The copied URL reproduces the same list. No match: <code>No bookings match these filters.</code></p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/reservation-filters.ts</code></p>
+    </article>
+
+    <article class="tc" id="BKG-078" data-priority="P2">
+      <h3>Needs action lists requests and unapplied payments, with a count</h3>
+      <ol class="steps">
+        <li>Click <strong>Needs action</strong>. Compare with <code>SELECT COUNT(*) FROM reservations WHERE status = 'pending' OR JSON_EXTRACT(metadata,'$.attention.reason') IS NOT NULL;</code></li>
+        <li>Combine it with Status <code>Expired</code>. Click <strong>Needs action</strong> again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The button turns gold, the URL gains <code>needsAction=1</code> (or <code>true</code>); the list holds every <code>Awaiting your reply</code> booking and every flagged one (BKG-072, BKG-073), and its total equals the SQL count and the header's <code>N bookings need your action</code>. With Expired only the flagged expired ones remain. Clicking again removes the filter.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/reservations.ts</code> (<code>listReservations</code> needsAction) · <code>src/app/admin/(shell)/reservations/page.tsx</code> (header count)</p>
+    </article>
+
+    <article class="tc" id="BKG-079" data-priority="P2">
+      <h3>The list API: needsAction=false means no filter</h3>
+      <ol class="steps">
+        <li><code>curl -s -b "cms_session=$S" "$BASE/api/cms/reservations?pageSize=1" | grep -o '"total":[0-9]*'</code></li>
+        <li>Repeat with <code>&amp;needsAction=false</code>, <code>&amp;needsAction=0</code>, <code>&amp;needsAction=true</code>, <code>&amp;needsAction=1</code>, <code>&amp;needsAction=yes</code>.</li>
+        <li>Repeat step 1 with <code>&amp;pageSize=101</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>false</code> and <code>0</code> return the same total as no parameter (never the Needs-action subset); <code>true</code> and <code>1</code> return the BKG-078 count; <code>yes</code> is a <code>422</code> validation error; <code>pageSize=101</code> is refused (maximum 100). Responses have <code>items</code>, <code>page</code>, <code>pageSize</code>, <code>total</code>, <code>pageCount</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/reservations.ts</code> (<code>reservationsListQuery</code>, <code>queryBoolean</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-080" data-priority="P2">
+      <h3>The drawer: price, drift warning, details, payments and history</h3>
+      <ol class="steps">
+        <li>Open BKG-047's booking (QA Boat Day, 130,00 €).</li>
+        <li>Change QA Boat Day's Base price to <code>55</code> and save; reopen the drawer. Put it back to 50.</li>
+      </ol>
+      <ul class="exp">
+        <li>Title is the reference. Sections: <strong>Price</strong> (the stored lines and <code>Total</code>), <strong>Booking</strong> (Experience, Date, Party, Customer with email and phone, Notes <em>QA note</em>), <strong>Payments</strong> (<code>Paid so far</code>, <code>Balance due</code>, one line per payment or <code>No payments recorded yet.</code>), <strong>History</strong> (timestamp + kind, e.g. <code>status.awaiting_payment</code>, <code>email.payment_link</code>).</li>
+        <li>Step 2: an amber note <code>The pricing for this experience changed after this booking was quoted. The customer was quoted 130,00 €; today's rules give 140,00 €.</code> The stored price does not change.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/booking/reservations.ts</code> (<code>priceDrift</code>) · <code>src/cms/admin/ReservationsTable.tsx</code></p>
+    </article>
+
+    <article class="tc" id="BKG-081" data-priority="P2">
+      <h3>Cancel booking releases the date and refunds nothing</h3>
+      <ol class="steps">
+        <li>Open a <code>confirmed</code> transport booking (e.g. from BKG-017) and click <strong>Cancel booking</strong>; read the dialog; confirm.</li>
+        <li>Run the queries; check the mailbox and the Availability cell.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Under the button: <code>Releases the date and emails the customer. It refunds nothing — use Refund under Payments.</code> The destructive dialog: <code>The date is released and the customer is emailed. No money is refunded — use Refund under Payments for that.</code> Status <code>cancelled</code>, holds <code>released</code>, the seats return to the calendar, <code>amount_paid</code> unchanged; email <code>Your booking was cancelled — BKG-…</code> (<code>Your booking has been cancelled.</code>).</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/reservations.ts</code> (<code>updateReservationStatus</code> → <code>releaseHolds</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-082" data-priority="P2">
+      <h3>Cancel booking is hidden where the move is not allowed</h3>
+      <ol class="steps">
+        <li>Open an <code>expired</code> booking (BKG-057) and a <code>cancelled</code> one (BKG-081).</li>
+        <li>Open a <code>pending</code>, an <code>awaiting_payment</code>, a <code>confirmed</code> and a <code>paid</code> one.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Expired and cancelled: no <strong>Cancel booking</strong>, no primary action, no <strong>Record payment</strong>, no <strong>Resend payment link</strong>. The other four all show <strong>Cancel booking</strong>; the primary action is <strong>Accept &amp; send payment …</strong> for pending, <strong>Mark paid</strong> for awaiting payment and confirmed, none for paid.</p>
+      <p class="ref">Ref: <code>src/cms/admin/ReservationsTable.tsx</code> (<code>nextAction</code>, <code>canTransition(…, 'cancelled')</code>) · <code>src/cms/modules/booking/lifecycle.ts</code> (<code>RESERVATION_TRANSITIONS</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-083" data-priority="P2">
+      <h3>Status moves the API refuses</h3>
+      <ol class="steps">
+        <li>For a <code>paid</code> booking: <code>curl -s -X PATCH "$BASE/api/cms/reservations/&lt;id&gt;" -b "cms_session=$S" -H 'Content-Type: application/json' -d '{"status":"confirmed"}' -w ' %{http_code}\n'</code>; also <code>"pending"</code>.</li>
+        <li>For an <code>expired</code> booking send <code>"cancelled"</code>; for a <code>cancelled</code> one send <code>"awaiting_payment"</code>.</li>
+        <li>For a <code>confirmed</code> booking with balance due send <code>"awaiting_payment"</code>; check <code>expires_at</code>.</li>
+        <li>Send <code>{}</code> and <code>{"status":"paid","resolveAttention":true}</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: <code>409</code> <code>"A paid booking cannot become confirmed."</code> / <code>…cannot become pending.</code> Step 2: <code>409</code> <code>"A expired booking cannot become cancelled."</code>, <code>"A cancelled booking cannot become awaiting_payment."</code> Step 3: allowed; status <code>awaiting_payment</code> with <code>expires_at</code> NULL (collecting a balance never lets the sweep release a confirmed date); a payment email is sent. Step 4: <code>422</code> <code>invalid_input</code> whose <code>issues</code> carry <code>Send either a status or resolveAttention.</code> Nothing changes on any refusal.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/lifecycle.ts</code> (<code>RESERVATION_TRANSITIONS</code>, <code>paymentDeadlineForMove</code>) · <code>src/cms/modules/booking/reservations.ts</code> (<code>statusBody</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-084" data-priority="P3">
+      <h3>Two admins in the same drawer</h3>
+      <ol class="steps">
+        <li>Sign in as a second admin in browser B. Open the same pending booking's drawer in A, then in B.</li>
+        <li>In B, try the API move: <code>PATCH</code> with B's cookie to <code>{"status":"cancelled"}</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> B sees the edit-lock banner naming A and no action buttons. B's PATCH is refused because A holds the lock (<code>409</code> <code>conflict</code>). After A closes the drawer, B can act. (Lock mechanics are covered in checklist 04/05; this checks the reservation lock type.)</p>
+      <p class="ref">Ref: <code>src/cms/admin/ReservationsTable.tsx</code> (<code>useEditLock</code> type <code>reservation</code>) · <code>src/cms/modules/booking/reservations.ts</code> (<code>assertNotLockedByOther</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-085" data-priority="P3">
+      <h3>Read-only role on Reservations and Availability</h3>
+      <ol class="steps">
+        <li>Sign in with a role that has <strong>View bookings</strong> and <strong>View booking availability</strong> only (AUTH-055 builds it). Open <code>/admin/reservations</code>, a drawer, and <code>/admin/availability</code>, a day.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Reservations: <code>You have read-only access to bookings.</code>; drawers show price, details, payments and history but no action buttons, no Record payment, no Refund, no Mark resolved. Availability: day drawer shows <code>You have read-only access to the schedule.</code>, disabled fields, and <strong>Close</strong> instead of Save/Cancel. The API refusals themselves are AUTH-055.</p>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/reservations/page.tsx</code> (<code>canWrite</code>) · <code>src/cms/admin/AvailabilityCalendar.tsx</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-refunds">
+    <h2>Refunds</h2>
+    <p class="intro">Refunds are offered only for online payments (<code>Manual</code> rows have no Refund: the money moved outside the system). A refund never changes the booking's status; cancel separately.</p>
+
+    <article class="tc" id="BKG-086" data-priority="P2">
+      <h3>Stripe: partial refund, then the rest</h3>
+      <ol class="steps">
+        <li>Open BKG-063's paid booking (payment 83,20 € incl. surcharge). In <strong>Refund amount (EUR)</strong> type <code>90</code> and click <strong>Refund</strong>; then <code>20</code>.</li>
+        <li>Confirm <strong>Refund 20,00 €</strong>. Wait for Stripe's <code>charge.refunded</code> webhook; run the payment query; reopen the drawer.</li>
+        <li>Refund the rest (leave the field empty).</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: <code>That is more than is left to refund on that payment.</code>; for 20 the dialog <code>20,00 € will be returned to the customer through stripe. This cannot be undone. The booking's status does not change — cancel it separately if the booking is off.</code></li>
+        <li>Step 2: a new row <code>refunded</code> −2000 with <code>refund_of</code> = the capture id and a <code>re_…</code> ref; the capture row shows <code>20,00 € refunded</code>; <code>amount_paid</code> 6000; status still <code>paid</code>; event <code>payment.refunded</code>.</li>
+        <li>Step 3: the form still offers the remaining 63,20 € and the refund succeeds. If after the webhook the capture row's status turned <code>refunded</code> and the Refund form disappeared with money left, mark Fail (the webhook overwrote the capture row).</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/modules/booking/payments.ts</code> (<code>refundReservationPayment</code>) · <code>src/cms/core/payments/events.ts</code> (<code>charge.refunded</code>) · <code>src/cms/modules/booking/payment-actions.ts</code> (<code>refundableAmount</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-087" data-priority="P2">
+      <h3>PayPal refund targets the capture</h3>
+      <ol class="steps">
+        <li>Open BKG-064's booking and refund it in full.</li>
+        <li>Run the payment query; check the PayPal sandbox transaction.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The refund succeeds against <code>pp_capture</code> (not the order id); a <code>refunded</code> negative row; <code>amount_paid</code> 0; status unchanged (<code>paid</code>); the sandbox shows the capture refunded.</p>
+      <p class="ref">Ref: <code>src/cms/core/payments/refunds.ts</code> (<code>refundTargetRef</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-088" data-priority="P2">
+      <h3>Viva refund uses the transaction id</h3>
+      <ol class="steps">
+        <li>Open BKG-066's booking and refund 5,00 €.</li>
+        <li>On another Viva payment whose row has no transaction id (make a copy: <code>UPDATE reservation_payments SET metadata = JSON_REMOVE(metadata,'$.transactionId') WHERE id = &lt;id of an unrefunded captured viva row&gt;;</code>), try a refund.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: succeeds; Viva's demo portal shows the refund on the transaction whose id is <code>viva_tx</code>; <code>amount_paid</code> drops by 500. After Viva's reversal webhook, <code>metadata.reversalTransactionId</code> is set and <code>transactionId</code> is unchanged. Step 2: <code>That payment has no provider reference to refund against.</code> in the drawer (409); nothing is refunded and the claim is released.</p>
+      <p class="ref">Ref: <code>src/cms/core/payments/refunds.ts</code> (<code>REFUND_TARGET_KEY</code> viva) · <code>src/cms/modules/booking/payments.ts</code> · docs/dev-guides/09-booking.md §10 (Payments)</p>
+    </article>
+
+    <article class="tc" id="BKG-089" data-priority="P2">
+      <h3>Refunding a payment that was never credited leaves amount_paid alone</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Stripe; Deposit (%) <code>30</code>.</p>
+      <ol class="steps">
+        <li>Book QA Island Tour 2 guests (€80.00) and pay the €24.00 deposit (confirmed, <code>amount_paid</code> 2400).</li>
+        <li>In the drawer click <strong>Resend payment link</strong>. Open the link as the customer and click <strong>Pay now</strong> (card form for €56.00 shows). Leave it open.</li>
+        <li>In the admin click <strong>Cancel booking</strong>. Then, in the customer tab, pay €56.00 with the successful card.</li>
+        <li>After the webhook check the drawer and the queries. Then refund the 56,00 € payment (choose it in <strong>Payment to refund</strong>).</li>
+        <li>Run the queries and DB-091.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 4: status <code>cancelled</code>, flagged <code>booking_closed</code>, banner <code>Payment not applied — 56,00 € via stripe</code>, <code>amount_paid</code> 2400 (the 56 was not credited).</li>
+        <li>Step 5: the refund row −5600 exists, the flag is cleared, and <code>amount_paid</code> must stay <strong>2400</strong>: the refunded money was never counted. Current code subtracts every refund from <code>amount_paid</code>; if it reads 0, mark Fail. DB-091 then lists this booking (payments sum 2400 against <code>amount_paid</code> 0), which is the mismatch DB-091 says to report.</li>
+      </ul>
+      <p class="exp"><span class="exp-label">Afterwards:</span> Refund the deposit if wanted; set Deposit (%) back to empty.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/payments.ts</code> (<code>refundReservationPayment</code>: <code>amountPaid: Math.max(0, reservation.amountPaid - amount)</code>) · DB-091</p>
+    </article>
+
+    <article class="tc" id="BKG-090" data-priority="P3">
+      <h3>What the refund form refuses</h3>
+      <ol class="steps">
+        <li>On a booking with only <code>Manual</code> payments, look for a Refund form.</li>
+        <li>On a Stripe payment type <code>0</code>, then <code>12.345</code>, then a figure above the refundable amount.</li>
+        <li>Via API refund a payment id that belongs to another booking: <code>curl -s -X POST "$BASE/api/cms/reservations/&lt;id A&gt;/refund" -b "cms_session=$S" -H 'Content-Type: application/json' -d '{"paymentId":&lt;payment of B&gt;}' -w ' %{http_code}\n'</code></li>
+        <li>Refund a fully refunded payment via API.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: no Refund form. Step 2: <code>Enter an amount greater than zero.</code>; <code>Enter an amount such as 50 or 49.90.</code>; <code>That is more than is left to refund on that payment.</code> Step 3: <code>404</code> <code>"Payment not found."</code>. Step 4: <code>409</code> <code>"There is nothing left to refund on that payment."</code> (or <code>"Only a captured payment can be refunded."</code> if the webhook already marked the row refunded).</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/payment-actions.ts</code> (<code>refundRefusal</code>) · <code>src/cms/modules/booking/payments.ts</code> (<code>refundReservationRoute</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-lookup">
+    <h2>Guest lookup</h2>
+
+    <article class="tc" id="BKG-091" data-priority="P2">
+      <h3>Find a booking by reference and email</h3>
+      <ol class="steps">
+        <li>Open <code>/en/booking/lookup</code>. Enter BKG-054's stay reference and the customer email in capitals; click <strong>Find booking</strong>.</li>
+        <li>Repeat with a transport booking in <code>awaiting_payment</code>, and on <code>/booking/lookup</code> (Greek) with the Greek stay.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Heading <code>My booking</code>, intro <code>Enter your booking reference and email.</code>, placeholder <code>BKG-2026-XXXXXXXX</code>. Result card: title, Booking reference, <code>Status</code> <code>Confirmed</code>, <code>Date</code> <code>&lt;D&gt; → &lt;D+3&gt; (3 nights)</code>, <code>Guests</code> 3, <code>Total</code> €366.00. Transport: Date is one day and Status <code>Awaiting payment</code>. Greek: <code>Επιβεβαιωμένη</code> and <code>… → … (2 νύχτες)</code>. No payment link or token is shown.</p>
+      <p class="ref">Ref: <code>src/app/[locale]/booking/lookup/BookingLookupClient.tsx</code> · <code>src/cms/modules/booking/reservations.ts</code> (<code>lookupReservation</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-092" data-priority="P3">
+      <h3>A wrong email or reference reveals nothing</h3>
+      <ol class="steps">
+        <li>Look up a real reference with another email; then a made-up reference with the right email.</li>
+        <li>Run 21 lookups in a minute from one <code>X-Real-IP</code> with curl: <code>curl -s -X POST "$BASE/api/cms/booking/lookup" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.90.0.20' -d '{"reference":"BKG-2026-AAAAAAAA","email":"x@example.com"}' -w ' %{http_code}\n'</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both show <code>No booking matches those details.</code> (the API says <code>404</code> <code>"No booking matches that reference and email."</code> for both). The 21st curl answers <code>429</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/reservations.ts</code> (<code>bookingLookupRoute</code>, 20/min)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-emails">
+    <h2>Customer and operator notifications</h2>
+
+    <article class="tc" id="BKG-093" data-priority="P2">
+      <h3>One email per status, in the booking's language</h3>
+      <ol class="steps">
+        <li>From the cases above, collect the customer emails of one English and one Greek booking for each event below and compare subjects (each ends <code>— BKG-…</code>).</li>
+      </ol>
+      <table>
+        <thead><tr><th>Event</th><th>English subject</th><th>Greek subject</th></tr></thead>
+        <tbody>
+          <tr><td>New request (pending)</td><td><code>We have your request</code></td><td><code>Λάβαμε το αίτημά σας</code></td></tr>
+          <tr><td>Accepted / new instant with gateway</td><td><code>Your booking is approved — complete payment</code> / <code>Complete your payment</code></td><td><code>Η κράτησή σας εγκρίθηκε — ολοκληρώστε την πληρωμή</code> / <code>Ολοκληρώστε την πληρωμή σας</code></td></tr>
+          <tr><td>Confirmed (deposit, instant manual)</td><td><code>Your booking is confirmed</code></td><td><code>Η κράτησή σας επιβεβαιώθηκε</code></td></tr>
+          <tr><td>Paid</td><td><code>Payment received</code></td><td><code>Απόδειξη πληρωμής</code></td></tr>
+          <tr><td>Cancelled</td><td><code>Your booking was cancelled</code></td><td><code>Η κράτησή σας ακυρώθηκε</code></td></tr>
+          <tr><td>Expired from awaiting payment / from request</td><td><code>Your booking expired</code> / <code>Your request expired</code></td><td><code>Η κράτησή σας έληξε</code> / <code>Το αίτημά σας έληξε</code></td></tr>
+        </tbody>
+      </table>
+      <p class="exp"><span class="exp-label">Expected:</span> Every row matches. Each email has the summary (reference, Date or Stay, Guests, option if any, price breakdown and total); confirmed and paid emails add the cancellation terms. A refund and Mark resolved send nothing. Each send appears in History as <code>email.&lt;which&gt;</code> without a red badge.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/emails.ts</code> (<code>customerEmailBody</code>) · <code>src/cms/modules/booking/lifecycle.ts</code> (<code>emailForTransition</code>)</p>
+    </article>
+
+    <article class="tc" id="BKG-094" data-priority="P3">
+      <h3>No operator address, and a failed customer email</h3>
+      <ol class="steps">
+        <li>Empty <strong>Notify these addresses</strong>, save, make a request. Open its drawer.</li>
+        <li>Break outgoing mail (as in checklist 07, e.g. a wrong mail secret), make another request, open its drawer and the list. Restore mail and the notification address.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: History shows <code>email.admin_new_request</code> with the amber badge <code>nobody notified</code>; its info reads <code>No notification recipients are configured in Settings → Booking.</code> Step 2: the booking is still created; the list row shows a red <code>not sent</code> badge; History shows the customer email with <code>not sent</code> and the error text; <code>email_status</code> <code>failed</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/booking/emails.ts</code> (<code>sendAndRecord</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-module">
+    <h2>Module off</h2>
+
+    <article class="tc" id="BKG-095" data-priority="P3">
+      <h3>Booking off: what this checklist adds</h3>
+      <p class="pre"><span class="exp-label">Preconditions:</span> Run SET-038, ADM-038 and SET-042 (with <code>booking-expire</code>) for the sidebar, admin screens, public listing and cron. This case covers the extra addresses only.</p>
+      <ol class="steps">
+        <li>Untick <strong>Booking</strong> and save. Open <code>/en/booking/qa-boat-day</code>, <code>/en/booking/lookup</code>, a live <code>/en/booking/pay/BKG-…?t=…</code> link and run:
+<pre><code>for p in "booking/quote" "booking/request" "booking/lookup" "booking/pay"; do curl -s -o /dev/null -w "$p %{http_code}\n" -X POST "$BASE/api/cms/$p" -H 'Content-Type: application/json' -H 'X-Real-IP: 10.90.0.30' -d '{}'; done
+curl -s -o /dev/null -w "schedule %{http_code}\n" -b "cms_session=$S" "$BASE/api/cms/booking/schedule?from=2026-01-01&amp;to=2026-01-02"
+curl -s -o /dev/null -w "reservations %{http_code}\n" -b "cms_session=$S" "$BASE/api/cms/reservations"</code></pre></li>
+        <li>Tick <strong>Booking</strong> again and save.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> All pages show the not-found page and every call answers <code>404</code>. After switching back, every QA experience, reservation and override is intact.</p>
+      <p class="ref">Ref: <code>src/app/api/cms/booking/*/route.ts</code> · <code>src/app/[locale]/booking/**</code> · docs/dev-guides/09-booking.md §7</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-cleanup">
+    <h2>Clean up</h2>
+
+    <article class="tc" id="BKG-096" data-priority="P3">
+      <h3>Remove the QA booking data and restore settings</h3>
+      <ol class="steps">
+        <li>Reset every QA override in Availability. Delete the six QA experiences and the three QA terms in the admin.</li>
+        <li>Run:
+<pre><code>DELETE FROM reservations WHERE booking_slug LIKE 'qa-%' OR email LIKE 'qa.%@example.com';
+DELETE FROM booking_slots WHERE capacity IS NULL AND closed = 0 AND price_override IS NULL AND note IS NULL
+  AND NOT EXISTS (SELECT 1 FROM reservation_holds h WHERE h.slot_key = booking_slots.slot_key AND h.slot_date = booking_slots.slot_date);</code></pre>
+          (items, holds, payments and events go with their reservation).</li>
+        <li>Set Settings → Booking back (Payment method, Deposit, surcharges, hold, cut-off, notification addresses), remove <code>BOOKING_CRON_SECRET</code>, and restore the Booking switch to what the site had.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>/en/booking</code> lists no QA experiences; <code>/admin/reservations</code> shows no QA bookings; <code>/admin/availability</code> has no QA slots; Settings are as before the run.</p>
+      <p class="ref">Ref: this checklist</p>
+    </article>
+  </section>
+
+</main>
+<footer class="page">Checklist 09 of 12. Results are saved in this browser only; use Export before clearing browser data. Afterwards set the booking payment method, deposit, surcharges and hold back, remove sandbox keys that should not stay, and delete the QA experiences, terms, overrides and reservations (BKG-096).</footer>
+</body>
+</html>

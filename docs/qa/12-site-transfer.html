@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Site transfer: export &amp; import</title>
+<link rel="stylesheet" href="qa.css">
+<script src="qa.js" defer></script>
+</head>
+<body>
+<nav class="crumbs"><a href="index.html">CMS manual QA</a></nav>
+<header class="page">
+  <h1>12 · Site transfer: export &amp; import</h1>
+  <p class="scope">Moving content, media and settings from one site built on this CMS to another through <strong>Export / Import</strong>. Covered here: who may open the screen and move each kind of data, choosing whole groups or single items, dependencies that come along and the ones you leave out, building and downloading a package, what a package contains (and never contains), the chunked upload and resuming it, refusal of damaged or hostile packages, languages, conflicts and the per-item choice, the dry run, running, stopping and resuming an import, what lands on the site (remapped links, copies, overwrites, drafts), the report, the audit entries and the cleanup job. Also the site-configuration tables: script snippets, cookie categories, shipping zones, Google review locations, redirects and per-path SEO meta. Also people and transactions: customer accounts, newsletter subscribers and suppressions, product reviews, orders, reservations, availability overrides, admin roles and users — with the personal-data and password safeguards. Gift cards are deliberately never transferred. You need: two test sites on this build (called <strong>SOURCE</strong> and <strong>TARGET</strong>; one site importing its own export also works for most cases), a database client for each, a terminal with <code>curl</code>, <code>unzip</code> and <code>sha256sum</code>, and two browsers (or one normal and one private window).</p>
+</header>
+<main>
+
+  <section class="suite" id="suite-prep">
+    <h2>Before you start</h2>
+    <p class="intro">Checklist 01 must be done on both sites. Sign in as the superadmin <code>qa-admin@example.com</code> unless a case says otherwise. Take a database backup of TARGET before the import suites (<code>mysqldump --single-transaction</code>, see OPS in checklist 10); XFR-062 restores it.</p>
+    <div class="callout">
+      <p><strong>Test data on SOURCE.</strong> Create, in both languages: a product category <code>qa-shoes</code> with a parent category <code>qa-root</code> and an image; a size chart <code>qa-chart</code>; two products <code>qa-red</code> and <code>qa-blue</code>, each in <code>qa-shoes</code>, with the size chart, a gallery of two images, and each listing the other as a component/related product; a page <code>qa-page</code> whose body contains the paragraph <code>[popup id="N"]</code> for an existing popup N and a link to one of the images; a custom field on products limited to <code>qa-shoes</code>; a logo in <strong>Settings</strong> → <strong>Branding</strong>.</p>
+      <p><strong>Terminal.</strong> <code>BASE=http://localhost:3002</code> and the admin session cookie in <code>S</code> as described in checklist 05.</p>
+      <p><strong>A second role.</strong> On each site create role <code>qa-content</code> with <em>Access</em>, <em>View content</em>, <em>Edit content</em>, <em>Export site data</em>, <em>Import site data</em> (no media, no settings, no publish) and user <code>qa-content@example.com</code> with it.</p>
+    </div>
+  </section>
+
+  <section class="suite" id="suite-access">
+    <h2>Access and permissions</h2>
+
+    <article class="tc" id="XFR-001" data-priority="P1">
+      <h3>The screen is in the menu only for someone allowed to use it</h3>
+      <ol class="steps">
+        <li>As the superadmin, look at the <strong>System</strong> group of the sidebar and open <strong>Export / Import</strong>.</li>
+        <li>Sign in as a user whose role has <em>Access</em> and <em>View content</em> only. Look at the sidebar, then open <code>/admin/transfer</code> directly.</li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: the item is there with a two-arrows icon; the page has the heading <strong>Export / Import</strong> and the tabs <strong>Export</strong> and <strong>Import</strong>.</li>
+        <li>Step 2: no menu item; the direct URL shows the 403 page.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/app/admin/(shell)/layout.tsx</code> · <code>src/app/admin/(shell)/transfer/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="XFR-002" data-priority="P1">
+      <h3>The permissions are listed and editors do not get them</h3>
+      <ol class="steps">
+        <li>Open <strong>Roles</strong> → edit the <code>editor</code> role. Find the <strong>Site data</strong> area and hover each “i”.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Three boxes: <em>Export site data</em>, <em>Import site data</em>, <em>Move admin accounts in site data</em>, each with an explanation; none is ticked for <code>editor</code>.</p>
+      <p class="ref">Ref: <code>src/cms/modules/auth/permissions.ts</code> · <code>permission-labels.ts</code> · <code>src/cms/db/seeds/roles.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-003" data-priority="P1">
+      <h3>Each kind of data also needs its own permission</h3>
+      <ol class="steps">
+        <li>Sign in as <code>qa-content@example.com</code> and open <strong>Export / Import</strong> → <strong>Export</strong>.</li>
+        <li>With that session in <code>S</code>: <code>curl -s -X POST "$BASE/api/cms/transfer/exports/preview" -b "cms_session=$S" -H 'Content-Type: application/json' -H "Origin: $BASE" -d '{"selection":{"groups":{"settings":"all"}}}' -w '\n%{http_code}\n'</code></li>
+      </ol>
+      <ul class="exp">
+        <li>Step 1: only the content collections are offered; <strong>Media files</strong> and <strong>Settings</strong> are not.</li>
+        <li>Step 2: <code>403</code> with “You do not have permission to export this.”</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/transfer/groups.ts</code> (<code>canExportGroup</code>) · <code>routes.ts</code> (<code>assertExportable</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-004" data-priority="P2">
+      <h3>Someone else's job looks like no job at all</h3>
+      <ol class="steps">
+        <li>As the superadmin start an import upload (XFR-020 step 1) and note its id from the browser's network panel.</li>
+        <li>As <code>qa-content@example.com</code>: <code>curl -s "$BASE/api/cms/transfer/imports/&lt;id&gt;" -b "cms_session=$S" -w '\n%{http_code}\n'</code>, then the same with a random uuid.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both answer <code>404</code> with the same message <code>No such transfer.</code></p>
+      <p class="ref">Ref: <code>src/cms/core/transfer/routes.ts</code> (<code>stagingToApiError</code>) · <code>staging.ts</code> (<code>meta</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-export">
+    <h2>Export</h2>
+
+    <article class="tc" id="XFR-010" data-priority="P1">
+      <h3>Choose single items, with search and pages</h3>
+      <ol class="steps">
+        <li>On SOURCE open <strong>Export</strong>. For Products choose <strong>Choose items…</strong>.</li>
+        <li>Search for <code>qa-</code>, tick <code>qa-red</code>. Page through the list if it has more than one page.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The search narrows the list; each row shows its languages and status; “(1 chosen)” appears beside <strong>Choose items…</strong>; <strong>Review export</strong> becomes available.</p>
+      <p class="ref">Ref: <code>src/cms/admin/transfer/ItemPicker.tsx</code> · <code>GET /api/cms/transfer/catalog</code></p>
+    </article>
+
+    <article class="tc" id="XFR-011" data-priority="P1">
+      <h3>What a product needs comes along</h3>
+      <ol class="steps">
+        <li>Continue from XFR-010: click <strong>Review export</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Under “Added because your selection needs them” are <code>qa-shoes</code>, <code>qa-root</code>, <code>qa-chart</code>, <code>qa-blue</code> (it is a component of <code>qa-red</code>), and every image of both products and of the category. The totals line counts them by group. Choosing a <em>category</em> alone does <strong>not</strong> bring its products.</p>
+      <p class="ref">Ref: <code>src/cms/core/transfer/export/collect.ts</code> (<code>exportClosure</code>) · <code>refs.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-012" data-priority="P2">
+      <h3>Leave a dependency out</h3>
+      <ol class="steps">
+        <li>In the review, untick <code>qa-chart</code>.</li>
+        <li>Click <strong>Include it</strong> next to it in “Referenced but left out”.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: the preview refreshes; <code>qa-chart</code> moves to “Referenced but left out” and the total drops by one. Step 2: it is back among the dependencies.</p>
+      <p class="ref">Ref: <code>src/cms/admin/transfer/ExportPanel.tsx</code> · <code>wizard-state.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-013" data-priority="P1">
+      <h3>Build and download</h3>
+      <ol class="steps">
+        <li>Click <strong>Build the package</strong>, wait for the bar, then <strong>Download the package</strong>.</li>
+        <li><code>curl -sI "$BASE/api/cms/transfer/exports/&lt;id&gt;/download" -b "cms_session=$S"</code></li>
+        <li>Open <strong>Audit log</strong>, filter <strong>Site configuration</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>A progress bar counts items; then <code>&lt;site-name&gt;-export-&lt;date&gt;.zip</code> downloads.</li>
+        <li>Headers: <code>Content-Type: application/zip</code>, <code>Content-Disposition: attachment; …</code>, <code>Cache-Control: no-store</code>.</li>
+        <li>The audit shows “Downloaded a site data export” with the selection.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/transfer/export/build.ts</code> · <code>routes.ts</code> (<code>transferExportDownloadRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-014" data-priority="P1">
+      <h3>What is inside a package, and what never is</h3>
+      <ol class="steps">
+        <li><code>unzip -l export.zip</code>, then <code>unzip -p export.zip manifest.json</code>.</li>
+        <li>Export <strong>Settings</strong> → <strong>Everything</strong> as well, and run <code>unzip -p export.zip 'data/settings/*' | grep -c -i -E 'secret|baseline|oauthState|password'</code>.</li>
+        <li>For one data file listed in the manifest: <code>unzip -p export.zip data/documents/product/0001.jsonl | sha256sum</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Entries: <code>manifest.json</code>, <code>data/…/0001.jsonl</code> files, <code>data/stubs.json</code>, <code>media/&lt;uuid&gt;</code> (and <code>.avif</code> companions).</li>
+        <li>The manifest has <code>"format": "cms-transfer"</code>, <code>formatVersion</code>, <code>cmsVersion</code>, the source locales, a count per group and a <code>sha256</code> per file; step 3 matches it.</li>
+        <li>Step 2 prints <code>0</code>: no service credentials, no edit baselines, no OAuth state. Payment keys, Google tokens and passwords are never in a package.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/transfer/format.ts</code> · <code>settings-refs.ts</code> · docs/dev-guides/10-settings-cron-operations.md §3.7</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-upload">
+    <h2>Upload and checks</h2>
+
+    <article class="tc" id="XFR-020" data-priority="P1">
+      <h3>Upload a package</h3>
+      <ol class="steps">
+        <li>On TARGET open <strong>Import</strong>. Read the notice at the top. Choose the zip from XFR-013 and click <strong>Upload and check</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The notice asks for a database backup first. A progress bar counts megabytes; then the package summary shows the source site name, address, export date and CMS version, the language mapping and one fieldset per group with “N in the package, M already here”.</p>
+      <p class="ref">Ref: <code>src/cms/admin/transfer/ImportPanel.tsx</code> · <code>chunked-upload.ts</code> · <code>import/analyze.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-021" data-priority="P2">
+      <h3>An interrupted upload continues where it stopped</h3>
+      <ol class="steps">
+        <li>Use a package over 20 MB (export all media). Start uploading and reload the page half-way.</li>
+        <li>Under <strong>Your recent imports</strong> click <strong>Open</strong> on it, choose the same file again and click <strong>Upload and check</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 2 first says to choose the file again, then the bar starts from where it stopped rather than from 0, and the summary appears.</p>
+      <p class="ref">Ref: <code>src/cms/core/transfer/staging.ts</code> (<code>appendChunk</code>) · <code>PUT …/chunk?offset=N</code></p>
+    </article>
+
+    <article class="tc" id="XFR-022" data-priority="P1">
+      <h3>Damaged and hostile packages are refused</h3>
+      <ol class="steps">
+        <li>Upload a random <code>.zip</code> that is not an export (e.g. zip a text file).</li>
+        <li>Unzip an export, change one character in a <code>data/…jsonl</code> file, zip it again and upload it.</li>
+        <li>Upload a zip whose entry is named <code>../evil.txt</code> (<code>python3 -c "import zipfile;z=zipfile.ZipFile('slip.zip','w');z.writestr('../evil.txt','x')"</code>).</li>
+        <li>Upload a zip holding one 50 MB file of zeros (<code>head -c 50000000 /dev/zero &gt; z; zip bomb.zip z</code>).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Each is refused with a message in the red box and nothing is written to the site: 1 “This is not a site export package (no manifest).”; 2 “… does not match the manifest — the package is damaged.”; 3 “This is not a readable package: Unsafe entry name…”; 4 “… implausible compression ratio.” No file named <code>evil.txt</code> appears anywhere on the server.</p>
+      <p class="ref">Ref: <code>src/cms/core/transfer/zip-file.ts</code> · <code>import/package.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-023" data-priority="P2">
+      <h3>A package over the size limit, or sent out of order, is refused</h3>
+      <ol class="steps">
+        <li><code>curl -s -X POST "$BASE/api/cms/transfer/imports" -b "cms_session=$S" -H 'Content-Type: application/json' -H "Origin: $BASE" -d '{"filename":"big.zip","size":99999999999}' -w '\n%{http_code}\n'</code></li>
+        <li>Open a normal upload (size 20) and send <code>curl -s -X PUT "$BASE/api/cms/transfer/imports/&lt;id&gt;/chunk?offset=10" -b "cms_session=$S" -H "Origin: $BASE" --data-binary 'abc' -w '\n%{http_code}\n'</code>.</li>
+        <li>The same request with <code>Origin: https://evil.example</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> 1: <code>422</code> “The package is too large (limit … MB).” 2: <code>409</code> with <code>"issues":{"offset":0}</code>. 3: <code>403</code> “Cross-origin request rejected.”</p>
+      <p class="ref">Ref: <code>src/app/api/cms/transfer/imports/[id]/chunk/route.ts</code> · <code>runtime.ts</code> (<code>TRANSFER_LIMITS</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-024" data-priority="P2">
+      <h3>Different languages and versions are pointed out</h3>
+      <ol class="steps">
+        <li>Import into a site whose languages differ from the source's (e.g. turn one language off in <strong>Settings</strong> → <strong>Languages</strong> on a copy of TARGET, or use a site with <code>el</code> only).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> A line names the languages this site does not have. In <strong>Languages</strong>, each package language is mapped to the same one here or to <strong>Leave out</strong>. Rows in a left-out language are not imported.</p>
+      <p class="ref">Ref: <code>src/cms/core/transfer/format.ts</code> (<code>checkCompatibility</code>) · <code>locale-map.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-choose">
+    <h2>Choosing and conflicts</h2>
+
+    <article class="tc" id="XFR-030" data-priority="P1">
+      <h3>Items that already exist are listed with a choice for each</h3>
+      <ol class="steps">
+        <li>On TARGET make sure <code>qa-red</code> exists (import once, or create a product with that slug). Upload the package again.</li>
+        <li>For Products choose <strong>Everything</strong>. Read the “… that already exist here” section.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> A default select (“Unless chosen otherwise below”) with <strong>Skip — keep this site’s</strong>, <strong>Overwrite this site’s</strong>, <strong>Import as a copy</strong>; a table with <code>qa-red</code>, a badge <strong>Exists here</strong>, what it matches (slug and languages) and its own select starting at “Default: …”. Settings that exist also offer <strong>Merge — add what is missing</strong>; they never offer a copy.</p>
+      <p class="ref">Ref: <code>src/cms/admin/transfer/ConflictTable.tsx</code> · <code>src/cms/core/transfer/conflicts.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-031" data-priority="P2">
+      <h3>An ambiguous match cannot be overwritten, even through the API</h3>
+      <ol class="steps">
+        <li>On TARGET give the Greek row of one product the slug of product A and the English row of another product the same slug as A's English row, so the package's A matches two different products. Upload the package again.</li>
+        <li>Look at A in the conflicts table.</li>
+        <li>Send the plan with an override: <code>curl -s -X POST "$BASE/api/cms/transfer/imports/&lt;id&gt;/plan" … -d '{"decisions":{"selection":{"groups":{"documents:product":["&lt;A key&gt;"]},"optOut":[]},"defaults":{},"overrides":{"&lt;A key&gt;":"overwrite"}},"options":{"localeMap":{"el":"el","en":"en"},"keepStatus":false,"copiesAsDrafts":true}}' -w '\n%{http_code}\n'</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 2: badge <strong>Matches more than one item</strong>; the select offers only skip and copy. Step 3: <code>422</code> naming the item: “"overwrite" is not possible for this item.”</p>
+      <p class="ref">Ref: <code>src/cms/core/transfer/conflicts.ts</code> (<code>actionsFor</code>, <code>resolveAction</code>) · <code>import/plan.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-032" data-priority="P1">
+      <h3>The dry run writes nothing and says what will happen</h3>
+      <ol class="steps">
+        <li>With selections made, click <strong>Preview the import</strong>. In the database count <code>documents</code>, <code>media_files</code> and <code>site_settings</code> before and after.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Counts for created / overwritten / copied / merged / skipped; lists of what is brought along, what is referenced but not imported (“the link will be dropped” if nothing here matches), records that cannot be imported, and warnings (e.g. for <code>i18n.locales</code> or a payment provider). The database counts are unchanged.</p>
+      <p class="ref">Ref: <code>src/cms/core/transfer/import/run.ts</code> (<code>planImport</code>) · <code>DryRunSummary.tsx</code></p>
+    </article>
+
+    <article class="tc" id="XFR-033" data-priority="P2">
+      <h3>Without the right permissions, groups cannot be chosen</h3>
+      <ol class="steps">
+        <li>As <code>qa-content@example.com</code> upload a package that contains settings and media, choose <strong>Settings</strong> → <strong>Everything</strong> and click <strong>Preview the import</strong>.</li>
+        <li>Choose Products only and preview again.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: an error “You do not have permission to import settings.” Step 2: works; the product images appear under “Referenced but not imported” instead of being imported.</p>
+      <p class="ref">Ref: <code>src/cms/core/transfer/import/plan.ts</code> (<code>buildPlan</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-run">
+    <h2>Running an import</h2>
+
+    <article class="tc" id="XFR-040" data-priority="P1">
+      <h3>New items arrive with their links pointing at this site's items</h3>
+      <ol class="steps">
+        <li>On a TARGET without the QA data, import the package from XFR-013 with everything new. Run it and confirm.</li>
+        <li>Open <code>qa-red</code> on TARGET: its category, size chart, component product and gallery. In SQL compare <code>JSON_EXTRACT(data,'$.categories')</code> with the id of <code>qa-shoes</code> on TARGET.</li>
+        <li>Check <code>SELECT * FROM document_relations WHERE from_id = &lt;qa-red id&gt;</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>All items are created; both languages of each product are one translation group; the products are drafts unless “Keep published content published” was ticked and you have <em>Publish content</em>.</li>
+        <li>The category id in <code>data</code> is TARGET's id of <code>qa-shoes</code>, not SOURCE's; the size chart, <code>qa-blue</code> and every image resolve; <code>document_relations</code> has rows for the relation fields.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/transfer/refs.ts</code> (<code>rewriteData</code>) · <code>import/run.ts</code> (<code>writeDocument</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-041" data-priority="P1">
+      <h3>Skip, overwrite and copy do what they say</h3>
+      <ol class="steps">
+        <li>On TARGET change the title of <code>qa-red</code>. Import the same package three times: first with <strong>Skip</strong>, then <strong>Overwrite</strong>, then <strong>Import as a copy</strong> for <code>qa-red</code>.</li>
+        <li>After the overwrite, open <code>qa-red</code> → version history.</li>
+      </ol>
+      <ul class="exp">
+        <li>Skip: TARGET's title is unchanged; the report says <strong>Skipped</strong>.</li>
+        <li>Overwrite: the title is SOURCE's; the same document id; history has a new version and the previous one can be restored; a language TARGET did not have is added to the same group.</li>
+        <li>Copy: a new product <code>qa-red-2</code> in both languages, in a new translation group, as a draft; the original is untouched.</li>
+      </ul>
+      <p class="ref">Ref: <code>src/cms/core/transfer/import/run.ts</code> · <code>conflicts.ts</code> (<code>nextFreeSlug</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-042" data-priority="P2">
+      <h3>A copied booking gets its own availability calendar</h3>
+      <ol class="steps">
+        <li>With the booking module on, export an experience with options and import it into the same site as a copy.</li>
+        <li>Compare <code>JSON_EXTRACT(data,'$.options[*].id')</code> of the original and the copy.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The copy's option ids are all new uuids, identical across its languages; the original's are unchanged. Blocking a date for an option of the copy does not block the original.</p>
+      <p class="ref">Ref: <code>src/cms/core/transfer/global-ids.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-043" data-priority="P2">
+      <h3>Media is never duplicated</h3>
+      <ol class="steps">
+        <li>Import the same package twice (products: Skip the second time). Count <code>media_files</code> after each run.</li>
+        <li>In the report of the second run look at the media rows.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The count grows only on the first run. The second run reports media as <strong>Already here</strong>. Images keep their quality (the file size of <code>/api/cms/media/file/&lt;uuid&gt;</code> equals SOURCE's).</p>
+      <p class="ref">Ref: <code>src/cms/core/media/service.ts</code> (<code>importMediaFile</code>) · <code>transfer/media-plan.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-044" data-priority="P2">
+      <h3>Rich text, custom fields and settings follow the new ids</h3>
+      <ol class="steps">
+        <li>Import <code>qa-page</code> together with the popup it shows, the custom-field settings and the branding (Settings → the relevant keys → Overwrite).</li>
+        <li>Open <code>qa-page</code> on the public site; open <strong>Settings</strong> → <strong>Fields</strong> for products; look at the logo.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The page shows TARGET's copy of the popup (the id in <code>[popup id="…"]</code> is TARGET's) and the linked image opens. The custom field is limited to TARGET's <code>qa-shoes</code>. The logo is shown. Leaving the popup out instead removes the shortcode's id, so no stranger's popup appears.</p>
+      <p class="ref">Ref: <code>src/cms/core/transfer/richtext.ts</code> · <code>settings-refs.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-045" data-priority="P2">
+      <h3>Missing references are dropped and reported, never pointed elsewhere</h3>
+      <ol class="steps">
+        <li>Export <code>qa-red</code> with <code>qa-chart</code> left out (XFR-012). Import into a TARGET that has no <code>qa-chart</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>qa-red</code> is created with an empty size chart; the report row says “1 link(s) had nothing to point to here and were removed.” If TARGET <em>does</em> have a size chart <code>qa-chart</code>, the product links to it instead.</p>
+      <p class="ref">Ref: <code>src/cms/core/transfer/import/plan.ts</code> (<code>makeResolver</code>) · <code>run.ts</code> (<code>resolveExisting</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-046" data-priority="P2">
+      <h3>Stop, close the tab, resume</h3>
+      <ol class="steps">
+        <li>Start a large import and click <strong>Stop the import</strong> half-way.</li>
+        <li>Start another large import and close the tab half-way. Reopen <strong>Import</strong> → <strong>Your recent imports</strong> → <strong>Open</strong>.</li>
+        <li>While one import runs, start a second from another browser.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> 1: it stops after the current item; the report lists what was written and marks the rest <strong>Not reached</strong>; the audit has “Cancelled a site data import”. 2: it continues from where it stopped with no item written twice. 3: the second is refused with “Another import is running on this site.”</p>
+      <p class="ref">Ref: <code>src/cms/core/transfer/import/run.ts</code> (<code>importStep</code>) · <code>staging.ts</code> (<code>acquireLock</code>, <code>requestCancel</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-047" data-priority="P2">
+      <h3>Report, CSV and audit</h3>
+      <ol class="steps">
+        <li>At the end of an import read the report, click <strong>Download the report (CSV)</strong> and open it in a spreadsheet.</li>
+        <li>Open <strong>Audit log</strong> → <strong>Site configuration</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Every item has a group, name, outcome in words (Created, Overwritten, Copied, Skipped, Already here, Failed) and notes. A title starting with <code>=</code> appears as text in the spreadsheet, not as a formula. The audit shows “Started a site data import” and “Finished a site data import” with the counts.</p>
+      <p class="ref">Ref: <code>src/cms/admin/transfer/ImportReportView.tsx</code> · <code>src/cms/core/csv.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-048" data-priority="P3">
+      <h3>Publishing needs the publish permission</h3>
+      <ol class="steps">
+        <li>As <code>qa-content@example.com</code> (no <em>Publish content</em>) import published products with “Keep published content published” ticked.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Every imported product is a draft.</p>
+      <p class="ref">Ref: <code>src/cms/core/transfer/import/run.ts</code> (<code>statusFor</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-config">
+    <h2>Site configuration</h2>
+    <p class="intro">On SOURCE create: cookie category <code>qa-analytics</code> with service <code>QA GA</code>; script <code>qa-chat</code> (inline) waiting for consent <code>qa-analytics</code>; shipping zone <code>QA Zone</code> (GR, CY) with method <code>QA ACS</code>; Google review location <code>qa-athens</code> (turn on the Google reviews module first); a page whose body is <code>[script name="qa-chat"]</code> and <code>[google-reviews location="qa-athens"]</code>; redirects <code>/qa-old → /qa-page</code> and a regex one; then change that page's slug so an automatic redirect is made; a meta override for <code>/qa-meta</code> with a social image from the media library.</p>
+
+    <article class="tc" id="XFR-050" data-priority="P1">
+      <h3>A page brings the script, cookie category and review location its shortcodes use</h3>
+      <ol class="steps">
+        <li>On SOURCE export only the shortcode page and click <strong>Review export</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Added: the script <code>qa-chat</code>, the cookie category <code>qa-analytics</code> (needed by the script) and the review location <code>qa-athens</code> with the photos of its reviews.</p>
+      <p class="ref">Ref: <code>src/cms/core/transfer/tables/rules.ts</code> (<code>tableDeps</code>) · <code>export/collect.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-051" data-priority="P1">
+      <h3>Every table arrives with its child rows and its links</h3>
+      <ol class="steps">
+        <li>Export every configuration group and import it into a TARGET that has none of them.</li>
+        <li>Open <strong>Cookies</strong>, <strong>Scripts</strong>, <strong>Settings</strong> → <strong>Ecommerce</strong> → <strong>Shipping</strong>, the Google reviews locations and <strong>SEO</strong> on TARGET.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The category has its service; the script waits for <code>qa-analytics</code>; the zone has its method; the location has its reviews (hidden ones still hidden, photos showing); the meta override has its image. The automatic redirect of the renamed page points at TARGET's copy of that page (its <code>document_id</code> is TARGET's id).</p>
+      <p class="ref">Ref: <code>src/cms/core/transfer/tables/adapters.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-052" data-priority="P2">
+      <h3>Overwrite updates children by name and keeps this site's own</h3>
+      <ol class="steps">
+        <li>On SOURCE add service <code>QA Hotjar</code> and change <code>QA ACS</code>'s cost. On TARGET add service <code>Target-only</code> to the same category.</li>
+        <li>Import again with Cookie categories and Shipping zones set to <strong>Overwrite this site’s</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The category has <code>QA GA</code>, <code>QA Hotjar</code> and <code>Target-only</code>; the method has SOURCE's cost. Nothing on TARGET was deleted.</p>
+      <p class="ref">Ref: <code>tables/rules.ts</code> (<code>planChildren</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-053" data-priority="P2">
+      <h3>Copies of named rows</h3>
+      <ol class="steps">
+        <li>Import the script and the review location with <strong>Import as a copy</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> <code>qa-chat-2</code> and <code>qa-athens-2</code> (with its reviews) appear; the report says “Imported as …”. Redirects, SEO meta and cookie categories offer no copy.</p>
+      <p class="ref">Ref: <code>src/cms/core/transfer/groups.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-054" data-priority="P1">
+      <h3>A redirect the SEO screen would refuse is refused</h3>
+      <ol class="steps">
+        <li>On TARGET delete <code>/qa-old</code> and add <code>/qa-page → /qa-old</code>. Import SOURCE's <code>/qa-old → /qa-page</code>.</li>
+        <li>Import a package whose regex redirect is <code>^/(a+)+$</code> (edit the data file and its manifest checksum).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Both rows are <strong>Failed</strong> with the SEO screen's own words: “This would create a redirect loop…” and “A pattern like this can take seconds to match…”. Everything else in the import is written.</p>
+      <p class="ref">Ref: <code>src/cms/core/routes/seo.ts</code> (<code>checkRedirect</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-055" data-priority="P2">
+      <h3>Modules and permissions</h3>
+      <ol class="steps">
+        <li>Turn the Google reviews module off on TARGET and upload the package.</li>
+        <li>As a user with <em>Import site data</em> and <em>Edit settings &amp; cookies</em> but not <em>Manage scripts</em>, choose Script snippets and preview.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> 1: review locations are listed as cannot be imported (“The googleReviews module is off on this site.”). 2: “You do not have permission to import scripts.” — running code on every visitor's page needs the Scripts permission.</p>
+      <p class="ref">Ref: <code>src/cms/core/transfer/import/analyze.ts</code> (<code>describeTables</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-people">
+    <h2>People and transactions</h2>
+    <p class="intro">On SOURCE: a customer with an address and a wishlist item, a newsletter subscriber, an email suppression, a product review, a paid order with a shipment, a confirmed reservation on an option of an experience, a closed day, an admin role and user. Turn the customers and newsletter modules on on both sites.</p>
+
+    <article class="tc" id="XFR-070" data-priority="P1">
+      <h3>Personal data needs an explicit yes, at both ends</h3>
+      <ol class="steps">
+        <li>On SOURCE choose Customer accounts and Orders and click <strong>Review export</strong>; try <strong>Build the package</strong>.</li>
+        <li>Tick the personal-data confirmation and build. On TARGET upload it, choose Orders, and preview without ticking the confirmation; then tick it.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: an amber notice names the groups (“This includes personal data (Customer accounts, Orders)…”) and the build button stays disabled until it is ticked; the API answers 422 without it. Step 2: the manifest says <code>"containsPii": true</code>; the preview is refused with the same sentence until confirmed.</p>
+      <p class="ref">Ref: <code>src/cms/core/transfer/groups.ts</code> (<code>piiProblem</code>) · <code>admin/transfer/PiiConsent.tsx</code></p>
+    </article>
+
+    <article class="tc" id="XFR-071" data-priority="P1">
+      <h3>An order arrives linked to this site's customer, shipping method and products</h3>
+      <ol class="steps">
+        <li>Export an order whose customer, shipping zone and product exist on SOURCE; import it (the zone and product come along or already exist on TARGET).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The order on TARGET shows the TARGET customer, the TARGET shipping method, lines pointing at TARGET's product ids, its payment and shipment; <code>metadata.importedFrom</code> names SOURCE. A customer or method not on TARGET leaves a guest order / no method, said in the report.</p>
+      <p class="ref">Ref: <code>src/cms/core/transfer/tables/people-adapters.ts</code> (<code>orders</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-072" data-priority="P1">
+      <h3>A reservation keeps its seats</h3>
+      <ol class="steps">
+        <li>Export a confirmed reservation on an option of an experience; import it together with (or after) the experience.</li>
+        <li>On TARGET open <strong>Availability</strong> for that date.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The reservation points at TARGET's experience; its confirmed hold is on TARGET under the same option key, so the date shows those seats as taken. The payment-link token is not in the package; released holds do not travel. A closed-day override follows the experience's translation group.</p>
+      <p class="ref">Ref: <code>tables/people.ts</code> (<code>mapSlotKey</code>) · <code>modules/booking/allocation.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-073" data-priority="P1">
+      <h3>Customers: merge keeps this site's values</h3>
+      <ol class="steps">
+        <li>On TARGET give the same customer email a different name and no phone. Import with Customer accounts set to <strong>Merge — add what is missing</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The name stays TARGET's, the phone is filled from SOURCE, SOURCE's address is added next to TARGET's, the wishlist points at TARGET's products.</p>
+      <p class="ref">Ref: <code>tables/people.ts</code> (<code>fillMissing</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-074" data-priority="P1">
+      <h3>Passwords travel only when asked, and MFA never</h3>
+      <ol class="steps">
+        <li>Import admin users and customers without <strong>Import password hashes</strong>.</li>
+        <li>Repeat for a new user with it ticked, as a user holding “Move admin accounts”.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: the report says the admin must be given a password on the Users screen and the customer uses “forgot password”; neither can sign in with the SOURCE password. Step 2: the SOURCE password works. Two-factor is never set on an imported account.</p>
+      <p class="ref">Ref: <code>tables/people-adapters.ts</code> (<code>users</code>, <code>customers</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-075" data-priority="P1">
+      <h3>Nobody grants by import what they do not hold</h3>
+      <ol class="steps">
+        <li>As a user with Manage roles, Manage users, Import site data and Move admin accounts but not Edit content, import the <code>superadmin</code> and <code>editor</code> roles and a superadmin account.</li>
+        <li>As the superadmin, import a package that contains your own account.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> Step 1: those rows are <strong>Failed</strong> — “grants what you do not hold yourself (…)” — while lesser roles import; unknown permission keys are dropped and listed. Step 2: “This is your own account; it is not changed by an import.”</p>
+      <p class="ref">Ref: <code>tables/people.ts</code> (<code>checkGrantable</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-076" data-priority="P2">
+      <h3>What never travels</h3>
+      <ol class="steps">
+        <li>Unzip an export of customers, orders, reservations and users and search the data files.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> No customer tokens, payment-link token hashes, <code>tokenVersion</code>, <code>lastLoginAt</code>, MFA method or TOTP data, Mailchimp ids; no gift cards group exists at all.</p>
+      <p class="ref">Ref: docs/dev-guides/10-settings-cron-operations.md §3.7</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-housekeeping">
+    <h2>Housekeeping</h2>
+
+    <article class="tc" id="XFR-060" data-priority="P2">
+      <h3>Old jobs are removed by the scheduler</h3>
+      <ol class="steps">
+        <li>List <code>.data/transfers/</code> (or <code>CMS_TRANSFER_DIR</code>). Set <code>CMS_TRANSFER_TTL_HOURS=0.001</code>, restart, wait a few seconds.</li>
+        <li><code>curl -s -X POST "$BASE/api/cms/cron/transfer-cleanup" -H "x-cron-secret: $CRON"</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> The response is <code>{"ok":true,"data":{"status":"ran","result":{"removed":N}}}</code> and the job folders are gone. Restore the TTL afterwards.</p>
+      <p class="ref">Ref: <code>src/cms/core/transfer/runtime.ts</code> (<code>cleanupTransfers</code>) · <code>src/app/api/cms/cron/[job]/route.ts</code></p>
+    </article>
+
+    <article class="tc" id="XFR-061" data-priority="P3">
+      <h3>Delete an import</h3>
+      <ol class="steps">
+        <li>In <strong>Your recent imports</strong> click <strong>Delete</strong> on a finished import.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> It disappears from the list and its folder under <code>.data/transfers/</code> is gone. A running import cannot be deleted (“This import is running. Cancel it first.”).</p>
+      <p class="ref">Ref: <code>src/cms/core/transfer/routes.ts</code> (<code>transferImportDeleteRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="XFR-062" data-priority="P3">
+      <h3>Put TARGET back</h3>
+      <ol class="steps">
+        <li>Restore the backup taken in “Before you start”, and the uploads folder if media was imported.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Expected:</span> TARGET is as it was before the checklist.</p>
+      <p class="ref">Ref: this checklist</p>
+    </article>
+  </section>
+
+</main>
+<footer class="page">Checklist 12 of 12. Results are saved in this browser only; use Export before clearing browser data. Afterwards restore TARGET (XFR-062) and the <code>CMS_TRANSFER_TTL_HOURS</code> you changed.</footer>
+</body>
+</html>

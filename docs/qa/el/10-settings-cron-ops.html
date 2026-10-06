@@ -1,0 +1,992 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ρυθμίσεις, προγραμματισμένες εργασίες &amp; λειτουργία</title>
+<link rel="stylesheet" href="../qa.css">
+<script src="../qa.js" defer></script>
+</head>
+<body>
+<nav class="crumbs"><a href="index.html">Χειροκίνητος έλεγχος CMS</a></nav>
+<header class="page">
+  <h1>10 · Ρυθμίσεις, προγραμματισμένες εργασίες &amp; λειτουργία</h1>
+  <p class="scope">Η λειτουργία ενός site και όχι η επεξεργασία του. Καλύπτονται εδώ: η οθόνη Settings στο σύνολό της (οι καρτέλες της, το ενιαίο κουμπί <strong>Save settings</strong> που στέλνει μόνο ό,τι άλλαξε, οι αλλαγές που ισχύουν χωρίς επανεκκίνηση, η cache των ρυθμίσεων), κάθε ομάδα ρυθμίσεων και κάθε κλειδί ρύθμισης σε αυτήν, η επικύρωση στον server και η αποθήκευση «όλα ή τίποτα», ποιος μπορεί να βλέπει και ποιος να αλλάζει τις ρυθμίσεις, το API των ρυθμίσεων γλωσσών· το endpoint των προγραμματισμένων εργασιών <code>POST /api/cms/cron/&lt;job&gt;</code> και καθεμία από τις επτά εργασίες του, το μυστικό κλειδί (secret) του cron, η προστασία από επικαλυπτόμενες εκτελέσεις, τα όρια αιτημάτων και το προτεινόμενο crontab· τα δύο παλαιότερα endpoints ανά εργασία· οι κανόνες του προγράμματος ενημέρωσης (updater) του CMS για το τι αντικαθίσταται και τι διατηρείται· ο οδηγός αναφοράς των μεταβλητών περιβάλλοντος· ένας γρήγορος έλεγχος μετά την ανάπτυξη (deploy)· μια άσκηση αντιγράφου ασφαλείας και επαναφοράς· η αύξηση των αρχείων καταγραφής (logs), του αρχείου ελέγχου (audit log) και του αρχείου 404· τα builds της τεκμηρίωσης· και ο έλεγχος πριν από την έκδοση. Καλύπτονται αλλού και αναφέρονται με το ID τους: εγκατάσταση, αρχείο περιβάλλοντος, migrations και seeds (SET-001 έως SET-023), build παραγωγής και ο κανόνας X-Real-IP για τη σύνδεση (SET-030, SET-031), διακόπτες modules (SET-033 έως SET-043), διακόπτες γλωσσών στην οθόνη (SET-044 έως SET-049), το relay κλειδωμάτων επεξεργασίας (SET-059 έως SET-065), η δημιουργία πακέτου ενημέρωσης και οι πρώτοι έλεγχοι του updater (SET-066 έως SET-072), κεφαλίδες ασφαλείας και robots.txt (SET-073 έως SET-078), τα PDF που παραδίδονται (SET-079, SET-080), ο πίνακας <code>site_settings</code> (DB-020), η χρήση του Settings με πληκτρολόγιο και η προστασία μη αποθηκευμένων αλλαγών (ADM-044, ADM-051), το «Require two-factor authentication» (AUTH-027, AUTH-028), η οθόνη ελέγχου (AUTH-063 έως AUTH-067), τα δημόσια όρια αιτημάτων και τα αποθηκευμένα μυστικά κλειδιά (AUTH-071 έως AUTH-078), η ταυτότητα του brand (MED-030 έως MED-034), τα δομημένα δεδομένα (MED-082 έως MED-096), τα πεδία SEO (MED-073 έως MED-077), τα επιπλέον του sitemap και του robots (MED-080, MED-081), η οθόνη του αρχείου 404 (MED-060 έως MED-066), το GA και τα cookies (MKT-067, MKT-079), και οι ρυθμίσεις ανά module στις λίστες ελέγχου 08 και 09. Χρειάζεστε: ένα περιβάλλον δοκιμών (ένα τοπικό build παραγωγής αρκεί για τις περισσότερες περιπτώσεις ελέγχου· ένας φιλοξενούμενος server staging με πρόσβαση σε shell για τις ενότητες ανάπτυξης και αντιγράφων ασφαλείας), τερματικό με <code>curl</code>, <code>openssl</code>, <code>unzip</code> και <code>mysqldump</code>, client βάσης δεδομένων, δικαίωμα επεξεργασίας του αρχείου περιβάλλοντος και επανεκκίνησης της εφαρμογής, και δύο browsers (ή ένα κανονικό και ένα ιδιωτικό παράθυρο).</p>
+</header>
+<main>
+
+  <section class="suite" id="suite-prep">
+    <h2>Πριν ξεκινήσετε</h2>
+    <p class="intro">Η λίστα ελέγχου 01 πρέπει να έχει ολοκληρωθεί (migrations, seeds, superadmin <code>qa-admin@example.com</code>). Συνδεθείτε ως <code>qa-admin@example.com</code>, εκτός αν μια περίπτωση ελέγχου ορίζει διαφορετικά. Τα URL χρησιμοποιούν το <code>http://localhost:3002</code> (<code>npm run dev</code>)· ένα build παραγωγής (<code>npm run build</code> και έπειτα <code>npm run start</code>, βλ. SET-030) απαντά στο <code>http://localhost:3000</code>· σε φιλοξενούμενο περιβάλλον χρησιμοποιήστε τη διεύθυνσή του. Οι διαδρομές του διαχειριστικού προϋποθέτουν <code>ADMIN_PATH=admin</code>.</p>
+    <div class="callout">
+      <p><strong>Τερματικό.</strong> Στον φάκελο του έργου εκτελέστε <code>BASE=http://localhost:3002</code> και αντιγράψτε το cookie <code>cms_session</code> του διαχειριστικού στο <code>S</code>, όπως περιγράφεται στη λίστα ελέγχου 05 («Χρήση του curl με συνεδρία»). Μόλις οριστεί το <code>CMS_CRON_SECRET</code> (OPS-025), εκτελέστε επίσης <code>CRON='&lt;value of CMS_CRON_SECRET&gt;'</code>. Δώστε σε κάθε curl που υπόκειται σε όριο αιτημάτων το δικό του <code>-H 'X-Real-IP: 10.10.0.N'</code> (νέο N ανά περίπτωση), ώστε οι περιπτώσεις να μην εξαντλούν η μία το όριο της άλλης· η επανεκκίνηση της εφαρμογής μηδενίζει όλους τους μετρητές ορίων.</p>
+      <p><strong>Ρυθμίσεις από το τερματικό.</strong> Μια αλλαγή ρύθμισης μέσω API είναι:</p>
+<pre><code>curl -s -X PATCH "$BASE/api/cms/settings" -b "cms_session=$S" \
+  -H 'Content-Type: application/json' -H 'X-Real-IP: 10.10.0.1' \
+  -d '{"seo.sitemapExtraUrls":"https://example.com/qa-ops"}' -w '\n%{http_code}\n'</code></pre>
+      <p><strong>Ρυθμίσεις στη βάση δεδομένων.</strong> Οι τιμές είναι JSON (οι συμβολοσειρές διατηρούν τα εισαγωγικά τους). Η στήλη του κλειδιού ονομάζεται <code>key</code> και πρέπει να μπαίνει σε backquotes:</p>
+<pre><code>SELECT `key`, value, updated_by, updated_at FROM site_settings ORDER BY `key`;</code></pre>
+      <p><strong>Caches.</strong> Οι αναγνώσεις ρυθμίσεων παραμένουν στην cache μέχρι να τις καθαρίσει μια αποθήκευση· δεν λήγουν ποτέ με χρονόμετρο. Αφού αλλάξετε το <code>site_settings</code> απευθείας με SQL, κάντε επανεκκίνηση της εφαρμογής πριν δείτε το αποτέλεσμα (η OPS-005 δείχνει γιατί).</p>
+      <p><strong>Καταγράψτε</strong> την έξοδο του παραπάνω ερωτήματος <code>site_settings</code> πριν ξεκινήσετε. Η OPS-066 επαναφέρει το site με βάση αυτήν.</p>
+    </div>
+  </section>
+
+  <section class="suite" id="suite-screen">
+    <h2>Η οθόνη Settings</h2>
+    <p class="intro">Για αυτή την ενότητα ενεργοποιήστε τα <strong>Commerce</strong> και <strong>Booking</strong> στα <strong>Settings</strong> → <strong>Modules</strong> (SET-037, SET-038), ώστε να είναι ορατή κάθε ομάδα· επαναφέρετέ τα στην OPS-066.</p>
+
+    <article class="tc" id="OPS-001" data-priority="P1">
+      <h3>Κάθε καρτέλα υπάρχει, με τη σωστή σειρά, και έχει δικό της σύνδεσμο</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <code>/admin/settings</code>. Διαβάστε τη σειρά των καρτελών από αριστερά προς τα δεξιά.</li>
+        <li>Πατήστε <strong>SEO</strong> και κοιτάξτε τη γραμμή διευθύνσεων. Φορτώστε ξανά τη σελίδα.</li>
+        <li>Ανοίξτε το <code>/admin/settings?tab=Nope</code>.</li>
+        <li>Ανοίξτε την καρτέλα <strong>Ecommerce</strong> και πατήστε κάθε υποκαρτέλα· έπειτα ανοίξτε τις <strong>Fields</strong>, <strong>Branding</strong> και <strong>Structured data</strong>. Σημειώστε πού εμφανίζεται το κουμπί <strong>Save settings</strong>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Η επικεφαλίδα είναι <strong>Settings</strong>. Καρτέλες, με αυτή τη σειρά: <strong>General</strong>, <strong>Analytics</strong>, <strong>Notifications</strong>, <strong>SEO</strong>, <strong>Ecommerce</strong>, <strong>Booking</strong>, <strong>Security</strong>, <strong>Fields</strong>, <strong>Branding</strong>, <strong>Structured data</strong>, έπειτα <strong>Connect to Praion.ai</strong> μόνο όταν το module σύνδεσης με το Praion.ai είναι ενεργό και έχετε το δικαίωμα <em>Manage api tokens</em>, και έπειτα <strong>Modules</strong>, <strong>Languages</strong>.</li>
+        <li>Βήμα 2: το URL αποκτά <code>?tab=SEO</code> και η επαναφόρτωση ανοίγει ξανά το SEO. Βήμα 3: μια άγνωστη καρτέλα ανοίγει το <strong>General</strong> χωρίς σφάλμα.</li>
+        <li>Το Ecommerce έχει τις υποκαρτέλες <strong>General</strong>, <strong>Shipping</strong>, <strong>Coupons</strong>, <strong>Wishlist</strong>, <strong>Gift cards</strong> (και <code>&amp;sub=…</code> στο URL). Το <strong>Save settings</strong> εμφανίζεται στις απλές καρτέλες, στο Ecommerce → General, στο Modules και στο Languages· δεν εμφανίζεται στις υπόλοιπες υποκαρτέλες του Ecommerce ούτε στα Fields, Branding ή Structured data, που έχουν τα δικά τους κουμπιά αποθήκευσης.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SettingsForm.tsx</code> (<code>tabs</code>, <code>openTab</code>) · <code>src/app/admin/(shell)/settings/page.tsx</code> · <code>src/cms/admin/shared.ts</code> (<code>PRAION_TAB</code>) · docs/dev-guides/10-settings-cron-operations.md §5</p>
+    </article>
+
+    <article class="tc" id="OPS-002" data-priority="P1">
+      <h3>Μια αποθηκευμένη αλλαγή ισχύει αμέσως, χωρίς επανεκκίνηση</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s "$BASE/sitemap.xml" | grep -c 'qa-ops-live'</code>.</li>
+        <li>Στα <strong>Settings</strong> → <strong>SEO</strong> προσθέστε τη γραμμή <code>https://example.com/qa-ops-live</code> στο <strong>Sitemap — extra URLs</strong> και πατήστε <strong>Save settings</strong>.</li>
+        <li>Χωρίς επανεκκίνηση οποιασδήποτε υπηρεσίας, επαναλάβετε το curl.</li>
+        <li>Αφαιρέστε τη γραμμή, αποθηκεύστε και επαναλάβετε το curl άλλη μία φορά.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 1 τυπώνει <code>0</code>. Το βήμα 2 εμφανίζει το πράσινο <code>Settings saved.</code> Το βήμα 3 τυπώνει <code>1</code>. Το βήμα 4 τυπώνει ξανά <code>0</code>. Σε κανένα σημείο δεν χρειάζεται επανεκκίνηση ή νέο build.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/settings/index.ts</code> (το <code>setSetting</code> καθαρίζει το κλειδί) · <code>src/cms/core/routes/settings.ts</code> (<code>revalidateTag(SETTINGS_TAG)</code>) · <code>src/app/sitemap.ts</code></p>
+    </article>
+
+    <article class="tc" id="OPS-003" data-priority="P2">
+      <h3>Η αποθήκευση στέλνει μόνο ό,τι άλλαξε· οι προεπιλεγμένες τιμές που εμφανίζονται μένουν χωρίς τιμή</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Πρώτα σημειώστε τις τρέχουσες γραμμές των παρακάτω κλειδιών· αν υπάρχουν, καταγράψτε τις τιμές τους.</p>
+      <ol class="steps">
+        <li>Εκτελέστε το παρακάτω SQL για να αφαιρέσετε τέσσερα κλειδιά που έχουν προεπιλεγμένη τιμή και έπειτα κάντε επανεκκίνηση της εφαρμογής (η cache δεν βλέπει το SQL που εκτελείται απευθείας).
+<pre><code>SELECT `key`, value FROM site_settings WHERE `key` IN
+  ('security.require2fa','ecommerce.filters.priceControl','booking.kinds','ecommerce.currency');
+DELETE FROM site_settings WHERE `key` IN
+  ('security.require2fa','ecommerce.filters.priceControl','booking.kinds','ecommerce.currency');</code></pre></li>
+        <li>Ανοίξτε τα <strong>Settings</strong>. Ελέγξτε τι εμφανίζουν τα Security, Ecommerce → General και Booking για αυτά τα τέσσερα πεδία.</li>
+        <li>Ανοίξτε τα εργαλεία προγραμματιστή → Network. Στο <strong>General</strong> αλλάξτε το <strong>Support email</strong> σε <code>qa-ops@example.com</code> και πατήστε <strong>Save settings</strong>. Ανοίξτε το αίτημα PATCH <code>settings</code> και διαβάστε το σώμα του αιτήματος.</li>
+        <li>Εκτελέστε ξανά το <code>SELECT</code> του βήματος 1, καθώς και το <code>SELECT JSON_UNQUOTE(value) FROM site_settings WHERE `key` = 'site.supportEmail';</code></li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 2: η φόρμα εξακολουθεί να δείχνει συγκεκριμένες τιμές: <strong>Require two-factor authentication</strong> <code>Optional — each administrator chooses</code>, <strong>Price filter</strong> <code>Slider with two handles</code>, <strong>Default currency</strong> <code>EUR</code>, και τα δύο κουτάκια του <strong>What you take bookings for</strong> επιλεγμένα.</li>
+        <li>Βήμα 3: το σώμα είναι ακριβώς <code>{"site.supportEmail":"qa-ops@example.com"}</code>, τίποτε άλλο.</li>
+        <li>Βήμα 4: τα τέσσερα κλειδιά εξακολουθούν να λείπουν (καμία γραμμή)· το support email είναι <code>qa-ops@example.com</code>.</li>
+        <li>Επαναφέρετε μέσω της οθόνης όποια από τις τέσσερις γραμμές σημειώσατε στις προϋποθέσεις.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/admin/settings-patch.ts</code> (<code>buildSettingsPatch</code>) · <code>src/cms/admin/SettingsForm.tsx</code> (<code>snapshot</code>, <code>submit</code>) · docs/dev-guides/10-settings-cron-operations.md §10 (“Unset has meaning”)</p>
+    </article>
+
+    <article class="tc" id="OPS-004" data-priority="P3">
+      <h3>Μια τιμή που άλλαξε και επανήλθε δεν αποστέλλεται</h3>
+      <ol class="steps">
+        <li>Κρατήστε ανοιχτή την καρτέλα Network. Στο <strong>Security</strong> αλλάξτε το <strong>Require two-factor authentication</strong> σε <code>Required for all administrators</code> και μετά ξανά σε <code>Optional — each administrator chooses</code>.</li>
+        <li>Πατήστε <strong>Save settings</strong>.</li>
+        <li>Ανοίξτε το <strong>Audit log</strong>, ορίστε το <strong>Activity</strong> σε <strong>Site configuration</strong> και πατήστε <strong>Filter</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Εμφανίζεται το <code>Settings saved.</code>, αλλά δεν γίνεται κανένα αίτημα PATCH στο <code>/api/cms/settings</code> και δεν εμφανίζεται καμία νέα γραμμή <em>Changed settings</em> στο αρχείο ελέγχου (audit log).</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/SettingsForm.tsx</code> (<code>if (Object.keys(body).length &gt; 0)</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-005" data-priority="P3">
+      <h3>Μια απευθείας αλλαγή στη βάση δεδομένων δεν φαίνεται μέχρι μια αποθήκευση να καθαρίσει την cache</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ένα build παραγωγής ή το φιλοξενούμενο περιβάλλον δοκιμών (ο dev server μπορεί να ξαναδιαβάσει την τιμή).</p>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s "$BASE/sitemap.xml" | grep -c 'qa-ops-direct'</code> (αυτό φορτώνει επίσης τη ρύθμιση στην cache).</li>
+        <li>Εκτελέστε <code>INSERT INTO site_settings (`key`, value) VALUES ('seo.sitemapExtraUrls', JSON_QUOTE('https://example.com/qa-ops-direct')) ON DUPLICATE KEY UPDATE value = VALUES(value);</code></li>
+        <li>Επαναλάβετε το curl.</li>
+        <li>Στο διαχειριστικό αλλάξτε οποιαδήποτε άλλη ρύθμιση (για παράδειγμα το <strong>Support email</strong>) και πατήστε <strong>Save settings</strong>. Επαναλάβετε το curl.</li>
+        <li>Αδειάστε το <strong>Sitemap — extra URLs</strong> και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Τα βήματα 1 και 3 τυπώνουν <code>0</code>: μια τιμή που γράφεται απευθείας στον πίνακα δεν είναι ορατή, επειδή οι ρυθμίσεις μένουν στην cache χωρίς λήξη. Το βήμα 4 τυπώνει <code>1</code>: οποιαδήποτε αποθήκευση στο διαχειριστικό καθαρίζει όλες τις αναγνώσεις ρυθμίσεων. (Και μια επανεκκίνηση θα την έδειχνε.) Πρόκειται για τεκμηριωμένη συμπεριφορά, όχι για σφάλμα· το προσωπικό λειτουργίας δεν πρέπει να επεξεργάζεται χειροκίνητα το <code>site_settings</code> σε ζωντανό site.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/cache.ts</code> (<code>CMS_CACHE_REVALIDATE = false</code>) · docs/dev-guides/10-settings-cron-operations.md §3.1, “Troubleshooting”</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-groups">
+    <h2>Κάθε ομάδα ρυθμίσεων</h2>
+    <p class="intro">Μία περίπτωση ελέγχου ανά ομάδα. Για κάθε κλειδί: αλλάξτε το, αποθηκεύστε, ελέγξτε το αποτέλεσμα, και έπειτα επαναφέρετέ το και αποθηκεύστε. Όπου μια άλλη λίστα ελέγχου εξετάζει το αποτέλεσμα σε βάθος, ο πίνακας αναφέρει την περίπτωση· εδώ αρκεί να αποθηκεύεται η τιμή και να ισχύει ο γρήγορος έλεγχος. Μετά από κάθε περίπτωση εκτελέστε <code>SELECT `key`, value FROM site_settings WHERE `key` LIKE '&lt;prefix&gt;%';</code> για τη συγκεκριμένη ομάδα.</p>
+
+    <article class="tc" id="OPS-006" data-priority="P2">
+      <h3>General: Support email</h3>
+      <ol class="steps">
+        <li>Στο <strong>General</strong> ορίστε το <strong>Support email</strong> σε <code>qa-support@example.com</code> και πατήστε <strong>Save settings</strong>. Περάστε τον δείκτη πάνω από το «i» δίπλα στην ετικέτα.</li>
+        <li>Εκτελέστε <code>curl -s "$BASE/en/contact" | grep -c 'qa-support@example.com'</code> και το ίδιο για το <code>$BASE/</code>.</li>
+        <li>Στείλτε ένα ερώτημα επικοινωνίας από το <code>/en/contact</code> και κοιτάξτε το Reply-To του email ειδοποίησης.</li>
+        <li>Επαναφέρετε την προηγούμενη τιμή και αποθηκεύστε.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Κλειδί</th><th>Ετικέτα</th><th>Τύπος</th><th>Αποτέλεσμα που περιγράφεται στην οθόνη</th></tr></thead>
+          <tbody>
+            <tr><td><code>site.supportEmail</code></td><td>Support email</td><td>email (ο browser ελέγχει τη μορφή· το API απαντά 422 σε λανθασμένη)</td><td><code>Shown to visitors as the contact address, and used as the reply-to on notification emails.</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η τιμή αποθηκεύεται ως <code>"qa-support@example.com"</code>. Σύμφωνα με το κείμενο βοήθειας, η διεύθυνση θα έπρεπε να εμφανίζεται στο δημόσιο site και ως Reply-To. Σύμφωνα με τον τρέχοντα κώδικα, τίποτα δεν διαβάζει αυτό το κλειδί (μόνο το seed το γράφει): και τα δύο curl τυπώνουν <code>0</code> και το Reply-To είναι η διεύθυνση του επισκέπτη. Καταγράψτε σφάλμα: είτε να συνδεθεί η ρύθμιση είτε να αφαιρεθεί (η δημόσια διεύθυνση επικοινωνίας προέρχεται από το <strong>Branding</strong>, MED-030).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/settings/schema.ts</code> (<code>site.supportEmail</code>) · <code>src/site-seed/data.ts</code> · docs/user-guides/src/06-rythmiseis-xristes.md (“General”)</p>
+    </article>
+
+    <article class="tc" id="OPS-007" data-priority="P2">
+      <h3>Analytics: GA4 Measurement ID</h3>
+      <ol class="steps">
+        <li>Στο <strong>Analytics</strong> ορίστε το <strong>GA4 Measurement ID</strong> σε <code>g-qa12345678</code> (πεζά) και αποθηκεύστε.</li>
+        <li>Εκτελέστε <code>SELECT value FROM site_settings WHERE `key` = 'analytics.gaMeasurementId';</code></li>
+        <li>Ελέγξτε το αποτέλεσμα όπως στη MKT-067 (δήλωση cookies) και, σε build παραγωγής, στη MKT-079 (το script φορτώνεται μετά τη συγκατάθεση).</li>
+        <li>Αδειάστε το πεδίο και αποθηκεύστε.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Κλειδί</th><th>Ετικέτα</th><th>Αποδεκτές τιμές</th><th>Όταν είναι κενό</th><th>Το αποτέλεσμα ελέγχεται στη</th></tr></thead>
+          <tbody>
+            <tr><td><code>analytics.gaMeasurementId</code></td><td>GA4 Measurement ID</td><td><code>G-</code> + 4 έως 20 γράμματα/ψηφία, πεζά ή κεφαλαία· αφαιρούνται τα κενά στα άκρα</td><td>Χρησιμοποιείται το <code>NEXT_PUBLIC_GA_MEASUREMENT_ID</code> (κατά το build)</td><td>MKT-067, MKT-079</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Αποθηκεύεται με <code>Settings saved.</code>· η αποθηκευμένη τιμή είναι <code>"g-qa12345678"</code> (γίνεται δεκτή όπως πληκτρολογήθηκε, χωρίς αλλαγή πεζών/κεφαλαίων). Όταν έχει οριστεί, το Google Analytics 4 δηλώνεται αυτόματα στη δήλωση cookies. Μετά το άδειασμα, η τιμή είναι <code>""</code> και το GA χρησιμοποιεί τη μεταβλητή του build (που δεν υπάρχει στο site δοκιμών, άρα δεν υπάρχει GA).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/settings/validate.ts</code> (<code>gaId</code>) · <code>src/cms/core/settings/analytics.ts</code> (<code>resolveGaId</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-008" data-priority="P2">
+      <h3>Notifications: Inquiry notification emails</h3>
+      <ol class="steps">
+        <li>Στο <strong>Notifications</strong> εισαγάγετε δύο διευθύνσεις που μπορείτε να διαβάσετε στο <strong>Inquiry notification emails</strong>, μία ανά γραμμή· αποθηκεύστε.</li>
+        <li>Με ενεργό το Commerce, κάντε μια παραγγελία με χειροκίνητη πληρωμή στο κατάστημα (όπως στη COM-049) και ελέγξτε και τα δύο γραμματοκιβώτια.</li>
+        <li>Στείλτε ένα ερώτημα επικοινωνίας (βλ. MKT-017 για το αναμενόμενο σφάλμα).</li>
+        <li>Επαναφέρετε την προηγούμενη τιμή και αποθηκεύστε.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Κλειδί</th><th>Ετικέτα</th><th>Μορφή</th><th>Διαβάζεται από</th><th>Το αποτέλεσμα ελέγχεται στη</th></tr></thead>
+          <tbody>
+            <tr><td><code>notifications.inquiryEmails</code></td><td>Inquiry notification emails</td><td>Διευθύνσεις χωρισμένες με κόμμα ή αλλαγή γραμμής</td><td>Μόνο την ειδοποίηση παραγγελίας του καταστήματος</td><td>COM-066, MKT-017</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε διεύθυνση λαμβάνει το δικό της αντίγραφο της ειδοποίησης παραγγελίας του καταστήματος. Το ερώτημα επικοινωνίας δεν χρησιμοποιεί αυτή τη ρύθμιση (MKT-017). Οι ειδοποιήσεις κρατήσεων χρησιμοποιούν αντί γι' αυτήν το <strong>Booking</strong> → <strong>Notify these addresses</strong> (OPS-011).</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/orders.ts</code> (<code>notifications.inquiryEmails</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-009" data-priority="P2">
+      <h3>SEO: robots.txt extra Disallow και Sitemap extra URLs</h3>
+      <ol class="steps">
+        <li>Στο <strong>SEO</strong> ορίστε το <strong>robots.txt — extra Disallow</strong> σε <code>/qa-ops-private/</code> και το <strong>Sitemap — extra URLs</strong> σε <code>https://example.com/qa-ops-extra</code>· αποθηκεύστε.</li>
+        <li>Εκτελέστε <code>curl -s "$BASE/sitemap.xml" | grep -c qa-ops-extra</code> και <code>curl -s "$BASE/robots.txt"</code>.</li>
+        <li>Αδειάστε και τα δύο πεδία και αποθηκεύστε.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Κλειδί</th><th>Ετικέτα</th><th>Μορφή</th><th>Το αποτέλεσμα ελέγχεται στη</th></tr></thead>
+          <tbody>
+            <tr><td><code>seo.robotsExtraDisallow</code></td><td>robots.txt — extra Disallow</td><td>Μία διαδρομή ανά γραμμή</td><td>MED-081 (μόνο σε build με origin παραγωγής)</td></tr>
+            <tr><td><code>seo.sitemapExtraUrls</code></td><td>Sitemap — extra URLs</td><td>Ένα απόλυτο URL ανά γραμμή· τα υπόλοιπα παραλείπονται</td><td>MED-080, OPS-002</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ο αριθμός στο sitemap είναι <code>1</code>. Το robots.txt στο origin δοκιμών εξακολουθεί να δείχνει μόνο <code>Disallow: /</code> για κάθε agent (SET-076): οι επιπλέον γραμμές δεν ανοίγουν ποτέ ένα site που δεν είναι παραγωγής. Μετά το άδειασμα, και τα δύο κλειδιά αποθηκεύονται ως <code>""</code>.</p>
+      <p class="ref">Αναφ.: <code>src/app/robots.ts</code> · <code>src/app/sitemap.ts</code> · <code>src/cms/core/seo/setting-lines.ts</code></p>
+    </article>
+
+    <article class="tc" id="OPS-010" data-priority="P2">
+      <h3>Ecommerce → General: και τα πέντε κλειδιά</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ενεργό Commerce· τουλάχιστον ένα δημοσιευμένο προϊόν (COM-007).</p>
+      <ol class="steps">
+        <li>Στο <strong>Ecommerce</strong> → <strong>General</strong> αλλάξτε κάθε πεδίο στην τιμή δοκιμής του πίνακα και πατήστε μία φορά <strong>Save settings</strong>.</li>
+        <li>Εκτελέστε <code>SELECT `key`, value FROM site_settings WHERE `key` LIKE 'ecommerce.%' AND JSON_TYPE(value) = 'STRING';</code></li>
+        <li>Κάντε τους γρήγορους ελέγχους του πίνακα.</li>
+        <li>Επαναφέρετε κάθε πεδίο στην προηγούμενη τιμή του και αποθηκεύστε.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Ετικέτα</th><th>Κλειδί</th><th>Τιμή δοκιμής</th><th>Γρήγορος έλεγχος</th><th>Σε βάθος</th></tr></thead>
+          <tbody>
+            <tr><td>Default currency</td><td><code>ecommerce.currency</code></td><td><code>USD</code></td><td>Οι τιμές των προϊόντων στο <code>/en/shop</code> εμφανίζονται σε δολάρια</td><td>COM-015</td></tr>
+            <tr><td>Payment method</td><td><code>ecommerce.paymentProvider</code></td><td><code>Card (Stripe)</code> (αποθηκεύεται <code>stripe</code>)</td><td>Το checkout προσφέρει πληρωμή με κάρτα (χρειάζονται κλειδιά δοκιμής Stripe)</td><td>COM-051 έως COM-054</td></tr>
+            <tr><td>Gift-wrap fee</td><td><code>ecommerce.giftWrapFee</code></td><td><code>3,50</code></td><td>Αποθηκεύεται ως <code>"3.50"</code>· η συσκευασία δώρου κοστίζει 3.50 στο checkout</td><td>COM-042</td></tr>
+            <tr><td>Price filter</td><td><code>ecommerce.filters.priceControl</code></td><td><code>From / to boxes</code> (αποθηκεύεται <code>fields</code>)</td><td>Το πλευρικό μενού του καταστήματος δείχνει μόνο τα κουτάκια από/έως, χωρίς slider</td><td>COM-017</td></tr>
+            <tr><td>Cancel unpaid card orders after (hours)</td><td><code>ecommerce.pendingOrderTtlHours</code></td><td><code>0</code></td><td>Η OPS-030 επιστρέφει <code>{"checked":0,"cancelled":[]}</code></td><td>COM-089, COM-090</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Ένα <code>Settings saved.</code>· το SQL δείχνει τις πέντε αποθηκευμένες τιμές όπως στον πίνακα (η χρέωση κανονικοποιημένη με τελεία)· κάθε γρήγορος έλεγχος ισχύει. Μετά την επαναφορά, οι προηγούμενες τιμές έχουν επανέλθει.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/settings/schema.ts</code> (ομάδα Ecommerce) · docs/dev-guides/08-commerce.md</p>
+    </article>
+
+    <article class="tc" id="OPS-011" data-priority="P2">
+      <h3>Booking: αποθηκεύονται και τα δεκαέξι κλειδιά</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ενεργό Booking.</p>
+      <ol class="steps">
+        <li>Στο <strong>Booking</strong> ορίστε κάθε πεδίο στην παρακάτω τιμή δοκιμής και πατήστε μία φορά <strong>Save settings</strong>.</li>
+        <li>Εκτελέστε <code>SELECT `key`, JSON_UNQUOTE(value) AS v FROM site_settings WHERE `key` LIKE 'booking.%' ORDER BY `key`;</code></li>
+        <li>Επαναφέρετε κάθε πεδίο στην προηγούμενη τιμή του (κενό όπου ήταν κενό) και αποθηκεύστε.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Ετικέτα</th><th>Κλειδί</th><th>Τιμή δοκιμής</th><th>Placeholder / προεπιλεγμένη τιμή</th><th>Το αποτέλεσμα ελέγχεται στη</th></tr></thead>
+          <tbody>
+            <tr><td>What you take bookings for</td><td><code>booking.kinds</code></td><td>μόνο το Stays επιλεγμένο → <code>stay</code></td><td>και τα δύο</td><td>BKG-003</td></tr>
+            <tr><td>Booking mode</td><td><code>booking.mode</code></td><td>Instant → <code>instant</code></td><td><code>request</code></td><td>BKG-054, BKG-055</td></tr>
+            <tr><td>Booking currency</td><td><code>booking.currency</code></td><td><code>GBP</code></td><td>νόμισμα του καταστήματος, έπειτα EUR</td><td>BKG-011</td></tr>
+            <tr><td>Timezone</td><td><code>booking.timezone</code></td><td><code>Europe/London</code></td><td><code>Europe/Athens</code></td><td>BKG-002</td></tr>
+            <tr><td>Notify these addresses</td><td><code>booking.notificationEmails</code></td><td>μία διεύθυνση</td><td>καμία</td><td>BKG-094</td></tr>
+            <tr><td>Requests lapse after (hours)</td><td><code>booking.requestExpiryHours</code></td><td><code>48</code></td><td><code>72</code></td><td>BKG-057</td></tr>
+            <tr><td>Instant payment hold (minutes)</td><td><code>booking.paymentHoldMinutes</code></td><td><code>30</code></td><td><code>20</code></td><td>BKG-056</td></tr>
+            <tr><td>Payment links expire after (days)</td><td><code>booking.paymentLinkExpiryDays</code></td><td><code>3</code></td><td><code>7</code></td><td>λίστα ελέγχου 09</td></tr>
+            <tr><td>Deposit (%)</td><td><code>booking.depositPercent</code></td><td><code>30</code></td><td><code>0</code> (ολόκληρο το ποσό)</td><td>λίστα ελέγχου 09</td></tr>
+            <tr><td>Default places per day</td><td><code>booking.defaultCapacity</code></td><td><code>4</code></td><td><code>1</code></td><td>λίστα ελέγχου 09</td></tr>
+            <tr><td>Payment method</td><td><code>booking.paymentProvider</code></td><td><code>PayPal</code> → <code>paypal</code></td><td><code>manual</code></td><td>BKG-060 και εξής</td></tr>
+            <tr><td>Payment instructions</td><td><code>booking.paymentInstructions</code></td><td>οποιοδήποτε κείμενο</td><td>καμία</td><td>BKG-001</td></tr>
+            <tr><td>Card surcharge (%)</td><td><code>booking.surchargePercent.stripe</code></td><td><code>4</code></td><td><code>0</code></td><td>λίστα ελέγχου 09</td></tr>
+            <tr><td>PayPal surcharge (%)</td><td><code>booking.surchargePercent.paypal</code></td><td><code>5.25</code></td><td><code>0</code></td><td>λίστα ελέγχου 09</td></tr>
+            <tr><td>Viva.com surcharge (%)</td><td><code>booking.surchargePercent.viva</code></td><td><code>3</code></td><td><code>0</code></td><td>λίστα ελέγχου 09</td></tr>
+            <tr><td>Default cut-off (hours before)</td><td><code>booking.leadTimeHours</code></td><td><code>12</code></td><td><code>0</code></td><td>λίστα ελέγχου 09</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Δεκαέξι γραμμές με ακριβώς τις τιμές δοκιμής (τα kinds επανακωδικοποιούνται ως λίστα με κόμματα χωρίς κενά). Κάθε ετικέτα του πίνακα εμφανίζεται στην οθόνη με αυτή τη σειρά. Μετά την επαναφορά, οι γραμμές έχουν τις προηγούμενες τιμές (τα πεδία που ήταν χωρίς τιμή και τώρα είναι κενά αποθηκεύονται ως <code>""</code>, το οποίο οι αναγνώσεις αντιμετωπίζουν ως «χωρίς τιμή»).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/settings/schema.ts</code> (ομάδα Booking) · <code>src/cms/modules/booking/settings-read.ts</code> · docs/dev-guides/09-booking.md</p>
+    </article>
+
+    <article class="tc" id="OPS-012" data-priority="P2">
+      <h3>Security: Require two-factor authentication</h3>
+      <ol class="steps">
+        <li>Εκτελέστε την AUTH-027 (αλλαγή σε <code>Required for all administrators</code>, σύνδεση με λογαριασμό χωρίς δεύτερο παράγοντα, και έπειτα επαναφορά).</li>
+        <li>Εκτελέστε <code>SELECT value FROM site_settings WHERE `key` = 'security.require2fa';</code> μετά από κάθε αποθήκευση.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Κλειδί</th><th>Ετικέτα</th><th>Επιλογές (αποθηκεύεται)</th><th>Χωρίς τιμή σημαίνει</th></tr></thead>
+          <tbody>
+            <tr><td><code>security.require2fa</code></td><td>Require two-factor authentication</td><td><code>Optional — each administrator chooses</code> (<code>off</code>), <code>Required for all administrators</code> (<code>on</code>)</td><td>προαιρετικό (μόνο το ακριβές <code>on</code> το καθιστά υποχρεωτικό)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η τιμή είναι <code>"on"</code> όσο είναι υποχρεωτικό και <code>"off"</code> μετά την επαναφορά· η AUTH-027 περνά.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/settings/schema.ts</code> (<code>SECURITY_REQUIRE_2FA_KEY</code>) · <code>src/cms/core/routes/auth-mfa.ts</code></p>
+    </article>
+
+    <article class="tc" id="OPS-013" data-priority="P2">
+      <h3>Καρτέλες με δική τους αποθήκευση: αποθηκευμένα κλειδιά</h3>
+      <ol class="steps">
+        <li>Κάντε μία αλλαγή και χρησιμοποιήστε την αποθήκευση της ίδιας της καρτέλας στα: <strong>Branding</strong> (MED-030), <strong>Structured data</strong> (MED-083), <strong>Fields</strong> → <strong>SEO &amp; AEO</strong> (MED-073), <strong>Fields</strong> → Pages (CON-002), καθώς και στα Ecommerce → <strong>Shipping</strong>, <strong>Coupons</strong>, <strong>Wishlist</strong>, <strong>Gift cards</strong> (COM-002, COM-037, COM-108, COM-043).</li>
+        <li>Μετά από καθεμία, εκτελέστε <code>SELECT `key`, updated_at FROM site_settings WHERE `key` IN ('brand.identity','brand.palette','seo.schema','cms.seoFields','cms.customFields','ecommerce.shipping','ecommerce.coupons','ecommerce.wishlist','ecommerce.giftCards') ORDER BY updated_at DESC;</code></li>
+        <li>Κάντε μια αλλαγή σε μία από αυτές τις καρτέλες και, χωρίς να την αποθηκεύσετε, μεταβείτε στο <strong>General</strong> και πατήστε <strong>Save settings</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε ξεχωριστή αποθήκευση ενημερώνει ακριβώς το δικό της κλειδί (η πρώτη γραμμή του ερωτήματος αλλάζει κάθε φορά σε αυτό το κλειδί). Βήμα 3: το <strong>Save settings</strong> δεν αποθηκεύει τη μη αποθηκευμένη αλλαγή της άλλης καρτέλας, κάτι για το οποίο προειδοποιεί ο οδηγός χρήσης. Οι διακόπτες modules (SET-033) και οι γλώσσες (SET-046) καλύπτονται στη λίστα ελέγχου 01.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/settings/schema.ts</code> (<code>EXTRA_MANAGED_KEYS</code>) · docs/user-guides/src/06-rythmiseis-xristes.md (“Πώς γίνεται η αποθήκευση”)</p>
+    </article>
+
+    <article class="tc" id="OPS-014" data-priority="P3">
+      <h3>Fields: δύο διαδοχικές αποθηκεύσεις χωρίς επαναφόρτωση</h3>
+      <ol class="steps">
+        <li>Ανοίξτε τα <strong>Settings</strong> → <strong>Fields</strong> → την υποκαρτέλα Pages. Πατήστε <strong>Add field</strong>, δώστε κλειδί <code>qa_ops_one</code>, ετικέτα <code>QA ops one</code> και πατήστε <strong>Save fields</strong>.</li>
+        <li>Χωρίς επαναφόρτωση, πατήστε ξανά <strong>Add field</strong>, κλειδί <code>qa_ops_two</code>, ετικέτα <code>QA ops two</code>, και πατήστε <strong>Save fields</strong>.</li>
+        <li>Επαναλάβετε το ίδιο μοτίβο στο <strong>SEO &amp; AEO</strong> (δύο μικρές αλλαγές, δύο αποθηκεύσεις, χωρίς επαναφόρτωση).</li>
+        <li>Φορτώστε ξανά τη σελίδα, διαγράψτε και τα δύο πεδία QA και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Και οι δύο αποθηκεύσεις επιτυγχάνουν. Σύμφωνα με τον κώδικα, η δεύτερη αποθήκευση στο βήμα 2 (και στο βήμα 3) ενδέχεται να απορριφθεί με <code>The custom fields for "page" were changed by someone else while you were editing. …</code> (ή το αντίστοιχο μήνυμα των πεδίων SEO), επειδή κάθε επεξεργαστής στέλνει ως βάση σύγκρισης το αντίγραφο με το οποίο φορτώθηκε. Αν συμβεί αυτό, σημειώστε Αποτυχία: ένας μόνο χρήστης έρχεται σε σύγκρουση με τη δική του προηγούμενη αποθήκευση.</p>
+      <p class="ref">Αναφ.: <code>src/cms/admin/CustomFieldsManager.tsx</code> (<code>'cms.customFields.baseline': initial</code>) · <code>src/cms/admin/SeoFieldsManager.tsx</code> · <code>src/cms/core/routes/settings.ts</code> (<code>mergeCustomFields</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-validate">
+    <h2>Επικύρωση και αποθήκευση «όλα ή τίποτα»</h2>
+    <p class="intro">Κάθε κλειδί μιας αποθήκευσης ελέγχεται πριν γραφτεί οτιδήποτε· μία λανθασμένη τιμή απορρίπτει ολόκληρη την αποθήκευση με <code>422</code>. Οι περιπτώσεις του API χρησιμοποιούν curl με τη συνεδρία του διαχειριστικού (βλ. «Πριν ξεκινήσετε»).</p>
+
+    <article class="tc" id="OPS-015" data-priority="P1">
+      <h3>Μια μη έγκυρη τιμή στη φόρμα απορρίπτει ολόκληρη την αποθήκευση</h3>
+      <ol class="steps">
+        <li>Στο <strong>SEO</strong> βάλτε <code>https://example.com/qa-ops-partial</code> στο <strong>Sitemap — extra URLs</strong>.</li>
+        <li>Στο <strong>Analytics</strong> πληκτρολογήστε <code>G-12 34</code> στο <strong>GA4 Measurement ID</strong>. Πατήστε <strong>Save settings</strong>.</li>
+        <li>Εκτελέστε <code>SELECT `key`, value FROM site_settings WHERE `key` IN ('seo.sitemapExtraUrls','analytics.gaMeasurementId');</code> και <code>curl -s "$BASE/sitemap.xml" | grep -c qa-ops-partial</code>.</li>
+        <li>Αδειάστε το πεδίο GA, πατήστε <strong>Save settings</strong>, έπειτα αδειάστε το πεδίο του sitemap και αποθηκεύστε ξανά.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 2 εμφανίζει κόκκινο μήνυμα <code>GA4 Measurement ID looks like G-XXXXXXXXXX — letters and digits only, no quotes or spaces.</code>, όχι <code>Settings saved.</code>· η φόρμα διατηρεί ό,τι πληκτρολογήσατε. Βήμα 3: κανένα από τα δύο κλειδιά δεν άλλαξε και το curl τυπώνει <code>0</code>: ούτε η έγκυρη γραμμή του sitemap αποθηκεύτηκε. Το βήμα 4 αποθηκεύει κανονικά.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/settings.ts</code> (<code>applySettingsUpdate</code>: πρώτα επικύρωση όλων, μετά εγγραφή) · <code>src/cms/core/settings/validate.ts</code></p>
+    </article>
+
+    <article class="tc" id="OPS-016" data-priority="P2">
+      <h3>API: ένα έγκυρο κλειδί δίπλα σε ένα μη έγκυρο δεν γράφεται</h3>
+      <ol class="steps">
+        <li>Εκτελέστε:
+<pre><code>curl -s -X PATCH "$BASE/api/cms/settings" -b "cms_session=$S" -H 'Content-Type: application/json' \
+  -d '{"seo.sitemapExtraUrls":"https://example.com/qa-ops-api","site.supportEmail":"not-an-email"}' \
+  -w '\n%{http_code}\n'</code></pre></li>
+        <li>Εκτελέστε <code>SELECT `key`, value, updated_at FROM site_settings WHERE `key` IN ('seo.sitemapExtraUrls','site.supportEmail');</code></li>
+        <li>Ανοίξτε το <strong>Audit log</strong>, <strong>Activity</strong> <strong>Site configuration</strong>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κατάσταση <code>422</code>, σώμα <code>{"ok":false,"error":"invalid_input","message":"Support email must be a valid email address.","issues":{"fieldErrors":{"site.supportEmail":["Support email must be a valid email address."]}}}</code>. Καμία από τις δύο γραμμές δεν άλλαξε (ίδια τιμή και ίδιο <code>updated_at</code>) και δεν υπάρχει νέα γραμμή <em>Changed settings</em> στο αρχείο ελέγχου.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/settings.ts</code> · <code>src/cms/core/api/handler.ts</code> (<code>renderError</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-017" data-priority="P2">
+      <h3>API: κάθε κανόνας τύπου απαντά 422 με το δικό του μήνυμα</h3>
+      <ol class="steps">
+        <li>Στείλτε κάθε σώμα του παρακάτω πίνακα με την εντολή PATCH, ένα κάθε φορά, και σημειώστε την κατάσταση και το <code>message</code>. Για το μεγάλο κείμενο χρησιμοποιήστε <code>-d "{\"seo.robotsExtraDisallow\":\"$(head -c 20001 /dev/zero | tr '\0' a)\"}"</code>.</li>
+        <li>Αφού τα στείλετε όλα, εκτελέστε το ερώτημα <code>site_settings</code> από την ενότητα «Πριν ξεκινήσετε» και συγκρίνετε με τις σημειώσεις σας.</li>
+      </ol>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Σώμα</th><th>Μήνυμα</th></tr></thead>
+          <tbody>
+            <tr><td><code>{"site.supportEmail":5}</code></td><td><code>Support email must be text.</code></td></tr>
+            <tr><td><code>{"analytics.gaMeasurementId":"G-12'); alert(1)//"}</code></td><td><code>GA4 Measurement ID looks like G-XXXXXXXXXX — letters and digits only, no quotes or spaces.</code></td></tr>
+            <tr><td><code>{"ecommerce.giftWrapFee":"3,500"}</code></td><td><code>Gift-wrap fee must be an amount like 3.50 or 3,50 (no thousands separator).</code></td></tr>
+            <tr><td><code>{"ecommerce.currency":"JPY"}</code></td><td><code>Default currency must be one of: EUR, USD, GBP.</code></td></tr>
+            <tr><td><code>{"ecommerce.paymentProvider":"bitcoin"}</code></td><td><code>Payment method must be one of: manual, stripe, paypal, viva.</code></td></tr>
+            <tr><td><code>{"security.require2fa":"yes"}</code></td><td><code>Require two-factor authentication must be one of: off, on.</code></td></tr>
+            <tr><td><code>{"booking.kinds":"transport,boat"}</code></td><td><code>What you take bookings for does not offer: boat.</code></td></tr>
+            <tr><td><code>{"module.popups":"false"}</code></td><td><code>module.popups must be true or false, not the text "false".</code></td></tr>
+            <tr><td><code>seo.robotsExtraDisallow</code> με 20 001 χαρακτήρες</td><td><code>robots.txt — extra Disallow is too long (max 20000 characters).</code></td></tr>
+            <tr><td><code>{"brand.palette":"red"}</code></td><td>ένα μήνυμα που κατονομάζει το πρόβλημα της παλέτας</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε γραμμή απαντά <code>422</code> με <code>"error":"invalid_input"</code> και το μήνυμα που φαίνεται· το <code>issues.fieldErrors</code> κατονομάζει το κλειδί. Τίποτα στο <code>site_settings</code> δεν άλλαξε.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/settings/validate.ts</code> (<code>validateSettingValue</code>) · <code>src/cms/core/settings/structured.ts</code></p>
+    </article>
+
+    <article class="tc" id="OPS-018" data-priority="P3">
+      <h3>API: οι αποδεκτές τιμές κανονικοποιούνται</h3>
+      <ol class="steps">
+        <li>Στείλτε PATCH <code>{"ecommerce.giftWrapFee":"3,50","booking.kinds":" stay , transport,stay","analytics.gaMeasurementId":" G-QA1234 ","site.supportEmail":null,"module.popups":false}</code>.</li>
+        <li>Διαβάστε το <code>data</code> της απάντησης για αυτά τα κλειδιά και εκτελέστε <code>SELECT `key`, value FROM site_settings WHERE `key` IN ('ecommerce.giftWrapFee','booking.kinds','analytics.gaMeasurementId','site.supportEmail','module.popups');</code></li>
+        <li>Επαναφέρετε τις πέντε τιμές μέσω της οθόνης.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>200</code>. Αποθηκεύονται: <code>"3.50"</code>, <code>"stay,transport"</code> (χωρίς κενά στα άκρα, χωρίς διπλότυπα), <code>"G-QA1234"</code> (χωρίς κενά στα άκρα), <code>""</code> για το null email, και JSON <code>false</code> (όχι συμβολοσειρά) για τη σημαία του module. Το <code>data</code> της απάντησης περιλαμβάνει όλα τα διαχειριζόμενα κλειδιά με αυτές τις τιμές. Τα κλειδιά ecommerce και booking γίνονται δεκτά ακόμη κι όταν το αντίστοιχο module είναι ανενεργό.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/settings/validate.ts</code> · <code>src/cms/core/settings/schema.ts</code> (<code>formatMultiValue</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-019" data-priority="P3">
+      <h3>Γνωστό κενό: τα άγνωστα κλειδιά και η λανθασμένη μορφή γλωσσών αγνοούνται σιωπηλά</h3>
+      <ol class="steps">
+        <li>Στείλτε PATCH <code>{"qa.unknown":"x","site.supportemail":"typo@example.com","i18n.locales":"en"}</code>.</li>
+        <li>Εκτελέστε <code>SELECT `key`, updated_at FROM site_settings WHERE `key` IN ('qa.unknown','site.supportemail','i18n.locales');</code></li>
+        <li>Ελέγξτε την πιο πρόσφατη γραμμή <em>Changed settings</em> στο αρχείο ελέγχου.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>200</code> με <code>"ok":true</code>, παρόλο που δεν αποθηκεύτηκε τίποτα: καμία γραμμή για το <code>qa.unknown</code> ή για το ανορθόγραφο κλειδί, το <code>i18n.locales</code> αμετάβλητο, και τα Details της γραμμής του αρχείου ελέγχου είναι <code>{"changed": []}</code>. Τεκμηριωμένη συμπεριφορά· καταγράψτε την ως γνωστό κενό για scripts και ενσωματώσεις (ένα ανορθόγραφο κλειδί δεν αναφέρεται ποτέ).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/settings.ts</code> (<code>managedKeys</code>, <code>normalizeLocaleSettings</code>) · docs/dev-guides/10-settings-cron-operations.md §10</p>
+    </article>
+
+    <article class="tc" id="OPS-020" data-priority="P3">
+      <h3>Γνωστό κενό: τα αριθμητικά πεδία δέχονται οποιοδήποτε κείμενο</h3>
+      <ol class="steps">
+        <li>Στο Ecommerce → General ορίστε το <strong>Cancel unpaid card orders after (hours)</strong> σε <code>two days</code>· στο Booking ορίστε το <strong>Deposit (%)</strong> σε <code>abc</code>. Αποθηκεύστε.</li>
+        <li>Εκτελέστε την εργασία <code>commerce-stale-orders</code> (OPS-030) και δείτε μια προσφορά τιμής κράτησης (λίστα ελέγχου 09).</li>
+        <li>Επαναφέρετε και τα δύο και αποθηκεύστε.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η αποθήκευση επιτυγχάνει (<code>Settings saved.</code>): πρόκειται για πεδία κειμένου και ο server δεν κάνει έλεγχο αριθμού σε αυτά. Οι αναγνώσεις χρησιμοποιούν τις προεπιλεγμένες τιμές τους (48 ώρες· ολόκληρο το ποσό, χωρίς προκαταβολή), οπότε τίποτα δεν χαλάει, αλλά ο διαχειριστής δεν ενημερώνεται ότι η τιμή αγνοήθηκε. Καταγράψτε το ως κενό UX.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/stale-orders.ts</code> (<code>parsePendingOrderTtlHours</code>) · <code>src/cms/modules/booking/settings-read.ts</code> · BKG-002</p>
+    </article>
+
+    <article class="tc" id="OPS-021" data-priority="P3">
+      <h3>Τα προσαρμοσμένα πεδία και τα πεδία SEO δεν αποθηκεύονται χωρίς βάση σύγκρισης</h3>
+      <ol class="steps">
+        <li>Στείλτε PATCH <code>{"cms.customFields":{"page":{"groups":[],"fields":[]}}}</code>.</li>
+        <li>Στείλτε PATCH <code>{"cms.seoFields":{}}</code>.</li>
+        <li>Ανοίξτε τα <strong>Settings</strong> → <strong>Fields</strong> και ελέγξτε τα προσαρμοσμένα πεδία των Pages και τη λίστα SEO &amp; AEO.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>422</code>, μήνυμα <code>Custom fields must be saved against the copy they were edited from.</code> Βήμα 2: <code>422</code>, μήνυμα <code>SEO fields must be saved against the copy they were edited from.</code> Βήμα 3: τίποτα δεν διαγράφηκε.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/settings.ts</code> (<code>mergeCustomFields</code>, <code>assertSeoFieldsBaseline</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-perm">
+    <h2>Ποιος μπορεί να βλέπει και να αλλάζει τις ρυθμίσεις</h2>
+
+    <article class="tc" id="OPS-022" data-priority="P2">
+      <h3>Ρόλος μόνο για προβολή: βλέπει το Settings, δεν μπορεί να αποθηκεύσει</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <strong>Roles</strong>, αναπτύξτε το <strong>Add a role</strong>, δημιουργήστε τον ρόλο <code>QA settings viewer</code> μόνο με τα <strong>Access</strong> και <strong>View settings &amp; cookies</strong>· πατήστε <strong>Add role</strong>. Στο <strong>Users</strong> δημιουργήστε τον χρήστη <code>qa-settingsview@example.com</code> με αυτόν τον ρόλο.</li>
+        <li>Συνδεθείτε ως αυτός ο χρήστης στον δεύτερο browser. Ανοίξτε τα <strong>Settings</strong>, αλλάξτε το <strong>Support email</strong> και πατήστε <strong>Save settings</strong>.</li>
+        <li>Αντιγράψτε το <code>cms_session</code> αυτού του χρήστη στο <code>V</code> και εκτελέστε <code>curl -s "$BASE/api/cms/settings" -b "cms_session=$V" -w '\n%{http_code}\n'</code> καθώς και την εντολή PATCH με <code>-b "cms_session=$V"</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το Settings υπάρχει στο πλευρικό μενού και κάθε καρτέλα ανοίγει.</li>
+        <li>Η αποθήκευση εμφανίζει κόκκινο μήνυμα <code>forbidden</code> και δεν αποθηκεύεται τίποτα. Καταγράψτε το ως κενό UX: η οθόνη προσφέρει το <strong>Save settings</strong> σε χρήστη που δεν μπορεί να αποθηκεύσει, και το μήνυμα δεν εξηγεί τον λόγο.</li>
+        <li>Το GET απαντά <code>200</code> με τις ρυθμίσεις· το PATCH απαντά <code>403</code> με <code>{"ok":false,"error":"forbidden","missing":"cms.settings.write"}</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/modules/auth/permission-labels.ts</code> · <code>src/cms/modules/auth/guards.ts</code> (<code>requireApiPerm</code>) · <code>src/cms/core/routes/settings.ts</code></p>
+    </article>
+
+    <article class="tc" id="OPS-023" data-priority="P3">
+      <h3>Χωρίς δικαίωμα ρυθμίσεων, και χωρίς συνεδρία</h3>
+      <ol class="steps">
+        <li>Ως <code>qa-editor@example.com</code> (ρόλος editor, SET-043) αντιγράψτε τη συνεδρία και εκτελέστε με αυτήν τα παραπάνω GET και PATCH.</li>
+        <li>Εκτελέστε και τα δύο ξανά χωρίς κανένα cookie.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: GET <code>403</code> με <code>"missing":"cms.settings.read"</code>· PATCH <code>403</code> με <code>"missing":"cms.settings.write"</code>. Βήμα 2: και τα δύο <code>401</code>. Η ίδια η οθόνη ανακατευθύνει στο <code>/admin/403</code> (SET-043).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/settings.ts</code> (<code>settingsGetRoute</code>, <code>settingsUpdateRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-024" data-priority="P3">
+      <h3>Οι ρυθμίσεις γλωσσών κανονικοποιούνται από το API</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Οι SET-044 έως SET-049 πέρασαν (η συμπεριφορά Editing/Public στην οθόνη). Σημειώστε την τρέχουσα γραμμή <code>i18n.locales</code>, αν υπάρχει.</p>
+      <ol class="steps">
+        <li>Στείλτε PATCH <code>{"i18n.locales":{"editing":["el","en","fr"],"public":["en"]}}</code> και έπειτα εκτελέστε <code>SELECT value FROM site_settings WHERE `key` = 'i18n.locales';</code></li>
+        <li>Στείλτε PATCH <code>{"i18n.locales":{"editing":["en"],"public":["el","en"]}}</code> και εκτελέστε ξανά το ερώτημα.</li>
+        <li>Στείλτε PATCH <code>{"i18n.locales":{"editing":[],"public":[]}}</code>, εκτελέστε το ερώτημα και έπειτα ανοίξτε το <code>/en</code> και την καρτέλα Languages.</li>
+        <li>Επαναφορά: στείλτε PATCH <code>{"i18n.locales":{"editing":["el","en"],"public":["el","en"]}}</code> (ή, αν δεν υπήρχε γραμμή πριν, διαγράψτε τη γραμμή και κάντε επανεκκίνηση της εφαρμογής).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>{"editing": ["el", "en"], "public": ["el", "en"]}</code> (το μη εγκατεστημένο <code>fr</code> απορρίπτεται και η κύρια γλώσσα <code>el</code> προστίθεται υποχρεωτικά και στα δύο). Βήμα 2: το ίδιο (τα αγγλικά διατηρούνται σε editing και public· τα ελληνικά προστίθενται). Βήμα 3: <code>{"editing": ["el"], "public": ["el"]}</code>· το <code>/en</code> εμφανίζει τη σελίδα «δεν βρέθηκε» και η καρτέλα Languages δείχνει το EN με τα Editing και Public μη επιλεγμένα και το EL επιλεγμένο και απενεργοποιημένο (γκρι).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/routes/settings.ts</code> (<code>normalizeLocaleSettings</code>) · <code>src/cms/core/settings/schema.ts</code> (<code>resolveLocaleSet</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-cron">
+    <h2>Προγραμματισμένες εργασίες (cron): μυστικό κλειδί και endpoint</h2>
+    <p class="intro">Το ίδιο το CMS δεν εκτελεί τίποτα με χρονόμετρο. Ένας εξωτερικός χρονοπρογραμματιστής καλεί το <code>POST /api/cms/cron/&lt;job&gt;</code> με την κεφαλίδα <code>x-cron-secret</code>. Εργασίες: <code>content-publish-scheduled</code> (πάντα), <code>commerce-stale-orders</code>, <code>giftcard-deliver</code>, <code>giftcard-expire</code>, <code>commerce-abandoned-reminders</code> (Commerce), <code>booking-expire</code> (Booking), <code>google-reviews-sync</code> (Google reviews &amp; testimonials).</p>
+
+    <article class="tc" id="OPS-025" data-priority="P1">
+      <h3>Ρυθμίστε το μυστικό κλειδί του cron και εκτελέστε μια εργασία</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>openssl rand -base64 48</code> και βάλτε την έξοδο στο <code>CMS_CRON_SECRET=</code> του αρχείου περιβάλλοντος. Κάντε επανεκκίνηση της εφαρμογής. Ορίστε στο τερματικό το <code>CRON</code> στην ίδια τιμή.</li>
+        <li>Εκτελέστε <code>curl -s -X POST -H "x-cron-secret: $CRON" -H 'X-Real-IP: 10.10.1.1' "$BASE/api/cms/cron/content-publish-scheduled" -w '\n%{http_code}\n'</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>200</code> και <code>{"ok":true,"data":{"status":"ran","result":{"published":N,"failed":0}}}</code> (το N είναι 0, εκτός αν μια προγραμματισμένη σελίδα έχει φτάσει στην ώρα της).</p>
+      <p class="ref">Αναφ.: <code>src/app/api/cms/cron/[job]/route.ts</code> · <code>src/cms/core/cron/service.ts</code> (<code>cronRoute</code>) · docs/dev-guides/10-settings-cron-operations.md §3.4</p>
+    </article>
+
+    <article class="tc" id="OPS-026" data-priority="P2">
+      <h3>Ένα μυστικό κλειδί που λείπει, είναι κενό ή λάθος απορρίπτεται</h3>
+      <ol class="steps">
+        <li>Εκτελέστε το curl της OPS-025 χωρίς την κεφαλίδα <code>x-cron-secret</code>.</li>
+        <li>Εκτελέστε το με <code>-H 'x-cron-secret;'</code> (κενή κεφαλίδα).</li>
+        <li>Εκτελέστε το με το μυστικό κλειδί χωρίς τον τελευταίο του χαρακτήρα, και έπειτα με το μυστικό κλειδί συν έναν επιπλέον χαρακτήρα.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε κλήση απαντά <code>401</code> με <code>{"ok":false,"error":"unauthorized","message":"unauthorized"}</code> και δεν γράφεται καμία γραμμή <code>cron.run</code> στο αρχείο ελέγχου.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/cron/policy.ts</code> (<code>authorizeCronRequest</code>, <code>timingSafeEquals</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-027" data-priority="P3">
+      <h3>Ένα ρυθμισμένο μυστικό κλειδί κάτω από 32 χαρακτήρες, ή κανένα, απορρίπτει τα πάντα</h3>
+      <ol class="steps">
+        <li>Ορίστε <code>CMS_CRON_SECRET=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</code> (31 χαρακτήρες· ελέγξτε με <code>printf %s "$value" | wc -c</code>). Κάντε επανεκκίνηση. Καλέστε την εργασία με ακριβώς αυτή την τιμή ως κεφαλίδα.</li>
+        <li>Ορίστε το σε 32 <code>a</code>, κάντε επανεκκίνηση και επαναλάβετε με 32 <code>a</code>.</li>
+        <li>Αφαιρέστε τη γραμμή (ή αφήστε την κενή), κάντε επανεκκίνηση και καλέστε με κενή κεφαλίδα και με <code>-H 'x-cron-secret: undefined'</code>.</li>
+        <li>Επαναφέρετε το πραγματικό μυστικό κλειδί και κάντε επανεκκίνηση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>401</code>, παρόλο που η κεφαλίδα και το μυστικό κλειδί ταιριάζουν. Βήμα 2: <code>200</code>, <code>"status":"ran"</code> (το 32 είναι το ελάχιστο). Βήμα 3: <code>401</code> και για τα δύο: ένα μυστικό κλειδί χωρίς τιμή δεν μπορεί ποτέ να ταιριάξει.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/cron/policy.ts</code> (<code>CRON_SECRET_MIN_LENGTH = 32</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-028" data-priority="P3">
+      <h3>Άγνωστα και λανθασμένα ονόματα εργασιών, άλλες μέθοδοι</h3>
+      <ol class="steps">
+        <li>Με το σωστό μυστικό κλειδί καλέστε τα <code>/api/cms/cron/qa-nope</code>, <code>/api/cms/cron/Content-Publish-Scheduled</code>, <code>/api/cms/cron/constructor</code> και <code>/api/cms/cron/content-publish-scheduled-</code>.</li>
+        <li>Με λάθος μυστικό κλειδί καλέστε το <code>/api/cms/cron/qa-nope</code>.</li>
+        <li>Εκτελέστε <code>curl -s -o /dev/null -w '%{http_code}\n' -H "x-cron-secret: $CRON" "$BASE/api/cms/cron/content-publish-scheduled"</code> (ένα GET).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>404</code> <code>{"ok":false,"error":"not_found",…}</code> και για τα τέσσερα (το όνομα πρέπει να είναι σε πεζά kebab-case και να είναι δική του καταχώριση της λίστας εργασιών). Βήμα 2: <code>401</code>, όχι 404: χωρίς το μυστικό κλειδί κανείς δεν μαθαίνει ποια ονόματα εργασιών υπάρχουν. Βήμα 3: <code>405</code>· μόνο το POST εκτελεί εργασία.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/cron/policy.ts</code> (<code>isValidCronJobName</code>, <code>resolveCronJob</code>, <code>Object.hasOwn</code>)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-jobs">
+    <h2>Κάθε καταχωρισμένη εργασία</h2>
+    <p class="intro">Για κάθε εργασία: ενεργοποιήστε την, ελέγξτε το αποτέλεσμα και εκτελέστε την ξανά για να δείξετε ότι η επανάληψη είναι ασφαλής. Η κλήση είναι πάντα <code>curl -s -X POST -H "x-cron-secret: $CRON" -H 'X-Real-IP: 10.10.2.N' "$BASE/api/cms/cron/&lt;job&gt;"</code>. Μια εργασία που εκτελέστηκε καταγράφεται στο αρχείο ελέγχου ως <code>cron.run</code>.</p>
+
+    <article class="tc" id="OPS-029" data-priority="P1">
+      <h3>content-publish-scheduled: δημοσιεύει τις σελίδες που έφτασαν στην ώρα τους, μία φορά</h3>
+      <ol class="steps">
+        <li>Προγραμματίστε μια σελίδα <code>QA Ops Scheduled</code> (slug <code>qa-ops-scheduled</code>) για δύο λεπτά από τώρα, όπως στη CON-024. Περιμένετε τρία λεπτά χωρίς να ανοίξετε τη λίστα Pages (το άνοιγμά της επίσης δημοσιεύει, CON-027).</li>
+        <li>Εκτελέστε την εργασία. Ανοίξτε το <code>/qa-ops-scheduled</code> χωρίς σύνδεση.</li>
+        <li>Εκτελέστε ξανά την εργασία.</li>
+        <li>Εκτελέστε <code>SELECT status FROM documents WHERE slug = 'qa-ops-scheduled';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 2: <code>{"ok":true,"data":{"status":"ran","result":{"published":1,"failed":0}}}</code>· η σελίδα είναι δημοσιευμένη. Βήμα 3: <code>"published":0</code>. Η κατάσταση είναι <code>published</code> για κάθε γραμμή γλώσσας που είχε προγραμματιστεί. Η CON-026 καλύπτει τη γραμμή του αρχείου ελέγχου για την ίδια τη δημοσίευση.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/documents/publish-scheduled.ts</code> (<code>publishDueScheduled</code>, 200 ανά εκτέλεση)</p>
+    </article>
+
+    <article class="tc" id="OPS-030" data-priority="P2">
+      <h3>commerce-stale-orders: ακυρώνει παλιές απλήρωτες παραγγελίες μέσω παρόχου πληρωμών</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ενεργό Commerce. Οι COM-089 και COM-090 είναι οι πλήρεις περιπτώσεις· αυτή ελέγχει τη σύμβαση της εργασίας.</p>
+      <ol class="steps">
+        <li>Εκτελέστε την εργασία δύο φορές.</li>
+        <li>Ορίστε το <strong>Cancel unpaid card orders after (hours)</strong> σε <code>0</code>, αποθηκεύστε και εκτελέστε την εργασία. Επαναφέρετε την τιμή.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>"status":"ran","result":{"checked":N,"cancelled":[…]}</code>· στη δεύτερη εκτέλεση το <code>cancelled</code> είναι <code>[]</code>. Βήμα 2: <code>{"checked":0,"cancelled":[]}</code>: το 0 απενεργοποιεί την εργασία. Οι παραγγελίες με χειροκίνητη πληρωμή και οι παραγγελίες στις οποίες έχουν καταβληθεί χρήματα δεν ακυρώνονται ποτέ (COM-089).</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/stale-orders.ts</code> (<code>cancelStaleOrders</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-031" data-priority="P2">
+      <h3>giftcard-deliver: στέλνει τις δωροκάρτες των οποίων ήρθε η ημέρα, μία φορά</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ενεργό Commerce, μια πληρωμένη δωροκάρτα με μελλοντική ημερομηνία <strong>Send on</strong> (COM-048 βήμα 3) και εξερχόμενη αλληλογραφία που λειτουργεί.</p>
+      <ol class="steps">
+        <li>Εκτελέστε <code>UPDATE gift_cards SET send_at = NOW() - INTERVAL 1 MINUTE WHERE status = 'scheduled' AND sent_at IS NULL AND recipient_email LIKE 'qa%';</code></li>
+        <li>Εκτελέστε την εργασία· ελέγξτε το γραμματοκιβώτιο του παραλήπτη. Εκτελέστε την ξανά.</li>
+        <li>Εκτελέστε <code>SELECT id, status, send_at, sent_at FROM gift_cards WHERE recipient_email LIKE 'qa%' ORDER BY id DESC LIMIT 3;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Πρώτη εκτέλεση <code>"result":{"sent":1}</code> (ένα ανά δωροκάρτα που έφτασε η ώρα της) και ένα email δωροκάρτας ανά κάρτα, στην προεπιλεγμένη γλώσσα του site. Δεύτερη εκτέλεση <code>{"sent":0}</code> και κανένα δεύτερο email. Η κάρτα είναι πλέον <code>active</code> με ορισμένο <code>sent_at</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/giftcards/service.ts</code> (<code>deliverDueGiftCards</code>: δεσμεύει το <code>sent_at</code> πριν από την αποστολή, 100 ανά εκτέλεση)</p>
+    </article>
+
+    <article class="tc" id="OPS-032" data-priority="P2">
+      <h3>giftcard-expire: σημειώνει ως ληγμένες τις κάρτες με παρελθούσα ημερομηνία</h3>
+      <ol class="steps">
+        <li>Επιλέξτε μια ενεργή δωροκάρτα QA και εκτελέστε <code>UPDATE gift_cards SET expires_at = NOW() - INTERVAL 1 DAY WHERE id = &lt;id&gt;;</code></li>
+        <li>Εκτελέστε την εργασία δύο φορές. Δοκιμάστε τον κωδικό της κάρτας στο checkout.</li>
+        <li>Εκτελέστε <code>SELECT status FROM gift_cards WHERE id = &lt;id&gt;;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Πρώτη εκτέλεση <code>"result":{"expired":1}</code>, δεύτερη <code>{"expired":0}</code>. Η κατάσταση είναι <code>expired</code> και ο κωδικός απορρίπτεται στο checkout.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/giftcards/service.ts</code> (<code>expireGiftCards</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-033" data-priority="P2">
+      <h3>commerce-abandoned-reminders: μία υπενθύμιση ανά καλάθι</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ένα καταγεγραμμένο καλάθι για διεύθυνση QA (COM-091).</p>
+      <ol class="steps">
+        <li>Εκτελέστε <code>UPDATE abandoned_carts SET created_at = NOW() - INTERVAL 2 HOUR WHERE email = '&lt;qa address&gt;' AND status = 'pending';</code></li>
+        <li>Εκτελέστε την εργασία και έπειτα εκτελέστε την ξανά.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Πρώτη εκτέλεση <code>"result":{"sent":1,"skippedSuppressed":0,"cappedBy":0}</code> και ένα email υπενθύμισης (η COM-092 ελέγχει το περιεχόμενό του). Δεύτερη εκτέλεση <code>"sent":0</code>. Η κατάσταση του καλαθιού είναι <code>reminded</code>. Η καθυστέρηση (<code>COMMERCE_ABANDONED_DELAY_MINUTES</code>, 60) και το ημερήσιο ανώτατο όριο (<code>COMMERCE_ABANDONED_DAILY_MAX</code>, 200) προέρχονται από το περιβάλλον.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/commerce/abandoned.ts</code> (<code>processReminders</code>, <code>findDueForReminder</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-034" data-priority="P2">
+      <h3>booking-expire: η εκκαθάριση, επαναλαμβανόμενη</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ενεργό Booking. Η BKG-057 είναι η πλήρης περίπτωση.</p>
+      <ol class="steps">
+        <li>Εκτελέστε την BKG-057 χρησιμοποιώντας αυτό το endpoint.</li>
+        <li>Εκτελέστε αμέσως ξανά την εργασία.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1 όπως στη BKG-057 (<code>"result":{"expired":1}</code>, η δέσμευση αποδεσμεύεται, ο πελάτης ενημερώνεται). Βήμα 2 <code>{"expired":0}</code> και κανένα δεύτερο email.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/allocation.ts</code> (<code>expireStaleReservations</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-035" data-priority="P2">
+      <h3>google-reviews-sync: ακίνδυνη όταν δεν έχει ρυθμιστεί τίποτα</h3>
+      <ol class="steps">
+        <li>Επιλέξτε το <strong>Google reviews &amp; testimonials</strong> στο Modules και αποθηκεύστε. Εκτελέστε την εργασία.</li>
+        <li>Αποεπιλέξτε το, αποθηκεύστε και εκτελέστε ξανά την εργασία.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>{"ok":true,"data":{"status":"ran","result":{"results":[]}}}</code> (η ενσωμάτωση δεν είναι ενεργοποιημένη· βλ. MKT-096 έως MKT-098 για την ημιτελή ενσωμάτωση). Βήμα 2: <code>404</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/reviews-external/sync.ts</code> (<code>syncAllReviewLocations</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-036" data-priority="P2">
+      <h3>Module ανενεργό: κάθε εξαρτώμενη εργασία απαντά 404, η εργασία περιεχομένου εξακολουθεί να εκτελείται</h3>
+      <ol class="steps">
+        <li>Στο Modules αποεπιλέξτε τα <strong>Commerce</strong>, <strong>Booking</strong> και <strong>Google reviews &amp; testimonials</strong>· αποθηκεύστε.</li>
+        <li>Εκτελέστε: <code>for j in content-publish-scheduled commerce-stale-orders giftcard-deliver giftcard-expire commerce-abandoned-reminders booking-expire google-reviews-sync; do printf '%s ' $j; curl -s -o /dev/null -w '%{http_code}\n' -X POST -H "x-cron-secret: $CRON" -H 'X-Real-IP: 10.10.3.1' "$BASE/api/cms/cron/$j"; done</code></li>
+        <li>Ενεργοποιήστε ξανά τα modules και επαναλάβετε τον βρόχο.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 2: <code>content-publish-scheduled 200</code> και <code>404</code> για τις άλλες έξι (η ίδια απάντηση με μια άγνωστη εργασία· η SET-042 είναι η σύντομη εκδοχή). Βήμα 3: και οι επτά <code>200</code>. Ο διακόπτης ισχύει αμέσως, χωρίς επανεκκίνηση.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/cron/policy.ts</code> (<code>resolveCronJob</code>) · <code>src/cms/core/settings/modules.ts</code></p>
+    </article>
+
+    <article class="tc" id="OPS-037" data-priority="P2">
+      <h3>Οι εκτελέσεις εργασιών εμφανίζονται στο αρχείο ελέγχου</h3>
+      <ol class="steps">
+        <li>Ανοίξτε το <strong>Audit log</strong>. Ορίστε το <strong>Activity</strong> σε <strong>Site configuration</strong> και το <strong>Affected</strong> σε <strong>Scheduled job</strong>· πατήστε <strong>Filter</strong>.</li>
+        <li>Εκτελέστε <code>SELECT actor_label, action, subject_type, subject_id, created_at FROM audit_logs WHERE action = 'cron.run' ORDER BY id DESC LIMIT 10;</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Μία γραμμή <em>Ran a scheduled job</em> ανά επιτυχημένη εκτέλεση σε αυτή την ενότητα, με actor <code>cron</code> και subject το όνομα της εργασίας. Οι εκτελέσεις που απορρίφθηκαν (401/404/429) ή παραλείφθηκαν (OPS-038) δεν έχουν γραμμή. Η απουσία γραμμής για μια προγραμματισμένη εργασία είναι το σήμα παρακολούθησης (docs/dev-guides/10-settings-cron-operations.md §7.5).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/cron/service.ts</code> (<code>logAudit</code>) · <code>src/cms/core/audit-labels.ts</code> · <code>src/cms/core/audit-groups.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-cronguard">
+    <h2>Επικάλυψη, όρια αιτημάτων και ο χρονοπρογραμματιστής</h2>
+
+    <article class="tc" id="OPS-038" data-priority="P2">
+      <h3>Μια εργασία που ήδη εκτελείται παραλείπεται</h3>
+      <ol class="steps">
+        <li>Σε έναν client βάσης δεδομένων συνδεδεμένο στη βάση του site (κρατήστε αυτή τη συνεδρία ανοιχτή) εκτελέστε <code>SELECT GET_LOCK('cms-cron:content-publish-scheduled', 0);</code></li>
+        <li>Εκτελέστε την εργασία <code>content-publish-scheduled</code> με curl.</li>
+        <li>Εκτελέστε την <code>giftcard-expire</code> (ή οποιαδήποτε άλλη ενεργή εργασία).</li>
+        <li>Στη συνεδρία της βάσης δεδομένων εκτελέστε <code>SELECT RELEASE_LOCK('cms-cron:content-publish-scheduled');</code> και έπειτα εκτελέστε ξανά την πρώτη εργασία.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 1 επιστρέφει <code>1</code>. Βήμα 2: <code>200</code> και <code>{"ok":true,"data":{"status":"skipped","reason":"already_running"}}</code>, χωρίς γραμμή στο αρχείο ελέγχου. Βήμα 3: <code>"status":"ran"</code> (το κλείδωμα είναι ανά όνομα εργασίας). Βήμα 4: <code>"status":"ran"</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/cron/service.ts</code> (<code>runCronJob</code>, <code>GET_LOCK('cms-cron:&lt;job&gt;', 0)</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-039" data-priority="P3">
+      <h3>Μια διακοπείσα σύνδεση απελευθερώνει το κλείδωμα· μια εκτέλεση απελευθερώνει το δικό της</h3>
+      <ol class="steps">
+        <li>Πάρτε ξανά το κλείδωμα όπως στην OPS-038 και έπειτα κλείστε τον client της βάσης δεδομένων (ή τερματίστε τη συνεδρία) χωρίς να το απελευθερώσετε.</li>
+        <li>Εκτελέστε την εργασία.</li>
+        <li>Εκτελέστε <code>SELECT IS_USED_LOCK('cms-cron:content-publish-scheduled');</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 2: <code>"status":"ran"</code> (ο server απελευθέρωσε το κλείδωμα μαζί με τη σύνδεση, όπως θα γινόταν με μια εφαρμογή που κατέρρευσε). Βήμα 3: <code>NULL</code>: η εργασία απελευθέρωσε το κλείδωμά της όταν ολοκληρώθηκε.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/cron/service.ts</code> (<code>RELEASE_LOCK</code> μέσα στο <code>finally</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-040" data-priority="P3">
+      <h3>30 κλήσεις το λεπτό ανά διεύθυνση· τα λάθος μυστικά κλειδιά καταναλώνουν το όριο</h3>
+      <ol class="steps">
+        <li>Κάντε επανεκκίνηση της εφαρμογής. Εκτελέστε <code>for i in $(seq 1 31); do curl -s -o /dev/null -w '%{http_code} ' -X POST -H 'x-cron-secret: wrong' -H 'X-Real-IP: 10.10.4.1' "$BASE/api/cms/cron/content-publish-scheduled"; done; echo</code></li>
+        <li>Αμέσως μετά εκτελέστε την εργασία με το σωστό μυστικό κλειδί και το ίδιο <code>X-Real-IP: 10.10.4.1</code>, με <code>-D -</code> για να δείτε τις κεφαλίδες.</li>
+        <li>Εκτελέστε την με το σωστό μυστικό κλειδί και <code>X-Real-IP: 10.10.4.2</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: τριάντα <code>401</code> και έπειτα <code>429</code>. Βήμα 2: <code>429</code>, σώμα <code>{"ok":false,"error":"rate_limited","message":"Too many requests."}</code> και μια κεφαλίδα <code>Retry-After</code> (δευτερόλεπτα, το πολύ 60). Βήμα 3: <code>200</code>. Μετά από ένα λεπτό η διεύθυνση 10.10.4.1 λειτουργεί ξανά.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/cron/service.ts</code> (<code>rateLimit: { scope: 'cms-cron', max: 30 }</code>) · <code>src/cms/core/rate-limit.ts</code></p>
+    </article>
+
+    <article class="tc" id="OPS-041" data-priority="P2">
+      <h3>Παραγωγή: μια απευθείας κλήση χωρίς X-Real-IP περνά μόνο με το μυστικό κλειδί</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ένα build παραγωγής (SET-030) ή ένα shell στον φιλοξενούμενο server που καλεί απευθείας τη θύρα του Node (<code>http://127.0.0.1:3000</code>), όχι μέσω Nginx.</p>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s -X POST -H "x-cron-secret: $CRON" http://127.0.0.1:3000/api/cms/cron/content-publish-scheduled -w '\n%{http_code}\n'</code> (χωρίς <code>X-Real-IP</code>).</li>
+        <li>Εκτελέστε το ίδιο με <code>x-cron-secret: wrong</code>.</li>
+        <li>Κοιτάξτε το αρχείο καταγραφής (log) της εφαρμογής.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>200</code>, <code>"status":"ran"</code>. Βήμα 2: <code>429</code> (όχι 401): χωρίς διεύθυνση και χωρίς το μυστικό κλειδί, το αίτημα απορρίπτεται πριν καν ελεγχθεί το μυστικό κλειδί. Βήμα 3: μία φορά ανά διεργασία, <code>[cms] No X-Real-IP on an incoming request — rate limiting cannot bucket by origin.</code> Οι κλήσεις μέσω του proxy (που ορίζει το <code>X-Real-IP</code>) συμπεριφέρονται όπως στην OPS-025.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/api/handler.ts</code> (<code>trustedWithoutIp</code>) · docs/dev-guides/10-settings-cron-operations.md §7.2, §10 (“Cron without X-Real-IP”)</p>
+    </article>
+
+    <article class="tc" id="OPS-042" data-priority="P2">
+      <h3>Το τεκμηριωμένο wrapper του χρονοπρογραμματιστή και το crontab λειτουργούν</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Shell στον server staging ως ο χρήστης του site. Commerce ανενεργό, Booking ανενεργό (η συνήθης κατάσταση του site).</p>
+      <ol class="steps">
+        <li>Δημιουργήστε το <code>~/private/cron.env</code> με <code>CMS_CRON_SECRET=&lt;secret&gt;</code> και <code>SITE=&lt;staging origin&gt;</code>· εφαρμόστε του <code>chmod 600</code>.</li>
+        <li>Δημιουργήστε το <code>~/bin/cms-cron</code> ακριβώς όπως στο docs/dev-guides/10-settings-cron-operations.md §7.2, αλλάζοντας μόνο τη διαδρομή του <code>cron.env</code>· εφαρμόστε του <code>chmod 700</code>.
+<pre><code>#!/bin/sh
+set -eu
+. "$HOME/private/cron.env"
+curl -fsS -m 300 -X POST -H "x-cron-secret: $CMS_CRON_SECRET" "$SITE/api/cms/cron/$1"</code></pre></li>
+        <li>Εκτελέστε <code>~/bin/cms-cron content-publish-scheduled; echo " exit=$?"</code> και <code>~/bin/cms-cron commerce-stale-orders; echo " exit=$?"</code>.</li>
+        <li>Προσθέστε τη γραμμή <code>*/10 * * * * $HOME/bin/cms-cron content-publish-scheduled &gt;&gt; $HOME/cms-cron.log 2&gt;&amp;1</code> με <code>crontab -e</code>. Μετά από 25 λεπτά ελέγξτε το <code>~/cms-cron.log</code> και το αρχείο ελέγχου (OPS-037). Αφαιρέστε τη γραμμή στη συνέχεια, εκτός αν πρέπει να παραμείνει.</li>
+        <li>Εκτελέστε <code>crontab -l | grep -c x-cron-secret</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 3: η πρώτη εντολή τυπώνει το JSON με <code>"status":"ran"</code> και <code>exit=0</code>· η δεύτερη τυπώνει <code>curl: (22) The requested URL returned error: 404</code> και κωδικό εξόδου διάφορο του μηδενός (εργασία για ανενεργό module: αφαιρέστε αυτή τη γραμμή του crontab αντί να την αγνοήσετε). Βήμα 4: δύο ή τρεις γραμμές <code>"status":"ran"</code> και αντίστοιχες γραμμές <em>Ran a scheduled job</em>. Βήμα 5: <code>0</code>: το μυστικό κλειδί δεν βρίσκεται στο crontab.</p>
+      <p class="ref">Αναφ.: docs/dev-guides/10-settings-cron-operations.md §7.2 · <code>.env.example</code> (σχόλια για το cron)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-legacy">
+    <h2>Παλαιότερα endpoints ανά εργασία</h2>
+    <p class="intro">Δύο endpoints προηγούνται του ενιαίου και εξακολουθούν να λειτουργούν, το καθένα με το δικό του μυστικό κλειδί ή με συνεδρία διαχειριστικού: <code>POST /api/cms/reservations/expire</code> (<code>BOOKING_CRON_SECRET</code> ή <em>Edit bookings</em>) και <code>POST /api/cms/abandoned-carts/remind</code> (<code>COMMERCE_CRON_SECRET</code> ή <em>Edit orders</em>). Και τα δύο επιτρέπουν 5 κλήσεις το λεπτό. Η BKG-059 καλύπτει το μυστικό κλειδί των κρατήσεων.</p>
+
+    <article class="tc" id="OPS-043" data-priority="P2">
+      <h3>abandoned-carts/remind: μυστικό κλειδί, συνεδρία και όρια</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ενεργό Commerce.</p>
+      <ol class="steps">
+        <li>Ορίστε <code>COMMERCE_CRON_SECRET=short</code>, κάντε επανεκκίνηση και εκτελέστε <code>curl -s -X POST -H 'x-cron-secret: short' -H 'X-Real-IP: 10.10.5.1' "$BASE/api/cms/abandoned-carts/remind" -w '\n%{http_code}\n'</code>.</li>
+        <li>Ορίστε μια τιμή 40+ χαρακτήρων, κάντε επανεκκίνηση και επαναλάβετε με αυτήν (<code>X-Real-IP: 10.10.5.2</code>).</li>
+        <li>Χωρίς μυστικό κλειδί, με το cookie του διαχειριστικού: προσθέστε <code>-b "cms_session=$S"</code> (<code>X-Real-IP: 10.10.5.3</code>). Πατήστε επίσης <strong>Send reminders</strong> στην οθόνη <strong>Abandoned carts</strong>.</li>
+        <li>Καλέστε έξι φορές στη σειρά με το σωστό μυστικό κλειδί και <code>X-Real-IP: 10.10.5.4</code>.</li>
+        <li>Απενεργοποιήστε το Commerce, καλέστε με το σωστό μυστικό κλειδί· ενεργοποιήστε το ξανά. Αφαιρέστε το <code>COMMERCE_CRON_SECRET</code> και κάντε επανεκκίνηση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>401</code>: ένα μυστικό κλειδί κάτω από 32 χαρακτήρες δεν εξουσιοδοτεί τίποτα και δεν υπάρχει συνεδρία. Βήματα 2 και 3: <code>{"ok":true,"data":{"sent":N,"skippedSuppressed":N,"cappedBy":N}}</code> (χωρίς περιτύλιγμα <code>status</code>). Βήμα 4: πέντε απαντήσεις και έπειτα <code>429</code>. Βήμα 5: <code>404</code> <code>{"ok":false,"error":"not_found"}</code>.</p>
+      <p class="ref">Αναφ.: <code>src/app/api/cms/abandoned-carts/remind/route.ts</code> · <code>src/cms/modules/commerce/abandoned.ts</code> (<code>abandonedRemindRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-044" data-priority="P3">
+      <h3>reservations/expire: χωρίς μυστικό κλειδί και χωρίς συνεδρία, module ανενεργό</h3>
+      <ol class="steps">
+        <li>Με ενεργό Booking και χωρίς ορισμένο <code>BOOKING_CRON_SECRET</code>, εκτελέστε <code>curl -s -X POST -H 'X-Real-IP: 10.10.6.1' "$BASE/api/cms/reservations/expire" -w '\n%{http_code}\n'</code>.</li>
+        <li>Εκτελέστε το με <code>-b "cms_session=$S"</code> ως χρήστης του οποίου ο ρόλος δεν έχει το <em>Edit bookings</em> (για παράδειγμα <code>qa-editor@example.com</code>).</li>
+        <li>Απενεργοποιήστε το Booking και καλέστε το με το cookie του superadmin· ενεργοποιήστε ξανά το Booking.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>401</code>. Βήμα 2: <code>403</code> με <code>"missing":"cms.booking.reservations.write"</code>. Βήμα 3: <code>404</code>. Προγραμματίστε είτε αυτό το endpoint είτε το <code>booking-expire</code>, ποτέ και τα δύο.</p>
+      <p class="ref">Αναφ.: <code>src/app/api/cms/reservations/expire/route.ts</code> · <code>src/cms/modules/booking/payments.ts</code> (<code>bookingExpireRoute</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-045" data-priority="P3">
+      <h3>Τα παλαιότερα endpoints απορρίπτουν στην παραγωγή απευθείας κλήσεις χωρίς X-Real-IP</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Όπως στην OPS-041, με ενεργό Booking και <code>BOOKING_CRON_SECRET</code> 40+ χαρακτήρων.</p>
+      <ol class="steps">
+        <li>Εκτελέστε <code>curl -s -X POST -H "x-cron-secret: $BOOKING_SECRET" http://127.0.0.1:3000/api/cms/reservations/expire -w '\n%{http_code}\n'</code> (χωρίς <code>X-Real-IP</code>).</li>
+        <li>Εκτελέστε το ίδιο μέσω του proxy (το δημόσιο URL).</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: <code>429</code> ακόμη και με το σωστό μυστικό κλειδί: σε αντίθεση με το ενιαίο endpoint (OPS-041), τα παλαιότερα δεν έχουν εξαίρεση για χρονοπρογραμματιστή στον ίδιο host. Βήμα 2: <code>200</code>. Καταγράψτε το ως λόγο μεταφοράς των χρονοπρογραμματιστών στο <code>/api/cms/cron/booking-expire</code>.</p>
+      <p class="ref">Αναφ.: <code>src/cms/modules/booking/payments.ts</code> (<code>rateLimit</code> χωρίς <code>trustedWithoutIp</code>) · <code>src/cms/core/rate-limit.ts</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-update">
+    <h2>Πρόγραμμα ενημέρωσης (updater) του CMS: τι αντικαθίσταται και τι διατηρείται</h2>
+    <p class="intro">Οι SET-066 έως SET-072 δημιουργούν ένα πακέτο και εκτελούν τις πρώτες δοκιμαστικές εκτελέσεις (dry run)· κάντε τες πρώτα και κρατήστε το <code>/tmp/cms-qa/cms-update-1.0.0.zip</code>. Για οτιδήποτε τροποποιεί αρχεία χρησιμοποιήστε ένα προσωρινό worktree (<code>git worktree add /tmp/cms-qa-wt CMS</code>) και διαγράψτε το στη συνέχεια (<code>git worktree remove --force /tmp/cms-qa-wt</code>). Μην προσθέτετε ποτέ <code>--apply</code> σε κοινόχρηστο checkout και μη χρησιμοποιείτε ποτέ <code>--bump</code>.</p>
+
+    <article class="tc" id="OPS-046" data-priority="P2">
+      <h3>Το πακέτο περιέχει τον πυρήνα και τα αρχεία σύμβασης, τίποτε άλλο</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>unzip -l /tmp/cms-qa/cms-update-1.0.0.zip | awk '{print $4}' | cut -d/ -f1-2 | sort | uniq -c</code>.</li>
+        <li>Εκτελέστε <code>unzip -l /tmp/cms-qa/cms-update-1.0.0.zip | grep -E ' (files|glue)/(docs|\.claude|releases|qa|test/tools|test/studio)/' | head</code>.</li>
+        <li>Εκτελέστε <code>unzip -p /tmp/cms-qa/cms-update-1.0.0.zip manifest.json | head -c 400; echo</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Βήμα 1: μόνο καταχωρίσεις <code>manifest.json</code>, <code>files/src</code>, <code>files/test</code> και <code>glue/…</code>. Κάτω από το <code>files/src</code> μόνο τα <code>src/cms</code>, <code>src/app/api/cms</code>, <code>src/app/admin</code> και τα scaffolds της βιτρίνας· το <code>glue/</code> περιέχει τα <code>src/site.config.ts</code>, <code>.env.example</code>, <code>package.json</code> και τα υπόλοιπα αρχεία σύμβασης.</li>
+        <li>Βήμα 2: καμία έξοδος: οι διαδρομές που υπάρχουν μόνο στη βάση (docs, skills, releases, εργαλεία QA) δεν πακετάρονται ποτέ.</li>
+        <li>Βήμα 3: ξεκινά με <code>{"format":1,"version":"1.0.0","commit":"…","branch":"CMS",…</code>.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/update/plan.mjs</code> (<code>classifyPath</code>) · <code>src/cms/update/manifest.mjs</code> · docs/dev-guides/10-settings-cron-operations.md §3.5</p>
+    </article>
+
+    <article class="tc" id="OPS-047" data-priority="P2">
+      <h3>Δοκιμαστική εκτέλεση (dry run) σε αντίγραφο: ένα τροποποιημένο αρχείο πυρήνα θα αντικαθίστατο, ένα τροποποιημένο αρχείο σύμβασης μένει ανέγγιχτο</h3>
+      <ol class="steps">
+        <li>Στο worktree εκτελέστε <code>echo '// qa-ops' &gt;&gt; src/cms/core/cache.ts</code>, <code>echo '// qa-ops' &gt;&gt; src/site.config.ts</code> και <code>echo '// qa-ops' &gt;&gt; src/components/layout/Footer.tsx</code> (ένα αρχείο του site· χρησιμοποιήστε οποιοδήποτε αρχείο κάτω από το <code>src/components/layout/</code>).</li>
+        <li>Από το worktree εκτελέστε <code>npm run cms:update -- /tmp/cms-qa/cms-update-1.0.0.zip --reinstall</code>.</li>
+        <li>Εκτελέστε <code>git -C /tmp/cms-qa-wt status --short</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li>Το πλάνο γράφει <code>Core            1 file(s) to write, 0 to delete</code> (το τροποποιημένο <code>cache.ts</code> θα επανερχόταν στην έκδοση του πακέτου).</li>
+        <li>Κάτω από το <code>Contract files — never written. Compare with …</code> αναφέρει το <code>src/site.config.ts</code>. Το αρχείο του site δεν αναφέρεται καθόλου (κατηγορία <code>site</code>, ανέγγιχτο).</li>
+        <li>Τελειώνει με <code>Dry run — nothing was written. Add --apply to install.</code>· το <code>git status</code> δείχνει ακριβώς τα τρία τροποποιημένα αρχεία και τίποτε άλλο.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>src/cms/update/install.mjs</code> (<code>report</code>) · <code>src/cms/update/plan.mjs</code> · docs/dev-guides/10-settings-cron-operations.md §10 (“Updater invariants”)</p>
+    </article>
+
+    <article class="tc" id="OPS-048" data-priority="P3">
+      <h3>Ένα παλαιότερο πακέτο απορρίπτεται</h3>
+      <ol class="steps">
+        <li>Στο worktree ορίστε το <code>src/cms/version.json</code> σε <code>{"version": "9.9.9"}</code>.</li>
+        <li>Εκτελέστε <code>npm run cms:update -- /tmp/cms-qa/cms-update-1.0.0.zip; echo "exit=$?"</code>.</li>
+        <li>Διαγράψτε το worktree.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>This site runs 9.9.9.</code>, έπειτα <code>This update is 1.0.0, older than the 9.9.9 this site runs. Pass --allow-downgrade to install it anyway.</code>, κωδικός εξόδου διάφορος του μηδενός, και καμία καταμέτρηση πλάνου.</p>
+      <p class="ref">Αναφ.: <code>src/cms/update/plan.mjs</code> (<code>planInstall</code>) · <code>src/cms/update/cli.mjs</code></p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-env">
+    <h2>Μεταβλητές περιβάλλοντος</h2>
+
+    <article class="tc" id="OPS-049" data-priority="P3">
+      <h3>Το .env.example και ο κώδικας συμφωνούν</h3>
+      <ol class="steps">
+        <li>Εκτελέστε:
+<pre><code>grep -oE '^#? ?[A-Z][A-Z0-9_]+=' .env.example | sed -E 's/^# ?//; s/=$//' | sort -u &gt; /tmp/env-example.txt
+grep -rhoE 'process\.env\.[A-Z][A-Z0-9_]+' src scripts next.config.ts drizzle.config.ts \
+  | sed 's/process\.env\.//' | sort -u &gt; /tmp/env-code.txt
+wc -l &lt; /tmp/env-example.txt; comm -3 /tmp/env-example.txt /tmp/env-code.txt</code></pre></li>
+        <li>Ανοίξτε το docs/dev-guides/10-settings-cron-operations.md §6.1 και τσεκάρετε κάθε όνομα του <code>/tmp/env-example.txt</code>.</li>
+      </ol>
+      <ul class="exp">
+        <li><code>51</code> ονόματα (50 ορισμένα συν το σχολιασμένο <code>DATABASE_URL</code>).</li>
+        <li>Το <code>comm</code> τυπώνει μόνο: στην πρώτη στήλη <code>RECAPTCHA_SECRET_KEY</code>, <code>RECAPTCHA_SITE_KEY</code> (διαβάζονται μέσω βοηθητικής συνάρτησης, όχι με <code>process.env.X</code>)· στη δεύτερη <code>AUTH_SECRET</code> (μόνο σε σχόλια), <code>NEXT_DIST_DIR</code>, <code>NEXT_PUBLIC_</code> (σχόλιο), <code>NODE_ENV</code>, <code>PORT</code> (μόνο στο dev-all). Οποιοδήποτε άλλο όνομα σημαίνει Αποτυχία: μια μεταβλητή που διαβάζει ο κώδικας αλλά δεν δηλώνει το <code>.env.example</code>, ή το αντίστροφο.</li>
+        <li>Κάθε όνομα έχει γραμμή στην §6.1.</li>
+      </ul>
+      <p class="ref">Αναφ.: <code>.env.example</code> · docs/dev-guides/10-settings-cron-operations.md §6.1</p>
+    </article>
+
+    <article class="tc" id="OPS-050" data-priority="P3">
+      <h3>Μια ανορθόγραφη μεταβλητή αγνοείται σιωπηλά</h3>
+      <ol class="steps">
+        <li>Στο αρχείο περιβάλλοντος μετονομάστε το <code>CMS_CRON_SECRET=</code> σε <code>CMS_CRON_SECRT=</code> (ίδια τιμή). Κάντε επανεκκίνηση και παρακολουθήστε το αρχείο καταγραφής εκκίνησης.</li>
+        <li>Εκτελέστε την εργασία της OPS-025.</li>
+        <li>Διορθώστε το όνομα και κάντε επανεκκίνηση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η εφαρμογή ξεκινά χωρίς καμία προειδοποίηση για το άγνωστο όνομα και η εργασία απαντά <code>401</code> (το πραγματικό μυστικό κλειδί είναι πλέον χωρίς τιμή). Δεν υπάρχει επικύρωση του περιβάλλοντος κατά την εκκίνηση· καταγράψτε το στο εγχειρίδιο ανάπτυξης: μετά από επεξεργασία του περιβάλλοντος, εκτελέστε τις OPS-025 και OPS-051.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/cron/service.ts</code> · docs/dev-guides/10-settings-cron-operations.md “Troubleshooting” (“Cron returns 401 with the right secret”)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-deploy">
+    <h2>Γρήγορος έλεγχος μετά την ανάπτυξη (deploy)</h2>
+    <p class="intro">Εκτελέστε μετά από κάθε ανάπτυξη στο staging. Μια έκδοση αποτελείται από: <code>npm ci --include=dev</code>, <code>npm run db:migrate</code> πριν το νέο build αρχίσει να εξυπηρετεί κίνηση, <code>NEXT_PUBLIC_SITE_URL=&lt;origin&gt; npm run build</code>, επανεκκίνηση της εφαρμογής (και <code>npm run locks</code> αν χρησιμοποιούνται κλειδώματα επεξεργασίας). Στον server του Praion οι διεργασίες τρέχουν υπό το PM2 (βλ. docs/STAGING-SETUP.md)· δεν παρέχεται μονάδα systemd.</p>
+
+    <article class="tc" id="OPS-051" data-priority="P1">
+      <h3>Μετά από ανάπτυξη: το site, το διαχειριστικό και το API απαντούν</h3>
+      <ol class="steps">
+        <li>Ορίστε το <code>BASE</code> στο origin του staging και εκτελέστε:
+<pre><code>for p in /api/cms/auth/me / /en /admin/login /robots.txt /sitemap.xml /api/health; do
+  printf '%-18s ' "$p"; curl -s -o /dev/null -w '%{http_code}\n' "$BASE$p"; done</code></pre></li>
+        <li>Συνδεθείτε στο διαχειριστικό και ανοίξτε τα <strong>Settings</strong> και μία λίστα περιεχομένου.</li>
+        <li>Εκτελέστε <code>SELECT COUNT(*) FROM __drizzle_migrations;</code> και συγκρίνετε με τον αριθμό των αρχείων στο <code>src/cms/db/adapters/mysql/migrations/</code> που τελειώνουν σε <code>.sql</code>.</li>
+        <li>Εκτελέστε την εργασία cron της OPS-025 στο staging.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>/api/cms/auth/me 401</code> (ο έλεγχος λειτουργίας: η εφαρμογή και η στοίβα πιστοποίησης λειτουργούν), <code>/ 200</code>, <code>/en 200</code> (αν τα αγγλικά είναι δημόσια), <code>/admin/login 200</code>, <code>/robots.txt 200</code> με <code>Disallow: /</code> στο staging (SET-076), <code>/sitemap.xml 200</code>. Το <code>/api/health</code> δεν είναι 200: δεν υπάρχει endpoint ελέγχου λειτουργίας (health check), οπότε τα εργαλεία παρακολούθησης πρέπει να χρησιμοποιούν το <code>/api/cms/auth/me</code> αναμένοντας 401. Η σύνδεση λειτουργεί, τα migrations αντιστοιχούν στα αρχεία και η εργασία cron εκτελείται.</p>
+      <p class="ref">Αναφ.: docs/dev-guides/10-settings-cron-operations.md §7.1, §7.5 · docs/LOCAL_SETUP.md</p>
+    </article>
+
+    <article class="tc" id="OPS-052" data-priority="P2">
+      <h3>Διεργασίες και αρχεία καταγραφής στον server</h3>
+      <ol class="steps">
+        <li>Στον server εκτελέστε <code>pm2 status</code>.</li>
+        <li>Εκτελέστε <code>pm2 logs &lt;frontend process&gt; --lines 100 --nostream</code> και <code>pm2 logs &lt;locks process&gt; --lines 50 --nostream</code>.</li>
+        <li>Εκτελέστε <code>ls -la ~/.pm2/logs/</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το frontend (και το relay κλειδωμάτων, αν χρησιμοποιείται) είναι <code>online</code>, με αριθμό επανεκκινήσεων που δεν αυξήθηκε από την ανάπτυξη. Το log του frontend δείχνει κανονική εκκίνηση και καμία γραμμή <code>[cms/api] unhandled error</code>, <code>ConfigError</code> ή <code>[cms] No X-Real-IP</code> (η τελευταία σημαίνει ότι το Nginx δεν ορίζει το <code>X-Real-IP</code>, AUTH-073). Το log του relay δείχνει τη γραμμή εκκίνησης <code>[locks]</code>. Τα αρχεία καταγραφής βρίσκονται στο <code>~/.pm2/logs/</code> ως <code>&lt;name&gt;-out.log</code> και <code>&lt;name&gt;-error.log</code>· σημειώστε αν είναι εγκατεστημένη εναλλαγή αρχείων καταγραφής (για παράδειγμα <code>pm2-logrotate</code>), αφού η ίδια η εφαρμογή δεν κάνει εναλλαγή σε τίποτα.</p>
+      <p class="ref">Αναφ.: docs/dev-guides/10-settings-cron-operations.md §7.1, §7.5 · docs/STAGING-SETUP.md (“Troubleshooting”)</p>
+    </article>
+
+    <article class="tc" id="OPS-053" data-priority="P2">
+      <h3>Τα ανεβασμένα αρχεία επιβιώνουν μετά από νέα ανάπτυξη</h3>
+      <ol class="steps">
+        <li>Στον server τυπώστε το <code>CMS_UPLOAD_DIR</code> της εφαρμογής (από το αρχείο περιβάλλοντος).</li>
+        <li>Ανεβάστε μια εικόνα στο <strong>Media</strong> και ανοίξτε το δημόσιο URL της (MED-026).</li>
+        <li>Αναπτύξτε ξανά το ίδιο commit. Ανοίξτε ξανά το URL.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το <code>CMS_UPLOAD_DIR</code> έχει οριστεί σε απόλυτη διαδρομή εκτός του καταλόγου της έκδοσης (document root). Η εικόνα εξακολουθεί να φορτώνει μετά τη νέα ανάπτυξη. Αν η μεταβλητή είναι χωρίς τιμή, τα αρχεία ανεβαίνουν στο <code>&lt;release&gt;/.data/uploads</code> και χάνονται όταν αντικατασταθεί ο κατάλογος της έκδοσης: σημειώστε Αποτυχία για το περιβάλλον.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/media/storage.ts</code> · docs/dev-guides/10-settings-cron-operations.md §7.4</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-backup">
+    <h2>Άσκηση αντιγράφου ασφαλείας και επαναφοράς</h2>
+    <p class="intro">Μόνο στο staging. Το αποθετήριο δεν περιλαμβάνει εργαλεία αντιγράφων ασφαλείας· τα βήματα αυτά χρησιμοποιούν απευθείας τα εργαλεία του client της βάσης δεδομένων και το <code>tar</code>. Κρατήστε τα αρχεία αντιγράφων ασφαλείας εκτός του καταλόγου της έκδοσης.</p>
+
+    <article class="tc" id="OPS-054" data-priority="P2">
+      <h3>Λήψη αντιγράφου ασφαλείας: βάση δεδομένων, ανεβασμένα αρχεία, περιβάλλον</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>mysqldump --single-transaction --default-character-set=utf8mb4 -h 127.0.0.1 -P "$DB_PORT" -u "$DB_USER" -p "$DB_NAME" &gt; ~/qa-backup.sql</code> (προσθέστε <code>--no-tablespaces</code> αν η MySQL 8 ζητά το δικαίωμα PROCESS).</li>
+        <li>Εκτελέστε <code>tar -czf ~/qa-uploads.tgz -C "$CMS_UPLOAD_DIR" .</code></li>
+        <li>Αντιγράψτε το αρχείο περιβάλλοντος του server στο <code>~/qa-env.bak</code> και εφαρμόστε του <code>chmod 600</code>.</li>
+        <li>Εκτελέστε <code>grep -c 'CREATE TABLE' ~/qa-backup.sql</code> και <code>tar -tzf ~/qa-uploads.tgz | wc -l</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το dump ολοκληρώνεται χωρίς σφάλμα και ο αριθμός πινάκων ισούται με <code>SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE();</code>. Το αρχείο tar περιέχει τα ανεβασμένα αρχεία. Το αντίγραφο του περιβάλλοντος περιέχει τα <code>CMS_TOKEN_ENCRYPTION_KEY</code> και <code>CMS_GIFTCARD_PEPPER</code>: χωρίς τις ίδιες τιμές, μια επαναφορά δεν μπορεί να διαβάσει τα αποθηκευμένα μυστικά κλειδιά ενσωματώσεων ή τις δωροκάρτες (AUTH-077).</p>
+      <p class="ref">Αναφ.: docs/dev-guides/10-settings-cron-operations.md §7.4</p>
+    </article>
+
+    <article class="tc" id="OPS-055" data-priority="P2">
+      <h3>Επαναφορά στο staging και επαλήθευση του site</h3>
+      <ol class="steps">
+        <li>Μετά τη λήψη του αντιγράφου ασφαλείας, κάντε αλλαγές: δημιουργήστε και δημοσιεύστε μια σελίδα <code>QA After Backup</code>, διαγράψτε μια δημοσιευμένη σελίδα QA, ανεβάστε μια εικόνα, αλλάξτε το <strong>Support email</strong>.</li>
+        <li>Σταματήστε την εφαρμογή. Εκτελέστε <code>mysql -h 127.0.0.1 -P "$DB_PORT" -u "$DB_USER" -p "$DB_NAME" &lt; ~/qa-backup.sql</code>.</li>
+        <li>Αδειάστε τον φάκελο των ανεβασμένων αρχείων και εκτελέστε <code>tar -xzf ~/qa-uploads.tgz -C "$CMS_UPLOAD_DIR"</code>.</li>
+        <li>Ξεκινήστε την εφαρμογή. Συνδεθείτε· ανοίξτε το site, τη σελίδα που διαγράφηκε, το URL της νέας σελίδας, τη βιβλιοθήκη Media και τα Settings.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η διαγραμμένη σελίδα έχει επανέλθει και είναι δημοσιευμένη· το <code>/qa-after-backup</code> εμφανίζει τη σελίδα «δεν βρέθηκε»· η νέα εικόνα έχει εξαφανιστεί από το Media και οι παλιές εικόνες φορτώνουν· το Support email έχει την παλιά του τιμή· ο αριθμός migrations είναι αμετάβλητος· η σύνδεση λειτουργεί με τους παλιούς κωδικούς πρόσβασης. Η εφαρμογή πρέπει να επανεκκινείται μετά από επαναφορά: οι caches ρυθμίσεων και περιεχομένου δεν λήγουν ποτέ από μόνες τους (OPS-005), οπότε μια εφαρμογή σε λειτουργία θα συνέχιζε να σερβίρει τις τιμές πριν από την επαναφορά.</p>
+      <p class="ref">Αναφ.: docs/dev-guides/10-settings-cron-operations.md §7.4, §10</p>
+    </article>
+
+    <article class="tc" id="OPS-056" data-priority="P3">
+      <h3>Γνωστό κενό: δεν υπάρχουν εργαλεία ή πρόγραμμα αντιγράφων ασφαλείας</h3>
+      <ol class="steps">
+        <li>Αναζητήστε στο αποθετήριο: <code>git ls-files | grep -iE 'backup|dump|restore'</code>.</li>
+        <li>Ρωτήστε τον υπεύθυνο της φιλοξενίας πώς λαμβάνονται αντίγραφα ασφαλείας της βάσης δεδομένων και του <code>CMS_UPLOAD_DIR</code>, πόσο συχνά και πού αποθηκεύονται.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 1 δεν βρίσκει κανένα script αντιγράφων ασφαλείας (μόνο άσχετα ονόματα, αν υπάρχουν· το <code>backups/</code> αγνοείται από το git). Καταγράψτε την απάντηση για τη φιλοξενία. Αν κανείς δεν κρατά αντίγραφο ασφαλείας του φακέλου των ανεβασμένων αρχείων, καταγράψτε το ως λειτουργικό κίνδυνο: τα αρχεία πολυμέσων δεν βρίσκονται στη βάση δεδομένων.</p>
+      <p class="ref">Αναφ.: <code>.gitignore</code> (<code>backups/</code>, <code>.data/</code>) · docs/dev-guides/10-settings-cron-operations.md §7.4</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-logs">
+    <h2>Αρχεία καταγραφής, αρχείο ελέγχου και σελίδες σφάλματος</h2>
+
+    <article class="tc" id="OPS-057" data-priority="P3">
+      <h3>Γνωστό κενό: το αρχείο ελέγχου διατηρείται για πάντα</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>SELECT COUNT(*), MIN(created_at), MAX(created_at) FROM audit_logs;</code></li>
+        <li>Εκτελέστε <code>SELECT action, COUNT(*) FROM audit_logs GROUP BY action ORDER BY 2 DESC LIMIT 10;</code></li>
+        <li>Αναζητήστε στον κώδικα: <code>grep -rn "delete(schema.auditLogs" src</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Η παλαιότερη γραμμή χρονολογείται από την πρώτη χρήση του site· τίποτα δεν διαγράφει γραμμές του αρχείου ελέγχου (το βήμα 3 δεν βρίσκει τίποτα). Με μια εργασία προγραμματισμένη κάθε 5 έως 15 λεπτά, μόνο το <code>cron.run</code> προσθέτει εκατοντάδες γραμμές την ημέρα. Καταγράψτε τον ρυθμό αύξησης και θέστε προς απόφαση την πολιτική διατήρησης (χρονικό διάστημα, και αν χρειάζεται να κρατούνται οι γραμμές <code>cron.run</code>).</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/audit.ts</code> · <code>src/cms/core/cron/service.ts</code></p>
+    </article>
+
+    <article class="tc" id="OPS-058" data-priority="P3">
+      <h3>Το αρχείο 404 μεγαλώνει με κάθε διαφορετική διεύθυνση</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>for i in $(seq 1 50); do curl -s -o /dev/null "$BASE/qa-ops-404-$i"; done</code>.</li>
+        <li>Εκτελέστε <code>SELECT COUNT(*) FROM seo_404_log WHERE path LIKE '/qa-ops-404-%';</code></li>
+        <li>Εκτελέστε <code>curl -s -o /dev/null -w '%{http_code}\n' "$BASE/$(head -c 600 /dev/zero | tr '\0' a)"</code> και <code>SELECT COUNT(*) FROM seo_404_log WHERE path LIKE '/aaaa%';</code></li>
+        <li>Διαγράψτε τις γραμμές QA: <code>DELETE FROM seo_404_log WHERE path LIKE '/qa-ops-404-%' OR path LIKE '/aaaa%';</code></li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 2: <code>50</code>: μία γραμμή ανά διαφορετική διεύθυνση, χωρίς ανώτατο όριο, όριο αιτημάτων ή αυτόματο καθαρισμό, οπότε ένας scanner μπορεί να μεγαλώνει τον πίνακα απεριόριστα. Βήμα 3: ο επισκέπτης εξακολουθεί να λαμβάνει την κανονική ανακατεύθυνση «δεν βρέθηκε»· η υπερβολικά μεγάλη διεύθυνση είτε δεν καταγράφεται είτε αποθηκεύεται περικομμένη (οι διαδρομές έχουν το πολύ 512 χαρακτήρες), χωρίς σφάλμα. Καταγράψτε την απεριόριστη αύξηση ως λειτουργικό κενό· η οθόνη ελέγχεται στις MED-060 έως MED-066.</p>
+      <p class="ref">Αναφ.: <code>src/cms/core/seo/resolve.ts</code> (<code>log404</code>) · <code>src/cms/db/adapters/mysql/schema/seo.ts</code> (<code>seo_404_log</code>)</p>
+    </article>
+
+    <article class="tc" id="OPS-059" data-priority="P3">
+      <h3>Σελίδες σφάλματος: η «δεν βρέθηκε» έχει την εμφάνιση του site, ένα σφάλμα server όχι</h3>
+      <ol class="steps">
+        <li>Ανοίξτε τα <code>$BASE/qa-ops-missing</code> και <code>$BASE/en/qa-ops-missing</code> (η MED-062 καλύπτει τους κωδικούς κατάστασης).</li>
+        <li>Εκτελέστε <code>find src/app -name 'error.tsx' -o -name 'global-error.tsx'</code>.</li>
+        <li>Μόνο στο staging: σταματήστε για λίγο τη βάση δεδομένων, ανοίξτε την αρχική σελίδα και μια σελίδα περιεχομένου, και έπειτα ξεκινήστε ξανά τη βάση δεδομένων.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Βήμα 1: η δική του σελίδα «δεν βρέθηκε» του site, στη σωστή γλώσσα, με header και footer. Βήμα 2: καμία έξοδος: δεν υπάρχει προσαρμοσμένο error boundary. Βήμα 3: καταγράψτε τι βλέπουν οι επισκέπτες (μια γυμνή σελίδα σφάλματος του framework ή μια σελίδα που υποβαθμίζεται με ρυθμίσεις που λείπουν)· οτιδήποτε δείχνει stack trace ή λεπτομέρειες της βάσης δεδομένων σημαίνει Αποτυχία. Το log του server έχει την αντίστοιχη γραμμή σφάλματος.</p>
+      <p class="ref">Αναφ.: <code>src/app/[locale]/not-found.tsx</code> · <code>src/app/[locale]/[...rest]/page.tsx</code></p>
+    </article>
+
+    <article class="tc" id="OPS-060" data-priority="P3">
+      <h3>Προθέματα log που μπορεί να αναζητήσει η επιχείρηση</h3>
+      <ol class="steps">
+        <li>Αφού ολοκληρώσετε αυτή τη λίστα ελέγχου, αναζητήστε στο log της εφαρμογής τα <code>[cms]</code>, <code>[cms/api]</code>, <code>[cms/settings]</code>, <code>[commerce/abandoned]</code> και <code>[locks]</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Κάθε μήνυμα που βρίσκεται είναι σε μία γραμμή που ξεκινά με το πρόθεμά του και κανένα δεν περιέχει τιμή μυστικού κλειδιού (μυστικά κλειδιά cron, συνεδρίας ή κρυπτογράφησης, κωδικούς πρόσβασης). Το <code>[cms] No X-Real-IP</code> εμφανίζεται το πολύ μία φορά ανά διεργασία (OPS-041).</p>
+      <p class="ref">Αναφ.: docs/dev-guides/10-settings-cron-operations.md §7.5</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-docs">
+    <h2>Builds τεκμηρίωσης</h2>
+
+    <article class="tc" id="OPS-061" data-priority="P3">
+      <h3>Δημιουργήστε ξανά τα έξι PDF των οδηγών χρήσης</h3>
+      <p class="pre"><span class="exp-label">Προϋποθέσεις:</span> Ένας Chromium: είτε εξαγόμενο <code>CHROME=/path/to/chrome</code> είτε ο αποθηκευμένος στην cache Chromium του Playwright <code>~/.cache/ms-playwright/chromium-1243/</code>.</p>
+      <ol class="steps">
+        <li>Εκτελέστε <code>cd docs/user-guides/_build &amp;&amp; npm install &amp;&amp; node build.mjs</code>.</li>
+        <li>Εκτελέστε <code>node build.mjs 06-rythmiseis-xristes</code>.</li>
+        <li>Από τον ριζικό φάκελο του έργου εκτελέστε <code>git status --short docs/user-guides</code>. Ανοίξτε δύο από τα νέα PDF.</li>
+        <li>Αν το νέο build δεν πρόκειται να γίνει commit, εκτελέστε <code>git checkout -- docs/user-guides/*.pdf</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το βήμα 1 τυπώνει έξι γραμμές, από <code>built …/docs/user-guides/01-vasika.pdf</code> έως <code>…/06-rythmiseis-xristes.pdf</code>, και τερματίζει με κωδικό 0. Το βήμα 2 τυπώνει μόνο τη γραμμή <code>06</code>. Το βήμα 3 δείχνει ως τροποποιημένα το πολύ τα έξι PDF (το HTML του <code>_build/out/</code> και το <code>node_modules/</code> αγνοούνται)· τα PDF ανοίγουν με πίνακα περιεχομένων με αριθμούς σελίδων και ευανάγνωστο ελληνικό κείμενο (SET-079).</p>
+      <p class="ref">Αναφ.: <code>docs/user-guides/_build/build.mjs</code> · docs/dev-guides/10-settings-cron-operations.md §10 (“User-guide PDFs”)</p>
+    </article>
+
+    <article class="tc" id="OPS-062" data-priority="P3">
+      <h3>Οι οδηγοί προγραμματιστών υπάρχουν και συμφωνούν με αυτή τη λίστα ελέγχου</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>git ls-files docs/dev-guides</code>.</li>
+        <li>Ανοίξτε το docs/dev-guides/10-settings-cron-operations.md και συγκρίνετε την §5 (“The main Save sends every …”) με την §10 (“The main Save sends only the keys whose value differs …”) και με το αποτέλεσμα της OPS-003.</li>
+        <li>Συγκρίνετε τον πίνακα εργασιών της §3.4 με το <code>src/app/api/cms/cron/[job]/route.ts</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Έντεκα αρχεία: <code>README.md</code> και <code>01-architecture.md</code> έως <code>10-settings-cron-operations.md</code>, το καθένα καταχωρισμένο στον πίνακα του README. Ο πίνακας εργασιών περιλαμβάνει τις ίδιες επτά εργασίες με τις ίδιες εξαρτήσεις από modules. Η §5 εξακολουθεί να λέει ότι το Save στέλνει κάθε κλειδί, κάτι που αντιφάσκει με την §10 και τον κώδικα (OPS-003): καταγράψτε σφάλμα τεκμηρίωσης.</p>
+      <p class="ref">Αναφ.: docs/dev-guides/README.md · docs/dev-guides/10-settings-cron-operations.md §3.4, §5, §10</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-gate">
+    <h2>Έλεγχος πριν από την έκδοση</h2>
+    <p class="intro">Εκτελέστε στο ακριβές commit που κυκλοφορεί, σε καθαρό checkout του branch <code>CMS</code> (<code>git status</code> καθαρό). Όλα πρέπει να περάσουν πριν από το <code>npm run cms:release</code> ή μια ανάπτυξη.</p>
+
+    <article class="tc" id="OPS-063" data-priority="P1">
+      <h3>Ο έλεγχος ισοτιμίας του skill νέου site περνά</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>node .claude/skills/new-site/scripts/check-base.mjs; echo "exit=$?"</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> <code>✓ base parity: no Praion references, imports resolve, templates and generators match the base</code> και <code>exit=0</code>. Οποιαδήποτε γραμμή <code>✗ base parity: N problem(s)</code> με λίστα σημαίνει Αποτυχία· η λίστα κατονομάζει κάθε αρχείο που διαφέρει από ό,τι δημιουργεί το skill.</p>
+      <p class="ref">Αναφ.: <code>.claude/skills/new-site/scripts/check-base.mjs</code></p>
+    </article>
+
+    <article class="tc" id="OPS-064" data-priority="P1">
+      <h3>Τα tests, οι τύποι, το lint και ένα build παραγωγής περνούν</h3>
+      <ol class="steps">
+        <li>Εκτελέστε <code>npm test</code>, έπειτα <code>npx tsc --noEmit</code>, έπειτα <code>npm run lint</code>, ελέγχοντας το <code>echo $?</code> μετά από καθένα.</li>
+        <li>Εκτελέστε <code>NEXT_PUBLIC_SITE_URL=&lt;staging origin&gt; npm run build</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Όλα τερματίζουν με κωδικό 0. Το <code>npm test</code> δεν χρειάζεται βάση δεδομένων και τελειώνει με <code># fail 0</code> (περίπου 2 980 tests στο τρέχον branch· μια μεγάλη πτώση του αριθμού σημαίνει ότι κάποια αρχεία της σουίτας αυτόματων ελέγχων δεν εντοπίζονται πλέον). Τα <code>tsc</code> και <code>lint</code> δεν τυπώνουν σφάλματα. Το build ολοκληρώνεται χωρίς αποτυχίες τύπων ή <code>ConfigError</code>. Η SET-032 εκτελεί τις ίδιες εντολές σε μια εγκατάσταση· αυτή η περίπτωση είναι ο έλεγχος στο commit της έκδοσης.</p>
+      <p class="ref">Αναφ.: <code>package.json</code> (<code>test</code>, <code>type-check</code>, <code>lint</code>, <code>build</code>) · docs/dev-guides/10-settings-cron-operations.md §8 (“Recipe: release a new CMS version”)</p>
+    </article>
+  </section>
+
+  <section class="suite" id="suite-cleanup">
+    <h2>Καθαρισμός</h2>
+
+    <article class="tc" id="OPS-065" data-priority="P3">
+      <h3>Αφαιρέστε τους χρήστες, τις σελίδες και τις καταχωρίσεις χρονοπρογραμματιστή QA</h3>
+      <ol class="steps">
+        <li>Διαγράψτε τον χρήστη <code>qa-settingsview@example.com</code> και τον ρόλο <code>QA settings viewer</code>. Διαγράψτε τις σελίδες <code>QA Ops Scheduled</code> και <code>QA After Backup</code>, αν υπάρχουν ακόμη.</li>
+        <li>Αφαιρέστε τη γραμμή QA του crontab, το <code>~/bin/cms-cron</code> και το <code>~/private/cron.env</code>, εκτός αν πρέπει να παραμείνουν· διαγράψτε τα <code>~/qa-backup.sql</code>, <code>~/qa-uploads.tgz</code>, <code>~/qa-env.bak</code>, <code>/tmp/env-*.txt</code>.</li>
+        <li>Βεβαιωθείτε ότι το worktree έχει διαγραφεί: <code>git worktree list</code>.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Δεν απομένει κανένα από τα αντικείμενα QA· το <code>git worktree list</code> δείχνει μόνο το κύριο checkout.</p>
+      <p class="ref">Αναφ.: αυτή η λίστα ελέγχου</p>
+    </article>
+
+    <article class="tc" id="OPS-066" data-priority="P3">
+      <h3>Επαναφέρετε τις ρυθμίσεις και το περιβάλλον</h3>
+      <ol class="steps">
+        <li>Εκτελέστε το ερώτημα <code>site_settings</code> από την ενότητα «Πριν ξεκινήσετε» και συγκρίνετε με το αντίγραφο που κρατήσατε. Επαναφέρετε κάθε τιμή που άλλαξε μέσω της οθόνης Settings· για κλειδιά που δεν υπήρχαν πριν και υπάρχουν τώρα, διαγράψτε τη γραμμή και κάντε επανεκκίνηση της εφαρμογής.</li>
+        <li>Επαναφέρετε τα Modules όπως τα είχε το site. Επαναφέρετε το <code>CMS_CRON_SECRET</code>, αφαιρέστε τα <code>COMMERCE_CRON_SECRET</code> και <code>BOOKING_CRON_SECRET</code> αν προστέθηκαν, και κάντε επανεκκίνηση.</li>
+      </ol>
+      <p class="exp"><span class="exp-label">Αναμενόμενο:</span> Το ερώτημα <code>site_settings</code> ταιριάζει με το αντίγραφο που κρατήσατε στην αρχή (εκτός από το <code>updated_at</code>). Η OPS-025 εξακολουθεί να επιστρέφει <code>200</code>.</p>
+      <p class="ref">Αναφ.: αυτή η λίστα ελέγχου</p>
+    </article>
+  </section>
+
+</main>
+<footer class="page">Λίστα ελέγχου 10 από 12. Τα αποτελέσματα αποθηκεύονται μόνο σε αυτόν τον browser· χρησιμοποιήστε την εξαγωγή πριν καθαρίσετε τα δεδομένα του browser. Στη συνέχεια επαναφέρετε τις ρυθμίσεις που αλλάξατε, τους διακόπτες των modules και το αρχείο περιβάλλοντος (OPS-066), και αφαιρέστε τις καταχωρίσεις χρονοπρογραμματιστή QA και τα αρχεία αντιγράφων ασφαλείας (OPS-065).</footer>
+</body>
+</html>
