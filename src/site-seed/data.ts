@@ -17,7 +17,7 @@ export const SETTINGS: ReadonlyArray<readonly [string, unknown]> = [
   ],
   [
     "module.booking",
-    false
+    true
   ],
   [
     "module.forms",
@@ -37,11 +37,11 @@ export const SETTINGS: ReadonlyArray<readonly [string, unknown]> = [
   ],
   [
     "module.googleReviews",
-    false
+    true
   ],
   [
     "module.popups",
-    false
+    true
   ],
   [
     "module.media",
@@ -58,11 +58,17 @@ export const SETTINGS: ReadonlyArray<readonly [string, unknown]> = [
   [
     "ecommerce.paymentProvider",
     "manual"
-  ]
+  ],
+  ["booking.mode", "request"],
+  ["booking.currency", "EUR"],
+  ["booking.timezone", "Europe/Athens"],
+  ["booking.paymentProvider", "manual"],
+  ["booking.depositPercent", "30"],
+  ["booking.notificationEmails", "info@cms-demo.gr"]
 ];
 
 /** `booking.kinds`, or null to leave every kind available. */
-export const BOOKING_KINDS: readonly string[] | null = null;
+export const BOOKING_KINDS: readonly string[] | null = ["transport", "stay"];
 
 export interface SeedPage {
   slug: string;
@@ -122,7 +128,9 @@ export const PAGES: SeedPage[] = [
 /** Which sample documents to create, one of each. */
 export const SAMPLES = {
   product: true,
-  bookingKind: null as string | null,
+  bookingKind: 'transport' as string | null,
+  /** Demo: a second sample experience of the other kind. */
+  extraBookingKind: 'stay' as string | null,
   article: true,
   answer: true,
   scenario: true,

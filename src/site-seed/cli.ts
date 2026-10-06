@@ -140,6 +140,13 @@ async function seedSamples() {
       kind,
       title: l === 'el' ? 'Δείγμα κράτησης' : 'Sample experience',
     }));
+    if (SAMPLES.extraBookingKind) {
+      const extraKind = SAMPLES.extraBookingKind;
+      await seedGroup('booking', 'sample-stay', (l) => ({
+        kind: extraKind,
+        title: l === 'el' ? 'Δείγμα διαμονής' : 'Sample stay',
+      }));
+    }
   }
 
   if (SAMPLES.article) {

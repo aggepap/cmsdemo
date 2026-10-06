@@ -247,7 +247,7 @@ const config = defineConfig({
   productionOrigin: brand.url,
   modules: {
     commerce: true,
-    booking: false,
+    booking: true,
     forms: true,
     seo: true,
     newsletter: true,
@@ -255,9 +255,9 @@ const config = defineConfig({
     // Needs commerce; on its own it has nothing to show.
     customers: true,
     // Google reviews + testimonials, placed with [google-reviews] / [testimonials].
-    googleReviews: false,
+    googleReviews: true,
     // Popups over the page, targeted per path.
-    popups: false,
+    popups: true,
     media: true,
     pm: false,
   },
